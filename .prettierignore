@@ -1,0 +1,7 @@
+dist/
+node_modules/
+.cuecraft/
+out/
+
+# Scarp owns the layout of its artifacts; Prettier must not reflow them.
+archaeology/

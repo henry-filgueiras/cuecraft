@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Generated projections — always safe to delete, never source.
+# See archaeology/decisions/0003-*.md for the cache/frozen distinction.
+.cuecraft/
+out/
+
+# Frozen narration assets are deliberately NOT ignored: once promoted, they
+# are repository-managed source, not build output.
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

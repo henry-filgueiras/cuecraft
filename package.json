@@ -1,0 +1,28 @@
+{
+  "name": "cuecraft",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Compile narrated slide presentations from a YAML source into a 16:9 MP4",
+  "license": "MIT",
+  "author": "Henry Filgueiras",
+  "type": "module",
+  "bin": {
+    "cuecraft": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run format:check && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.8.0"
+  }
+}
