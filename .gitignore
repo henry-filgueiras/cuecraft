@@ -17,6 +17,12 @@ out/
 .env.*
 !.env.example
 
+# Development instrumentation — observes Claude working here; not part of the
+# build and not a cuecraft dependency. See archaeology/decisions/0007-*.md.
+# Recordings are unredacted session evidence and must never be committed.
+.witnessglass/
+.claude/settings.local.json
+
 # Editor / OS noise
 .DS_Store
 *.swp
