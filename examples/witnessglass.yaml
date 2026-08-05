@@ -1,0 +1,39 @@
+# Reference input for the v0 format.
+#
+# Nothing parses this file yet — it exists to pin down what the compiler is
+# being built to accept. See archaeology/decisions/0001-*.md (thesis) and
+# archaeology/decisions/0002-*.md (what v0 does and does not include).
+
+title: "WitnessGlass: What Did the Agent Actually Do?"
+
+defaults:
+  pre_say: 750ms
+  post_say: 1200ms
+  # Delivery is a plain-language instruction passed through to the provider
+  # rather than a bespoke markup — see archaeology/decisions/0006-*.md.
+  instructions: "Measured and clear, like explaining to a colleague."
+
+slides:
+  - slide:
+      title: "Coding agents are black boxes"
+      bullets:
+        - They read files
+        - Search repositories
+        - Execute tools
+        - Make decisions
+
+    say: |
+      Coding agents perform a surprising amount of invisible work.
+      We usually see the final answer, but not how their time was spent.
+
+  - slide:
+      title: "WitnessGlass records the work"
+      bullets:
+        - Tool invocation
+        - Timing
+        - Result
+        - Semantic context
+
+    say: |
+      WitnessGlass turns that invisible work into structured events
+      that can be inspected after the session.
