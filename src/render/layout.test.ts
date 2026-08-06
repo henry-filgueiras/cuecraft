@@ -139,6 +139,21 @@ test("code is a specimen whatever shape it has", () => {
   }
 });
 
+test("a change is a revision, because no composition for one state can show two", () => {
+  for (const [before, after] of [
+    ["a: 1", "a: 2"],
+    ["a: 1\nb: 2\n  c: 3", "a: 1"],
+  ]) {
+    assert.equal(
+      chooseLayout({
+        title: "A title",
+        body: { kind: "change", language: "yaml", before: before!, after: after! },
+      }),
+      "revision",
+    );
+  }
+});
+
 test("steps are a cascade whatever shape they have", () => {
   for (const texts of [["A"], TERSE, LONG, COMPACT]) {
     assert.equal(
@@ -176,8 +191,17 @@ test("selection stays total across every body a source can produce", () => {
     { kind: "bullets", items: [{ text: "x" }] },
     { kind: "steps", items: [{ text: "x" }] },
     { kind: "code", language: "yaml", source: "a: 1", marks: [] },
+    { kind: "change", language: "yaml", before: "a: 1", after: "a: 2" },
   ] as const;
-  const archetypes = ["statement", "matrix", "index", "lead", "cascade", "specimen"];
+  const archetypes = [
+    "statement",
+    "matrix",
+    "index",
+    "lead",
+    "cascade",
+    "specimen",
+    "revision",
+  ];
   for (const body of bodies) {
     const chosen = chooseLayout({ title: "A title", body });
     assert.ok(archetypes.includes(chosen), `unexpected archetype ${chosen}`);

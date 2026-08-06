@@ -19,21 +19,28 @@ defaults:
 
 slides:
   # Four two-word labels: parallel, terse, no order worth showing -> matrix.
+  #
+  # Each cue is a separate synthesis call, so each gets a complete intonation
+  # contour instead of one long declarative arc.
+  #
+  # One term carries a semantic identity and one cue reaches it, so this deck
+  # exercises the matrix archetype's activation treatment as well as the index
+  # archetype's below (decision:17). The comments live above the entry rather
+  # than inside it because examples/cuecraft.yaml quotes this slide verbatim.
   - slide:
       title: "Coding agents are black boxes"
       bullets:
         - Read files
         - Search code
-        - Run tools
+        - id: tools
+          text: Run tools
         - Decide
 
-    # Each cue is a separate synthesis call, so each gets a complete intonation
-    # contour instead of one long declarative arc. The pause is the beat before
-    # the list, and lands while the terms are still arriving on screen.
     say:
       - "Coding agents do a surprising amount of invisible work."
-      - pause: 350ms
-      - "They read files, search code, run tools, and decide what to do next."
+      - speech: "They read files, search code, and run tools."
+        activates: tools
+      - "And decide what to do next."
 
   # A title and nothing else -> statement.
   - slide:

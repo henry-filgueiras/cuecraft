@@ -48,3 +48,23 @@ problem with a writing solution.
 If it is ever adopted, the honest version is probably not "anchors across slides" but a distinct
 concept with its own name and its own validation story, because overloading `activates` to mean
 two different scopes is how the format would start lying about what it does.
+
+**Reassessed after decision:18 and decision:19 (2026-08-06).** Still parked, and the case against
+is now stronger than when this was filed.
+
+The new change scene is the deck's tightest cross-scene relationship so far: scene 2 shows one
+slide of `examples/witnessglass.yaml` whole, and scene 3 shows that same slide arriving at that
+state. If any pair of scenes was going to demand an identity spanning the cut, it was this one.
+It did not. The connection is carried entirely by the viewer recognizing the same fourteen lines,
+and it lands.
+
+More interestingly, quoting gave continuity a **source-level** basis it did not have before. Two
+scenes that name the same `file:` and `slide:` are related in a way a reader of the YAML can see
+and a maintainer can grep for — without the renderer holding any concept at all. That is an
+identity of *source*, not of rendered element, and it turns out to be the useful half: it makes
+the relationship legible to people, and costs nothing in validation scope.
+
+So the ledger is unchanged in direction and heavier on one side. Anchors stay local, every anchor
+error stays a statement rather than a search, and the thing that would actually have to be built
+— a persistent layer or shared-element transitions — is still not implied by anything a real
+artifact needed.

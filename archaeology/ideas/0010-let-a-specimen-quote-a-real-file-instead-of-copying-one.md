@@ -2,8 +2,9 @@
 id: ide_01KZCBG9ZH44PZD34M1135J2R3
 sequence: 10
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-06
+adopted-by: "[[dec_01KZCDZTT38CCYD23Z939F5471|Quote the source instead of copying it, and name the region by its title]]"
 ---
 
 # Let a specimen quote a real file instead of copying one

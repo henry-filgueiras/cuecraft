@@ -35,6 +35,7 @@
   "dependencies": {
     "@remotion/bundler": "^4.0.506",
     "@remotion/renderer": "^4.0.506",
+    "diff": "^9.0.0",
     "highlight.js": "^11.11.1",
     "kokoro-js": "1.2.1",
     "react": "^19.2.8",

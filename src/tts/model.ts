@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { repositoryRoot } from "../repository.ts";
+
 /**
  * Where the local Kokoro model lives, and what exactly it is pinned to.
  *
@@ -26,13 +28,7 @@ export interface ModelPin {
 
 export const LOCK_FILE = "kokoro-model.lock.json";
 
-/**
- * Both `src/tts/` and the compiled `dist/tts/` sit two levels below the repository root,
- * so this resolves correctly whether cuecraft runs from source or from a build.
- */
-export function repositoryRoot(): string {
-  return join(import.meta.dirname, "..", "..");
-}
+export { repositoryRoot };
 
 /**
  * The directory handed to Transformers.js as its local model root. Everything below it is

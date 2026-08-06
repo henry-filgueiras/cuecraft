@@ -39,7 +39,7 @@ npm run render -- examples/witnessglass.yaml -o out/witnessglass.mp4
 ```
 Rendered out/witnessglass.mp4
   4 slides
-  00:42.7
+  00:43.0
   1920x1080 @ 30fps, h264/aac
   layouts 1:matrix  2:statement  3:index  4:lead
 ```
@@ -54,7 +54,9 @@ What exists now:
 - narration as an ordered list of speech and pauses, synthesized locally and measured
 - semantic anchors linking narration moments to slide elements, with times derived not authored
 - narration-derived timing, converted to frames in exactly one place
-- four curated slide compositions, chosen from the shape of the content
+- four semantic content roles — points, stages, source, and a change between two sources
+- source-backed specimens, quoting a slide of a repository file rather than copying it
+- seven curated slide compositions, chosen from what the content is and what shape it has
 - 1920x1080 H.264/AAC output via Remotion
 - `cuecraft speak` for trying a line of narration on its own
 
@@ -112,13 +114,15 @@ slides:
       bullets:
         - Read files
         - Search code
-        - Run tools
+        - id: tools
+          text: Run tools
         - Decide
 
     say:
       - "Coding agents do a surprising amount of invisible work."
-      - pause: 350ms
-      - "They read files, search code, run tools, and decide what to do next."
+      - speech: "They read files, search code, and run tools."
+        activates: tools
+      - "And decide what to do next."
 ```
 
 **Narration** is an ordered list of cues. A cue is either prose to speak or
@@ -180,20 +184,89 @@ it outputs a waveform and nothing else, so there are no word timings to be had
 ([`archaeology/decisions/0013-*.md`](archaeology/decisions/),
 [`0014-*.md`](archaeology/decisions/)).
 
-**Layout is not authored.** cuecraft looks at what a slide contains — how many bullets, how
-long they are — and picks one of four compositions:
+**What the content is.** A slide carries at most one body, and which one it is says what the
+content _means_. `bullets` and `steps` hold identical data and make different claims — "these are
+points" against "these are stages of one transformation" — and compose completely differently as
+a result.
 
-| shape                            | composition                                              |
-| -------------------------------- | -------------------------------------------------------- |
-| no bullets                       | **statement** — the title is the slide, at display scale |
-| up to 6 labels, ≤24 characters   | **matrix** — a field of terms under hairlines            |
-| up to 6 phrases, ≤38 characters  | **index** — numbered rows                                |
-| anything longer or more numerous | **lead** — heading in its own column, points beside it   |
+```yaml
+steps: [Speech, Timing, Composition, Video] # stages, not points
+code: { language: yaml, source: "..." } # source, whose whitespace is content
+change: { before: <specimen>, after: <specimen> } # one source becoming another
+```
+
+A `code` specimen can carry `marks`, which are anchor targets addressed by what a line _says_
+rather than by its number:
+
+```yaml
+code:
+  language: yaml
+  source: |
+    say:
+      - speech: "They read, search, and run tools."
+        activates: tools
+  marks:
+    - id: link
+      line: "activates:"
+```
+
+**Quoting instead of copying.** A specimen written out by hand is a copy of something that
+usually exists in the repository already, and a copy that drifts looks authoritative while
+asserting something false. So a specimen can name a file and a slide of it instead:
+
+```yaml
+code:
+  file: examples/witnessglass.yaml
+  slide: "Coding agents are black boxes"
+```
+
+The text is the file's, verbatim and dedented, and `language` comes from the extension. A slide
+is named by its title because that is the one durable, author-chosen name a presentation file
+has. A file that is missing, a title that matches no slide or two, and a mark that no longer
+matches a line are all compile errors naming the slide — a deck that would display stale source
+refuses to build instead. Paths are relative to the repository and may not escape it
+([`archaeology/decisions/0018-*.md`](archaeology/decisions/)).
+
+**Showing a change.** A `change` takes two truthful source states — each written out or quoted —
+and nothing else:
+
+```yaml
+change:
+  before:
+    language: yaml
+    source: |
+      - "They read files, search code, run tools, and decide what to do next."
+  after:
+    file: examples/witnessglass.yaml
+    slide: "Coding agents are black boxes"
+
+say:
+  - speech: "Somebody named one term, and pointed one sentence at it."
+    activates: change
+```
+
+Which lines were removed, added, or unchanged is derived, not annotated. So is the identity:
+`change` names the changed region, is declared by the body rather than by the author, and is
+scoped to its slide like any other — spell it wrong and the error lists what the slide does
+declare ([`archaeology/decisions/0019-*.md`](archaeology/decisions/)).
+
+**Layout is not authored.** The role picks the composition; shape decides only within the list
+role, from how many items there are and how long they run:
+
+| content                          | composition                                               |
+| -------------------------------- | --------------------------------------------------------- |
+| `code`                           | **specimen** — the source full width, monospace, at scale |
+| `change`                         | **revision** — the changed lines swapping in place        |
+| `steps`                          | **cascade** — stages descending and stepping right        |
+| no body                          | **statement** — the title is the slide, at display scale  |
+| up to 6 labels, ≤24 characters   | **matrix** — a field of terms under hairlines             |
+| up to 6 phrases, ≤38 characters  | **index** — numbered rows                                 |
+| anything longer or more numerous | **lead** — heading in its own column, points beside it    |
 
 `cuecraft render` reports which slide got which. There is no `layout:` key, no font size, no
 coordinate, and no theme: the source expresses intent and the renderer decides how that looks
-(see [`archaeology/decisions/0010-*.md`](archaeology/decisions/)). To change how a slide looks,
-change what it says.
+(see [`archaeology/decisions/0010-*.md`](archaeology/decisions/) and
+[`0015-*.md`](archaeology/decisions/)). To change how a slide looks, change what it says.
 
 ## Local text-to-speech
 
@@ -256,7 +329,8 @@ The reasoning behind each of those choices is recorded in
 
 ## Scope
 
-v0 is deliberately narrow: one scene type (title + bullets), narration, timing, and one MP4.
+v0 is deliberately narrow: one scene type (a title and one body), narration, timing, and one
+MP4.
 Browser demos, terminal replays, charts, captions, and other scene types are parked as ideas,
 not roadmap. There is no GUI and no editor, by decision rather than by omission.
 

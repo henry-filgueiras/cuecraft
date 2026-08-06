@@ -6,6 +6,14 @@ import type { SlideBody } from "../presentation/parse.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
+  if (overrides.change !== undefined) {
+    return {
+      kind: "change",
+      language: "yaml",
+      before: overrides.change[0],
+      after: overrides.change[1],
+    };
+  }
   if (overrides.steps !== undefined && overrides.steps.length > 0) {
     return { kind: "steps", items: overrides.steps };
   }
@@ -25,6 +33,8 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   offsets?: readonly number[];
   narrationSeconds?: number;
   leadingSilence?: number;
+  /** Two source states, which become the one body whose elements the compiler derives. */
+  change?: readonly [string, string];
   /** Per speech cue; an empty string means this cue reaches nothing. */
   activates?: readonly string[];
 };
@@ -386,4 +396,49 @@ test("a slide with no anchors carries none, and is otherwise unchanged", () => {
   );
   assert.deepEqual(timeline.scenes[0]?.anchors, []);
   assert.equal(timeline.scenes[0]?.clips.length, 1);
+});
+
+/**
+ * A derived endpoint is an endpoint like any other.
+ *
+ * The point of these two is negative: resolving an anchor onto an element the *compiler*
+ * declared takes no special path through `buildTimeline`. If that ever stops being true, the
+ * seam `bodyElements` exists to provide has been broken.
+ */
+test("narration reaches a region the compiler derived, not one the author named", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        change: ["a: 1\nb: 2\n", "a: 1\nb: 3\n"],
+        speech: [3, 4],
+        activates: ["", "change"],
+        preSayMs: 0,
+        leadingSilence: 0.2,
+      }),
+    ]),
+  );
+
+  const scene = timeline.scenes[0];
+  assert.ok(scene !== undefined);
+  assert.deepEqual(scene.anchors, [
+    // Element 0 is the only element a change has, and it is not in the source anywhere.
+    {
+      id: "change",
+      elementIndex: 0,
+      clipIndex: 1,
+      frame: 90 + framesFor(0.2, DEFAULT_FPS),
+    },
+  ]);
+  assert.equal(scene.layout, "revision");
+});
+
+test("a change with no narration reaching it still lays out, with no anchors", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({ ordinal: 1, change: ["a: 1\n", "a: 2\n"], narrationSeconds: 5 }),
+    ]),
+  );
+  assert.deepEqual(timeline.scenes[0]?.anchors, []);
+  assert.equal(timeline.scenes[0]?.layout, "revision");
 });

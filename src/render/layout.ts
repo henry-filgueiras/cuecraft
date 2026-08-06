@@ -12,10 +12,13 @@
  * character counts can tell them apart. So the role is consulted first, and shape now decides
  * only *within* the list role.
  *
- * Six, and six is still a ceiling rather than a starting point. Every archetype here exists
+ * Seven, and seven is still a ceiling rather than a starting point. Every archetype here exists
  * because a real slide looked wrong without it, and the rule that selects it is a comparison
  * against a number, not a solver. If selection ever needs a scoring function, the right move is
  * to delete an archetype rather than add a heuristic.
+ *
+ * The seventh arrived with the seventh *role*, not with a seventh way of arranging the same
+ * content: a change has two states, and no composition for one state can show a transformation.
  *
  * Plain TypeScript rather than TSX so the whole of the decision is unit-testable without a
  * browser, and so the render summary can report what each slide was given.
@@ -24,7 +27,7 @@
 import type { SlideBody } from "../presentation/parse.ts";
 
 export type LayoutArchetype =
-  "statement" | "matrix" | "index" | "lead" | "cascade" | "specimen";
+  "statement" | "matrix" | "index" | "lead" | "cascade" | "specimen" | "revision";
 
 export interface SlideContent {
   readonly title: string;
@@ -79,6 +82,8 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *
  * - **specimen** — a code block. Heading above, the source full width beneath it, monospace at
  *   presentation scale. There is no second arrangement of code worth having.
+ * - **revision** — one source becoming another. The same block, with the changed lines swapping
+ *   in place while everything around them holds still.
  * - **cascade** — stages of a transformation. They descend and step right along a single
  *   traced line, so the frame reads as something being carried forward rather than listed.
  *
@@ -93,6 +98,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "code") return "specimen";
+  if (content.body.kind === "change") return "revision";
   if (content.body.kind === "steps") return "cascade";
 
   const shape = analyzeContent(content);

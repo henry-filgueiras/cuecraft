@@ -5,6 +5,8 @@ import { test } from "node:test";
 
 import { chooseLayout } from "../render/layout.ts";
 import { repositoryRoot } from "../tts/model.ts";
+import { CHANGE_ELEMENT_ID } from "./body.ts";
+import { SourceError } from "./source.ts";
 import {
   bodyElements,
   DEFAULT_MIN_SLIDE_MS,
@@ -60,10 +62,17 @@ test("the canonical example parses", () => {
     "lead",
   ]);
 
-  // The canonical deck uses the cue grammar: speech, a pause, then more speech.
+  // The canonical deck uses the cue grammar, and its first slide is anchored — so the
+  // matrix archetype's activation treatment is exercised by real content, not only by the
+  // index archetype further down.
   assert.deepEqual(
     first.say.map((cue) => cue.kind),
-    ["speech", "pause", "speech"],
+    ["speech", "speech", "speech"],
+  );
+  assert.equal(
+    first.say.filter((cue) => cue.kind === "speech" && cue.activates !== undefined)
+      .length,
+    1,
   );
 
   // And it keeps exercising semantic anchors, which is the only place they are proven
@@ -252,7 +261,9 @@ slides:
       bulletz: [a]
     say: Hello.
 `),
-    ['slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code)'],
+    [
+      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change)',
+    ],
   );
 
   assert.deepEqual(
@@ -817,3 +828,237 @@ function problemsFrom(source: string): readonly string[] {
   }
   assert.fail("expected the source to be rejected");
 }
+
+/**
+ * Quoted specimens and derived changes.
+ *
+ * The reader is injected throughout, so every one of these is deterministic and never touches
+ * the disk — the repository boundary itself is proven in `source.test.ts`.
+ */
+
+const QUOTED_DECK_FILE = `title: Another deck
+
+slides:
+  - slide:
+      title: "Quoted"
+      bullets:
+        - id: tools
+          text: Run tools
+
+    say:
+      - speech: "They run tools."
+        activates: tools
+`;
+
+/** Parses with one file available to quote, and nothing else. */
+function withFile(source: string, files: Record<string, string> = {}) {
+  return parsePresentation(source, "test.yaml", {
+    read: (file) => {
+      const text = files[file] ?? (file === "other.yaml" ? QUOTED_DECK_FILE : undefined);
+      if (text === undefined) throw new SourceError(`file "${file}" does not exist`);
+      return text;
+    },
+  });
+}
+
+function quotedProblems(source: string, files: Record<string, string> = {}) {
+  try {
+    withFile(source, files);
+  } catch (error) {
+    assert.ok(error instanceof PresentationError, `unexpected error: ${String(error)}`);
+    return error.problems;
+  }
+  assert.fail("expected the source to be rejected");
+}
+
+const QUOTING_DECK = `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        file: other.yaml
+        slide: "Quoted"
+        marks:
+          - id: link
+            line: "activates:"
+    say:
+      - speech: "Look here."
+        activates: link
+`;
+
+test("a specimen may quote a repository file instead of carrying a copy of it", () => {
+  const body = withFile(QUOTING_DECK).slides[0]?.body;
+  assert.ok(body?.kind === "code");
+  // Verbatim, dedented, and the language came from the file rather than from the author.
+  assert.equal(body.language, "yaml");
+  assert.equal(
+    body.source,
+    [
+      "slide:",
+      '  title: "Quoted"',
+      "  bullets:",
+      "    - id: tools",
+      "      text: Run tools",
+      "",
+      "say:",
+      '  - speech: "They run tools."',
+      "    activates: tools",
+    ].join("\n"),
+  );
+});
+
+test("a mark on a quoted specimen is the drift detector", () => {
+  // The file no longer says what the mark names, which is exactly the silent staleness
+  // quoting exists to prevent — so it is loud instead.
+  const drifted = QUOTED_DECK_FILE.replace("        activates: tools\n", "");
+  assert.deepEqual(quotedProblems(QUOTING_DECK, { "other.yaml": drifted }), [
+    'slide 1, slide.code.marks.0: line "activates:" does not appear in this slide\'s code',
+  ]);
+});
+
+test("a quote that cannot be resolved names the slide and the reason", () => {
+  assert.match(
+    quotedProblems(QUOTING_DECK.replace('slide: "Quoted"', 'slide: "Missing"'))[0] ?? "",
+    /^slide 1, slide\.code: file "other\.yaml" has no slide titled "Missing"/,
+  );
+  assert.match(
+    quotedProblems(QUOTING_DECK.replace("file: other.yaml", "file: gone.yaml"))[0] ?? "",
+    /^slide 1, slide\.code: file "gone\.yaml" does not exist/,
+  );
+});
+
+test("a specimen is written here or quoted, never both, and never neither", () => {
+  assert.match(
+    quotedProblems(
+      QUOTING_DECK.replace('        slide: "Quoted"', '        source: "x"'),
+    )[0] ?? "",
+    /has both "source" and "file"/,
+  );
+  assert.match(
+    quotedProblems(`title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+    say: Hello.
+`)[0] ?? "",
+    /^slide 1, slide\.code: must be /,
+  );
+});
+
+test("a quoted specimen may not also claim a language", () => {
+  assert.match(
+    quotedProblems(
+      QUOTING_DECK.replace(
+        "        file: other.yaml",
+        "        language: yaml\n        file: other.yaml",
+      ),
+    )[0] ?? "",
+    /^slide 1, slide\.code\.language: is derived from the quoted file's extension/,
+  );
+});
+
+const CHANGE_DECK = `title: A deck
+slides:
+  - slide:
+      title: One
+      change:
+        before:
+          language: yaml
+          source: |
+            say:
+              - "Words."
+        after:
+          file: other.yaml
+          slide: "Quoted"
+    say:
+      - speech: "It changed."
+        activates: change
+`;
+
+test("a change carries two states and nothing about what differs between them", () => {
+  const presentation = withFile(CHANGE_DECK);
+  const slide = presentation.slides[0];
+  assert.ok(slide !== undefined);
+  assert.equal(slide.body.kind, "change");
+  assert.equal(chooseLayout(slide), "revision");
+});
+
+test("a change declares the identity nobody typed", () => {
+  const slide = withFile(CHANGE_DECK).slides[0];
+  assert.ok(slide !== undefined);
+  // One derived element, reachable by narration through exactly the machinery a bullet uses.
+  assert.deepEqual(
+    bodyElements(slide.body).map((element) => element.id),
+    [CHANGE_ELEMENT_ID],
+  );
+});
+
+test("the derived identity is scoped to its slide and statically checkable", () => {
+  // Spelled wrong: the error lists what the slide actually declares, exactly as it would
+  // for a mistyped bullet id. Nothing about this identity is global or implicit.
+  assert.deepEqual(
+    quotedProblems(CHANGE_DECK.replace("activates: change", "activates: changed")),
+    [
+      'slide 1, narration cue 1: activates "changed", which nothing on this slide declares (declared: change)',
+    ],
+  );
+
+  // And a slide with no change does not declare it.
+  assert.match(
+    problems(`title: A deck
+slides:
+  - slide:
+      title: One
+      bullets: [a]
+    say:
+      - speech: "Hi."
+        activates: change
+`)[0] ?? "",
+    /activates "change", which nothing on this slide declares/,
+  );
+});
+
+test("a change between two identical states is rejected rather than rendered", () => {
+  assert.match(
+    quotedProblems(`title: A deck
+slides:
+  - slide:
+      title: One
+      change:
+        before:
+          language: yaml
+          source: |
+            say: "Words."
+        after:
+          language: yaml
+          source: |
+            say: "Words."
+    say: Nothing happened.
+`)[0] ?? "",
+    /^slide 1, slide\.change: before and after are the same source/,
+  );
+});
+
+test("a change says what is compared, never how the comparison should look", () => {
+  assert.match(
+    quotedProblems(
+      CHANGE_DECK.replace("        after:", "        highlight: red\n        after:"),
+    )[0] ?? "",
+    /unknown key "highlight".*which lines differ is derived, not authored/,
+  );
+  assert.match(
+    quotedProblems(CHANGE_DECK.replace(/        after:\n.*\n.*\n/, ""))[0] ?? "",
+    /^slide 1, slide\.change\.after: is required/,
+  );
+});
+
+test("a slide's content is one thing, and a change is one of the things it can be", () => {
+  assert.match(
+    quotedProblems(
+      CHANGE_DECK.replace("      change:", "      bullets: [a]\n      change:"),
+    )[0] ?? "",
+    /has "bullets" and "change"/,
+  );
+});

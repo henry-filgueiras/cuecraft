@@ -1,9 +1,11 @@
 import hljs from "highlight.js/lib/core";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { CSSProperties, ReactNode } from "react";
+import { useMemo } from "react";
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 
-import type { AuthoredItem, SlideBody } from "../presentation/parse.ts";
+import { deriveChange } from "../presentation/change.ts";
+import type { AuthoredItem, SlideBody } from "../presentation/body.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
 import { anchorState, type AnchorState } from "./anchor.ts";
@@ -521,16 +523,7 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
   const stateOf = anchorStatesFor(scene, absoluteFrame);
   const anchored = scene.anchors.length > 0;
 
-  // The block gets whatever the heading leaves, so the heading's real height — including the
-  // second line a long title takes — has to be part of the arithmetic. It was not, and the
-  // close slide's last line sat on the bottom margin.
-  const titleSize = fitHeading(scene.title.length, TYPE.title);
-  const titleHeight =
-    headingLines(scene.title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
-  const size = fitSpecimen(lines.length, longestLine(lines), {
-    width: 1920 - 2 * FRAME.marginX - CODE.gutter,
-    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
-  });
+  const size = fitSpecimen(lines.length, longestLine(lines), codeBox(scene.title));
 
   /**
    * A line's state, combining every region that covers it.
@@ -632,6 +625,180 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 
 function longestLine(lines: readonly string[]): number {
   return lines.reduce((longest, line) => Math.max(longest, line.length), 0);
+}
+
+/**
+ * What is left of the canvas once the heading has taken its share.
+ *
+ * The heading's *real* height — including the second line a long title takes — has to be part
+ * of the arithmetic. It was not, once, and the close slide's last line sat on the bottom margin.
+ */
+function codeBox(title: string): { width: number; height: number } {
+  const titleSize = fitHeading(title.length, TYPE.title);
+  const titleHeight =
+    headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
+  return {
+    width: 1920 - 2 * FRAME.marginX - CODE.gutter,
+    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
+  };
+}
+
+/**
+ * **revision** — one source becoming another.
+ *
+ * The obvious composition is the one every code-review tool uses: removed lines, then added
+ * lines, in a stack. It is wrong here, and specifically wrong: it renders a change as a *list of
+ * two things* when the claim being made is that one thing became another. A viewer reading a
+ * unified diff has to reconstruct the transformation; a viewer watching a presentation should be
+ * shown it.
+ *
+ * So the changed lines swap **in place**. Each hunk is a fixed stack of rows as tall as its
+ * taller side (`../presentation/change.ts`), the outgoing line and the incoming line share a
+ * row, and every unchanged line around them holds absolutely still. Nothing reflows, nothing
+ * scrolls, and the eye has one place to be.
+ *
+ * The temporal model is decision:17's, unchanged and unextended: `degree` carries the swap and
+ * the context's retreat, `heat` carries the flare at the moment narration arrives. The two
+ * halves of the crossfade are staggered inside `degree` rather than given their own clock — the
+ * outgoing line is gone before the incoming one is legible, so the frame never holds two
+ * overlapping lines of code, which reads as a rendering fault rather than as a change.
+ *
+ * Colour stays where the rest of the deck keeps it: no red, no green, no diff gutter of `+` and
+ * `-`. Removal is something leaving, addition is something arriving in the accent that means
+ * "narration has been here" everywhere else in this design.
+ */
+function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const body = scene.body;
+  const derived = useMemo(
+    () =>
+      body.kind === "change"
+        ? deriveChange(body.before, body.after)
+        : { rows: [], changedRows: [], longestLine: 0 },
+    [body],
+  );
+  if (body.kind !== "change") return null;
+
+  // One derived element, at index 0 of `bodyElements` — so the narration that reaches "the
+  // change" resolves through exactly the same machinery as a narration that reaches a bullet.
+  const state = anchorStatesFor(scene, absoluteFrame)(0);
+  const size = fitSpecimen(
+    derived.rows.length,
+    derived.longestLine,
+    codeBox(scene.title),
+  );
+  const rowHeight = size * CODE.lineHeight;
+
+  // Staggered halves of one ramp. The outgoing line is fully gone by 45% of `degree`; the
+  // incoming one does not begin until 40%, so they cross rather than overlap.
+  const leaving = clamp(1 - state.degree / 0.45);
+  const arriving = clamp((state.degree - 0.4) / 0.6);
+  const accent = mix(COLORS.accent, COLORS.flare, state.heat);
+
+  return (
+    <>
+      <style>{tokenStyles()}</style>
+      <Heading scene={scene} frame={frame} />
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          marginTop: SPACE.xl,
+          fontFamily: MONO_STACK,
+          fontSize: size,
+          lineHeight: CODE.lineHeight,
+          color: COLORS.muted,
+          ...reveal(frame, contentDelay(0)),
+        }}
+      >
+        {derived.rows.map((row, index) => {
+          if (row.kind === "kept") {
+            return (
+              <div key={index} style={{ display: "flex", alignItems: "stretch" }}>
+                <div style={{ flex: "none", width: CODE.gutter }} />
+                <code
+                  style={{
+                    whiteSpace: "pre",
+                    // Context recedes exactly as the change lands, so the frame's focus moves
+                    // without anything having to move on it.
+                    opacity: 0.7 - 0.22 * state.degree,
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: highlightLine(row.text, body.language),
+                  }}
+                />
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={index}
+              style={{
+                display: "flex",
+                alignItems: "stretch",
+                height: rowHeight,
+                backgroundColor: `rgba(217, 160, 91, ${(0.035 + 0.05 * state.degree + 0.13 * state.heat).toFixed(3)})`,
+              }}
+            >
+              <div style={{ flex: "none", width: CODE.gutter, position: "relative" }}>
+                {/* The band's own edge. Present from the first frame at low contrast, because
+                    the viewer should know where to look before the sentence arrives, and in
+                    full accent once it has. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 4,
+                    backgroundColor: mix(COLORS.dormant, accent, state.degree),
+                    opacity: 0.4 + 0.6 * state.heat,
+                  }}
+                />
+              </div>
+              <div style={{ position: "relative", flex: 1 }}>
+                {row.removed === undefined ? null : (
+                  <code
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      whiteSpace: "pre",
+                      opacity: leaving * 0.92,
+                      transform: `translateY(${-7 * state.degree}px)`,
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: highlightLine(row.removed, body.language),
+                    }}
+                  />
+                )}
+                {row.added === undefined ? null : (
+                  <code
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      whiteSpace: "pre",
+                      opacity: arriving,
+                      transform: `translateY(${13 * (1 - arriving)}px)`,
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: highlightLine(row.added, body.language),
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function clamp(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
 /**
@@ -773,6 +940,8 @@ export function Slide({
         <Cascade scene={scene} absoluteFrame={absoluteFrame} />
       ) : scene.layout === "specimen" ? (
         <Specimen scene={scene} absoluteFrame={absoluteFrame} />
+      ) : scene.layout === "revision" ? (
+        <Revision scene={scene} absoluteFrame={absoluteFrame} />
       ) : (
         <Lead scene={scene} />
       )}

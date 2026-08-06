@@ -2,8 +2,9 @@
 id: ide_01KZCBG9ZSK0QQ92E90BC0AHG2
 sequence: 11
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-06
+adopted-by: "[[dec_01KZCDZTTAQZ5K0CYF122E8W77|Let a change be a body, and let the compiler declare its one element]]"
 ---
 
 # Let a specimen show a change, and let the diff be the anchor

@@ -55,3 +55,22 @@ currently lies slightly instead.
 
 The recursion it unlocks is the deepest available here and costs almost nothing: a slide that
 says how long the video you are watching is, and is right, because nobody typed it.
+
+**Reassessed after decision:18 and decision:19 (2026-08-06).** Still parked, and the boundary
+inside it is now sharper than "a figure can never be spoken".
+
+Quoting split the closed set in two. `duration` and anything measured from audio are downstream
+of synthesis and stay unspeakable, exactly as dragon:1 requires. But `source-lines`, `slides`,
+`words`, the size of a quoted region and the number of lines a change touches are all known at
+**parse time**, before a single sample exists — so nothing in the compilation order stops those
+from reaching a frame *or* a sentence. The rule is not "figures are visual"; it is "a figure that
+depends on the audio is visual, and one that depends only on the source is not". That distinction
+did not exist before this round and is the main reason to keep the idea filed.
+
+Did the round produce a figure worth showing? No, and instructively so. The most compiler-derived
+thing on screen is the diff, and its value is that it is *the shape of the change* rather than a
+count of it. "Five lines differ" would have been strictly weaker than showing which five. The
+temptation a figure role has to survive is exactly that one.
+
+The motivating lie is also still in the deck: `A source small enough to read in about a minute`
+is an estimate a human typed, on the same slide as three statements that are checkable.

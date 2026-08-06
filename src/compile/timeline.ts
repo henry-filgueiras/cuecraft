@@ -1,4 +1,4 @@
-import { bodyElements, type SlideBody } from "../presentation/parse.ts";
+import { bodyElements, type SlideBody } from "../presentation/body.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
 import type { CompiledPresentation } from "./compile.ts";
 

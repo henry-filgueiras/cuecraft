@@ -2,12 +2,18 @@
 #
 #   cuecraft render examples/cuecraft.yaml -o out/cuecraft.mp4
 #
-# Six scenes, about eighty seconds. The argument is: presentations are usually authored as
-# mechanics, cuecraft asks for intent instead, and everything mechanical is derived from it.
+# Seven scenes, about a hundred seconds. The argument is: presentations are usually authored
+# as mechanics, cuecraft asks for intent instead, and everything mechanical is derived from it.
 #
-# Two of the scenes show cuecraft source, because the claim is only worth making if a viewer
-# can check it. The last one shows its own source — what is on screen at the end is what
-# produced the frame you are looking at.
+# Three of the scenes put cuecraft source on screen, because the claim is only worth making if
+# a viewer can check it — and none of the three carries a copy of that source. Two quote a
+# slide of examples/witnessglass.yaml; the last quotes this slide, out of this file. A quote
+# cannot go stale, and a file that quotes itself terminates, because a reference is not an
+# inclusion.
+#
+# The third scene shows one source becoming another. Which lines differ is not written down
+# anywhere here: cuecraft diffs the two states, and the narration reaches the changed region by
+# an identity the compiler declared on its own.
 #
 # Nothing in this file says where anything goes, how big it is, or when it happens.
 
@@ -31,25 +37,19 @@ slides:
       - "None of that is what you meant to say."
 
   # 2 — THE SOURCE. The centre of the video: a real cuecraft slide, shown whole, with the
-  # narration walking its three parts. What is on screen is what an author actually types.
+  # narration walking its three parts. What is on screen is what an author actually types —
+  # and it is not a copy of it. The slide is quoted out of the other deck in this repository,
+  # by its title, so it is the file's own text or the render fails.
   - slide:
       title: "One slide, in full"
       code:
-        language: yaml
-        source: |
-          slide:
-            title: "Coding agents are black boxes"
-            bullets:
-              - id: tools
-                text: Run tools
-
-          say:
-            - "Agents do a lot of invisible work."
-            - speech: "They read, search, and run tools."
-              activates: tools
+        file: examples/witnessglass.yaml
+        slide: "Coding agents are black boxes"
 
         # Three parts of the specimen that the narration reaches. Each names the line it
-        # opens rather than a line number, so inserting a line above it changes nothing.
+        # opens rather than a line number, so inserting a line above it changes nothing —
+        # and a quoted file that stopped containing the line fails loudly instead of
+        # emphasising the wrong region.
         marks:
           - id: content
             line: "slide:"
@@ -70,7 +70,50 @@ slides:
       - pause: 350ms
       - "There is no timeline here. Nothing has a position, and nothing has a time."
 
-  # 3 — WHAT HAPPENS TO IT. Stages of one transformation, not a list of features: each stage
+  # 3 — THE EVIDENCE, and the claim the earlier cut of this deck could only assert.
+  #
+  # Two truthful states of the same slide. The `after` is quoted from the file, exactly as the
+  # scene above quotes it; the `before` is what that slide said until the identity was added.
+  # Which lines were removed, which were added, and which are context are all derived — there
+  # is no annotation here saying "this line changed", because the compiler can see that itself.
+  #
+  # And `activates: change` reaches an identity nothing in this file declares. The diff knows
+  # which region of itself is the change, so it declares one, scoped to this slide like any
+  # other. The author supplies the structure; the compiler supplies the endpoint; the measured
+  # audio supplies the moment.
+  - slide:
+      title: "Change it, and nothing else"
+      change:
+        before:
+          language: yaml
+          source: |
+            slide:
+              title: "Coding agents are black boxes"
+              bullets:
+                - Read files
+                - Search code
+                - Run tools
+                - Decide
+
+            say:
+              - "Coding agents do a surprising amount of invisible work."
+              - pause: 350ms
+              - "They read files, search code, run tools, and decide what to do next."
+        after:
+          file: examples/witnessglass.yaml
+          slide: "Coding agents are black boxes"
+
+    say:
+      - "None of that was there to begin with."
+      - pause: 300ms
+      - speech: "Somebody named one term, and pointed one sentence at it."
+        activates: change
+      - pause: 500ms
+      - "Nothing in that edit is a time, or a frame, or a position."
+      - pause: 250ms
+      - "So there is nothing to go back and fix. It is spoken again, measured again, and timed again."
+
+  # 4 — WHAT HAPPENS TO IT. Stages of one transformation, not a list of features: each stage
   # consumes the one before it, and the narration walks them in order.
   - slide:
       title: "Then it works out the rest"
@@ -95,7 +138,7 @@ slides:
       - speech: "And the whole thing is rendered."
         activates: video
 
-  # 4 — THE CONSEQUENCE, stated as absence. Four parallel terms, each struck off by name.
+  # 5 — THE CONSEQUENCE, stated as absence. Four parallel terms, each struck off by name.
   - slide:
       title: "Things you never write"
       bullets:
@@ -118,10 +161,8 @@ slides:
         activates: keyframes
       - speech: "And no layout to pick."
         activates: layouts
-      - pause: 400ms
-      - "Change a sentence, and everything downstream follows it."
 
-  # 5 — THE RESULT. The calm scene after the cascade, and the one that says what you are left
+  # 6 — THE RESULT. The calm scene after the cascade, and the one that says what you are left
   # holding: a file, not a runtime.
   - slide:
       title: "What comes out is an ordinary video"
@@ -134,28 +175,22 @@ slides:
       - "What comes out is an ordinary video."
       - pause: 300ms
       - "One file, with the narration already mixed in. Nothing to install."
-      - pause: 300ms
-      - "And the source stays small enough to read in a minute."
 
-  # 6 — THE CLOSE, and the one piece of recursion in the deck. The specimen on screen is this
-  # slide's own source, so the thesis is checkable rather than asserted. It stops one level
-  # short: the block that displays the block is not itself displayed.
+  # 7 — THE CLOSE, and the recursion in the deck. The specimen on screen is this slide's own
+  # source, quoted out of this file by its own title, so what you are reading is what produced
+  # the frame you are reading it on — including the two lines that put it there. It used to be
+  # a copy that stopped one level short. A quote does not have to: it names the source instead
+  # of containing it, so there is no regress to cut.
+  #
+  # `post_say` gives the last frame room to land rather than cutting on the final syllable.
+  # It sits inside the quoted region, so it is on screen too — the comment explaining it is
+  # up here, where the quote cannot reach.
   - slide:
       title: "Author relationships. Derive mechanics."
       code:
-        language: yaml
-        source: |
-          slide:
-            title: "Author relationships. Derive mechanics."
+        file: examples/cuecraft.yaml
+        slide: "Author relationships. Derive mechanics."
 
-          say:
-            - "That is this slide, in full."
-            - pause: 600ms
-            - "Author relationships."
-            - pause: 400ms
-            - "Derive mechanics."
-
-    # Room at the end to let the last frame land rather than cutting on the final syllable.
     post_say: 2200ms
     say:
       - "That is this slide, in full."

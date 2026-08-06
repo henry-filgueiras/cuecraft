@@ -1,10 +1,28 @@
 import { parse as parseYaml, YAMLParseError } from "yaml";
 import { z } from "zod";
 
+import { deriveChange } from "./change.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
+import { type CodeLanguage, CODE_LANGUAGES, isCodeLanguage } from "./language.ts";
+import {
+  languageOf,
+  onceReader,
+  quoteSlide,
+  repositoryReader,
+  SourceError,
+  type RepositoryReader,
+} from "./source.ts";
 import { type AuthoredMark, markProblem, specimenLines } from "./specimen.ts";
 
+import { CHANGE_ELEMENT_ID, type AuthoredItem, type SlideBody } from "./body.ts";
 export type { AuthoredMark } from "./specimen.ts";
+export {
+  bodyElements,
+  CHANGE_ELEMENT_ID,
+  type AuthoredItem,
+  type SlideBody,
+} from "./body.ts";
+export { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
 
 /**
  * The presentation source: YAML in, a validated authored presentation out.
@@ -65,63 +83,6 @@ export type NarrationCue =
       readonly pronounce?: ReadonlyMap<string, string>;
     }
   | { readonly kind: "pause"; readonly milliseconds: number };
-
-/** One item of a list, which may carry a semantic identity that narration can reach. */
-export interface AuthoredItem {
-  readonly text: string;
-  readonly id?: string;
-}
-
-/** The only language cuecraft can set as a specimen. Widening this is a decision, not a knob. */
-export const CODE_LANGUAGES = ["yaml"] as const;
-export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
-
-/**
- * What a slide's content *is*.
- *
- * decision:10 chose composition from the shape of the content — how many items, how long they
- * are. Shape turned out to be a weak proxy for meaning exactly where idea:5 predicted it would
- * be. `bullets` and `steps` are the same data and make different claims: "these are points"
- * against "these are stages of one transformation", and a compiler's pipeline is not an
- * enumerated list. `code` is not points at all — its whitespace is the content.
- *
- * So the role is now the first input to composition, and shape decides only within a role. The
- * union is deliberately closed and deliberately small: three bodies plus the absence of one.
- * Every entry exists because the self-demo could not say what it meant without it, and none was
- * added because it would be nice to have.
- *
- * Still nothing geometric. A body says what the content means; it never says how big, how many
- * columns, or where.
- */
-export type SlideBody =
-  | { readonly kind: "none" }
-  | { readonly kind: "bullets"; readonly items: readonly AuthoredItem[] }
-  | { readonly kind: "steps"; readonly items: readonly AuthoredItem[] }
-  | {
-      readonly kind: "code";
-      readonly language: CodeLanguage;
-      /** Verbatim, including indentation. See `./specimen.ts`. */
-      readonly source: string;
-      readonly marks: readonly AuthoredMark[];
-    };
-
-/**
- * The elements of a body that narration can reach, in the order the renderer lays them out.
- *
- * One function rather than three branches scattered through the compiler: an anchor resolves to
- * an index into *this* list whatever the body is, so adding a fourth role would not touch
- * timing, validation, or the anchor representation.
- */
-export function bodyElements(body: SlideBody): readonly { readonly id?: string }[] {
-  switch (body.kind) {
-    case "none":
-      return [];
-    case "code":
-      return body.marks;
-    default:
-      return body.items;
-  }
-}
 
 export interface AuthoredSlide {
   /** 1-based, and used in every message the author sees. */
@@ -241,64 +202,306 @@ const markSchema = z.unknown().superRefine((value, context) => {
 });
 
 /**
- * A code specimen: what language it is, what it says, and which parts narration can reach.
+ * Where the source of a specimen comes from.
  *
- * `language` is checked here rather than by `z.enum` so the message can say why the list is one
- * entry long. cuecraft bundles one grammar; a deck that asks for another would otherwise render
- * unhighlighted and look like a styling bug rather than an unsupported language.
+ * Two forms, and exactly one of them per specimen:
+ *
+ *     { language: yaml, source: "..." }              written here
+ *     { file: examples/x.yaml, slide: "Title" }      quoted from the repository
+ *
+ * The quoted form exists because a copy of something that already exists in the repository is
+ * a lie waiting to happen (idea:10). `language` is absent from it deliberately: the extension
+ * says what the file is, and a specimen that could claim otherwise would be a second place for
+ * the truth to live.
  */
-const codeSchema = z
-  .strictObject({
-    language: z.unknown(),
-    source: nonEmptyString,
-    marks: z.array(markSchema).optional(),
-  })
-  .superRefine((code, context) => {
-    if (typeof code.language !== "string" || !isCodeLanguage(code.language)) {
-      context.addIssue({
-        code: "custom",
-        path: ["language"],
-        message:
-          `must be one of ${CODE_LANGUAGES.join(", ")}; cuecraft bundles one grammar and ` +
-          "would otherwise set your code unhighlighted",
-      });
-    }
+const INLINE_SPECIMEN_KEYS = ["language", "source"] as const;
+const QUOTED_SPECIMEN_KEYS = ["file", "slide"] as const;
 
-    const lines = specimenLines(code.source);
-    if (lines.length === 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["source"],
-        message: "must not be blank",
-      });
+export const SPECIMEN_HINT =
+  '{ language: yaml, source: "..." } or ' +
+  '{ file: <a path in this repository>, slide: "<the title of a slide in it>" }';
+
+export interface ResolvedSpecimen {
+  readonly language: CodeLanguage;
+  readonly source: string;
+}
+
+interface SpecimenIssue {
+  readonly path: readonly (string | number)[];
+  readonly message: string;
+}
+
+/**
+ * Validate a specimen and fetch whatever source it names.
+ *
+ * Resolution happens during parsing rather than during rendering, so a file that has moved, a
+ * slide that has been retitled, and a mark that no longer matches anything are all the same
+ * loud failure the format already produces for a malformed key — reported against the slide,
+ * before a single second of audio is synthesized.
+ */
+function resolveSpecimen(
+  value: unknown,
+  read: RepositoryReader,
+  extraKeys: readonly string[] = [],
+): { specimen?: ResolvedSpecimen; issues: readonly SpecimenIssue[] } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { issues: [{ path: [], message: `must be ${SPECIMEN_HINT}` }] };
+  }
+
+  const record = value as Record<string, unknown>;
+  const allowed = [...INLINE_SPECIMEN_KEYS, ...QUOTED_SPECIMEN_KEYS, ...extraKeys];
+  const extra = Object.keys(record).filter((key) => !allowed.includes(key));
+  if (extra.length > 0) {
+    return {
+      issues: [
+        {
+          path: [],
+          message: `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${allowed.join(", ")})`,
+        },
+      ],
+    };
+  }
+
+  const written = record["source"] !== undefined;
+  const quoted = record["file"] !== undefined;
+
+  if (written && quoted) {
+    return {
+      issues: [
+        {
+          path: [],
+          message:
+            'has both "source" and "file"; a specimen is either written here or quoted from ' +
+            "the repository, and a copy that can disagree with the file is the failure quoting exists to prevent",
+        },
+      ],
+    };
+  }
+  if (!written && !quoted) {
+    return { issues: [{ path: [], message: `must be ${SPECIMEN_HINT}` }] };
+  }
+
+  if (written) {
+    if (record["slide"] !== undefined) {
+      return {
+        issues: [
+          {
+            path: ["slide"],
+            message:
+              "names a region of a file; a specimen written here has no file to take it from",
+          },
+        ],
+      };
+    }
+    const language = record["language"];
+    if (typeof language !== "string" || !isCodeLanguage(language)) {
+      return {
+        issues: [
+          {
+            path: ["language"],
+            message:
+              `must be one of ${CODE_LANGUAGES.join(", ")}; cuecraft bundles one grammar and ` +
+              "would otherwise set your code unhighlighted",
+          },
+        ],
+      };
+    }
+    const source = record["source"];
+    if (typeof source !== "string" || specimenLines(source).length === 0) {
+      return { issues: [{ path: ["source"], message: "must not be blank" }] };
+    }
+    return { specimen: { language, source }, issues: [] };
+  }
+
+  if (record["language"] !== undefined) {
+    return {
+      issues: [
+        {
+          path: ["language"],
+          message:
+            "is derived from the quoted file's extension and must not be set; cuecraft reads " +
+            "the file, so the file decides what it is",
+        },
+      ],
+    };
+  }
+  const file = record["file"];
+  if (typeof file !== "string" || file.trim().length === 0) {
+    return {
+      issues: [{ path: ["file"], message: "must be a path inside this repository" }],
+    };
+  }
+  const slide = record["slide"];
+  if (typeof slide !== "string" || slide.trim().length === 0) {
+    return {
+      issues: [
+        {
+          path: ["slide"],
+          message:
+            "must be the exact title of a slide in that file; that is how a region is named",
+        },
+      ],
+    };
+  }
+
+  try {
+    const language = languageOf(file);
+    const source = quoteSlide(read(file), { file, slide });
+    return { specimen: { language, source }, issues: [] };
+  } catch (error) {
+    if (error instanceof SourceError) {
+      return { issues: [{ path: [], message: error.message }] };
+    }
+    throw error;
+  }
+}
+
+/** A code specimen: its source, and which parts of it narration can reach. */
+function resolveCode(
+  value: unknown,
+  read: RepositoryReader,
+): { body?: Extract<SlideBody, { kind: "code" }>; issues: readonly SpecimenIssue[] } {
+  const { specimen, issues } = resolveSpecimen(value, read, ["marks"]);
+  if (specimen === undefined) return { issues };
+
+  const rawMarks = (value as { marks?: unknown }).marks;
+  if (rawMarks !== undefined && !Array.isArray(rawMarks)) {
+    return { issues: [{ path: ["marks"], message: `must be a list of ${MARK_HINT}` }] };
+  }
+
+  const lines = specimenLines(specimen.source);
+  const problems: SpecimenIssue[] = [];
+  const declared = new Map<string, number>();
+  const marks: AuthoredMark[] = [];
+
+  (rawMarks ?? []).forEach((raw: unknown, index: number) => {
+    const malformed = checkMark(raw);
+    if (malformed !== undefined) {
+      problems.push({ path: ["marks", index], message: malformed });
       return;
     }
+    const mark = raw as AuthoredMark;
 
-    const declared = new Map<string, number>();
-    (code.marks ?? []).forEach((raw, index) => {
-      if (checkMark(raw) !== undefined) return;
-      const mark = raw as AuthoredMark;
+    const first = declared.get(mark.id);
+    if (first === undefined) {
+      declared.set(mark.id, index);
+    } else {
+      problems.push({
+        path: ["marks", index],
+        message: `duplicate id ${JSON.stringify(mark.id)}; mark ${first + 1} already uses it`,
+      });
+    }
 
-      const first = declared.get(mark.id);
-      if (first === undefined) {
-        declared.set(mark.id, index);
-      } else {
-        context.addIssue({
-          code: "custom",
-          path: ["marks", index],
-          message: `duplicate id ${JSON.stringify(mark.id)}; mark ${first + 1} already uses it`,
-        });
-      }
-
-      const problem = markProblem(lines, mark);
-      if (problem !== undefined) {
-        context.addIssue({ code: "custom", path: ["marks", index], message: problem });
-      }
-    });
+    // For a quoted specimen this is the drift detector: a mark names a line by what it says,
+    // so a file that stopped saying it fails here instead of emphasising the wrong region.
+    const unresolvable = markProblem(lines, mark);
+    if (unresolvable !== undefined) {
+      problems.push({ path: ["marks", index], message: unresolvable });
+      return;
+    }
+    marks.push(mark);
   });
 
-function isCodeLanguage(value: string): value is CodeLanguage {
-  return (CODE_LANGUAGES as readonly string[]).includes(value);
+  if (problems.length > 0) return { issues: problems };
+  return {
+    body: {
+      kind: "code",
+      language: specimen.language,
+      source: specimen.source,
+      marks,
+    },
+    issues: [],
+  };
+}
+
+const CHANGE_KEYS = ["before", "after"] as const;
+
+/**
+ * A change: two truthful source states, and nothing about what differs between them.
+ *
+ * The author says what is being compared; the compiler works out what changed (`./change.ts`).
+ * Two identical states are rejected rather than rendered, because a change scene that shows no
+ * change is a slide making a claim its own content contradicts.
+ */
+function resolveChangeBody(
+  value: unknown,
+  read: RepositoryReader,
+): { body?: Extract<SlideBody, { kind: "change" }>; issues: readonly SpecimenIssue[] } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {
+      issues: [
+        { path: [], message: `must be { before: <specimen>, after: <specimen> }` },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const extra = Object.keys(record).filter(
+    (key) => !(CHANGE_KEYS as readonly string[]).includes(key),
+  );
+  if (extra.length > 0) {
+    return {
+      issues: [
+        {
+          path: [],
+          message:
+            `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${CHANGE_KEYS.join(", ")}); ` +
+            "which lines differ is derived, not authored",
+        },
+      ],
+    };
+  }
+
+  const issues: SpecimenIssue[] = [];
+  const sides = CHANGE_KEYS.map((side) => {
+    if (record[side] === undefined) {
+      issues.push({ path: [side], message: "is required" });
+      return undefined;
+    }
+    const resolved = resolveSpecimen(record[side], read);
+    for (const issue of resolved.issues) {
+      issues.push({ path: [side, ...issue.path], message: issue.message });
+    }
+    return resolved.specimen;
+  });
+
+  if (issues.length > 0) return { issues };
+  const [before, after] = sides;
+  if (before === undefined || after === undefined) return { issues };
+
+  if (before.language !== after.language) {
+    return {
+      issues: [
+        {
+          path: [],
+          message: `compares ${before.language} with ${after.language}; both states must be the same language`,
+        },
+      ],
+    };
+  }
+
+  const derived = deriveChange(before.source, after.source);
+  if (derived.changedRows.length === 0) {
+    return {
+      issues: [
+        {
+          path: [],
+          message:
+            "before and after are the same source; there is no change to show, and a slide " +
+            "that says something changed had better be able to point at it",
+        },
+      ],
+    };
+  }
+
+  return {
+    body: {
+      kind: "change",
+      language: before.language,
+      before: before.source,
+      after: after.source,
+    },
+    issues: [],
+  };
 }
 
 /**
@@ -307,30 +510,57 @@ function isCodeLanguage(value: string): value is CodeLanguage {
  * "At most one" rather than "exactly one": a slide that is a single sentence has no body and
  * becomes a statement, which is the composition three of the canonical deck's slides want.
  *
- * The three body keys are mutually exclusive because they are three answers to the same
+ * The four body keys are mutually exclusive because they are four answers to the same
  * question. A slide holding both `bullets` and `steps` has not said what its content means, and
  * guessing which one wins is the kind of silence a compiler exists to prevent.
+ *
+ * `code` and `change` are `z.unknown()` here and checked by hand below, because validating them
+ * means *reading the repository* — a specimen may quote a file rather than carry a copy of one
+ * — and the reader is supplied per parse rather than baked into a module-level schema.
  */
-const slideSchema = z
-  .strictObject({
-    title: nonEmptyString,
-    bullets: z.array(itemSchema).optional(),
-    steps: z.array(itemSchema).optional(),
-    code: codeSchema.optional(),
-  })
-  .superRefine((slide, context) => {
-    const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
-    if (present.length > 1) {
-      context.addIssue({
-        code: "custom",
-        message:
-          `has ${present.map((key) => JSON.stringify(key)).join(" and ")}; a slide's content ` +
-          "is one of those, because each says something different about what it means",
-      });
-    }
-  });
+function buildSlideSchema(read: RepositoryReader) {
+  return z
+    .strictObject({
+      title: nonEmptyString,
+      bullets: z.array(itemSchema).optional(),
+      steps: z.array(itemSchema).optional(),
+      code: z.unknown().optional(),
+      change: z.unknown().optional(),
+    })
+    .superRefine((slide, context) => {
+      const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
+      if (present.length > 1) {
+        context.addIssue({
+          code: "custom",
+          message:
+            `has ${present.map((key) => JSON.stringify(key)).join(" and ")}; a slide's content ` +
+            "is one of those, because each says something different about what it means",
+        });
+        return;
+      }
 
-const BODY_KEYS = ["bullets", "steps", "code"] as const;
+      if (slide.code !== undefined) {
+        for (const issue of resolveCode(slide.code, read).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["code", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
+      if (slide.change !== undefined) {
+        for (const issue of resolveChangeBody(slide.change, read).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["change", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
+    });
+}
+
+const BODY_KEYS = ["bullets", "steps", "code", "change"] as const;
 
 /** A validated item, in either of its two authored forms. */
 function itemOf(value: unknown): AuthoredItem {
@@ -347,19 +577,31 @@ function itemOf(value: unknown): AuthoredItem {
  * An empty `bullets: []` is `none` rather than an empty list, so that "this slide has no body"
  * has exactly one representation downstream and no archetype has to handle a body with nothing
  * in it.
+ *
+ * `code` and `change` go back through the same resolver validation used, which reads through
+ * the memoized reader — so a quoted file is read once per parse and every region of it comes
+ * from one state of that file rather than from two reads that could disagree.
  */
-function bodyOf(slide: {
-  bullets?: unknown[] | undefined;
-  steps?: unknown[] | undefined;
-  code?: { language: unknown; source: string; marks?: unknown[] | undefined } | undefined;
-}): SlideBody {
+function bodyOf(
+  slide: {
+    bullets?: unknown[] | undefined;
+    steps?: unknown[] | undefined;
+    code?: unknown;
+    change?: unknown;
+  },
+  read: RepositoryReader,
+): SlideBody {
   if (slide.code !== undefined) {
-    return {
-      kind: "code",
-      language: slide.code.language as CodeLanguage,
-      source: slide.code.source,
-      marks: (slide.code.marks ?? []).map((raw) => raw as AuthoredMark),
-    };
+    const { body } = resolveCode(slide.code, read);
+    if (body === undefined)
+      throw new Error("code specimen passed validation but did not resolve");
+    return body;
+  }
+  if (slide.change !== undefined) {
+    const { body } = resolveChangeBody(slide.change, read);
+    if (body === undefined)
+      throw new Error("change passed validation but did not resolve");
+    return body;
   }
   if (slide.steps !== undefined && slide.steps.length > 0) {
     return { kind: "steps", items: slide.steps.map(itemOf) };
@@ -520,68 +762,75 @@ function isSpeechCue(cue: unknown): cue is { speech: string; activates?: string 
  * narration was supposed to build it, without building it, is exactly the "silent
  * synchronization loss" a compiler exists to prevent.
  */
-const entrySchema = z
-  .strictObject({
-    slide: slideSchema,
-    say: saySchema,
-    pre_say: durationLiteral.optional(),
-    post_say: durationLiteral.optional(),
-  })
-  .superRefine((entry, context) => {
-    // Every identity this slide declares, whichever body declared it. Duplicate marks are
-    // reported by the code block's own check, so only list duplicates are raised here.
-    const declared = new Map<string, number>();
-    for (const key of ["bullets", "steps"] as const) {
-      (entry.slide[key] ?? []).forEach((raw, index) => {
-        if (checkItem(raw) !== undefined) return;
-        const { id } = itemOf(raw);
-        if (id === undefined) return;
-        const first = declared.get(id);
-        if (first === undefined) {
-          declared.set(id, index);
-        } else {
+function buildEntrySchema(read: RepositoryReader) {
+  return z
+    .strictObject({
+      slide: buildSlideSchema(read),
+      say: saySchema,
+      pre_say: durationLiteral.optional(),
+      post_say: durationLiteral.optional(),
+    })
+    .superRefine((entry, context) => {
+      // Every identity this slide declares, whichever body declared it. Duplicate marks are
+      // reported by the code block's own check, so only list duplicates are raised here.
+      const declared = new Map<string, number>();
+      for (const key of ["bullets", "steps"] as const) {
+        (entry.slide[key] ?? []).forEach((raw, index) => {
+          if (checkItem(raw) !== undefined) return;
+          const { id } = itemOf(raw);
+          if (id === undefined) return;
+          const first = declared.get(id);
+          if (first === undefined) {
+            declared.set(id, index);
+          } else {
+            context.addIssue({
+              code: "custom",
+              path: ["slide", key, index],
+              message: `duplicate id ${JSON.stringify(id)}; item ${first + 1} already uses it`,
+            });
+          }
+        });
+      }
+      const marks = (entry.slide.code as { marks?: unknown } | undefined)?.marks;
+      (Array.isArray(marks) ? marks : []).forEach((raw: unknown, index: number) => {
+        if (checkMark(raw) !== undefined) return;
+        const { id } = raw as AuthoredMark;
+        if (!declared.has(id)) declared.set(id, index);
+      });
+      // The one identity nobody typed. A change knows which region of itself is the change, so
+      // it declares that region and narration reaches it by name like any other element — the
+      // author supplies the semantic structure and the compiler supplies the endpoint.
+      if (entry.slide.change !== undefined) declared.set(CHANGE_ELEMENT_ID, 0);
+
+      const cues = Array.isArray(entry.say) ? entry.say : [];
+      const reached = new Set<string>();
+      cues.forEach((cue, index) => {
+        if (!isSpeechCue(cue) || cue.activates === undefined) return;
+        const id = cue.activates;
+        if (!declared.has(id)) {
+          const known = [...declared.keys()];
           context.addIssue({
             code: "custom",
-            path: ["slide", key, index],
-            message: `duplicate id ${JSON.stringify(id)}; item ${first + 1} already uses it`,
+            path: ["say", index],
+            message:
+              `activates ${JSON.stringify(id)}, which nothing on this slide declares` +
+              (known.length === 0
+                ? "; this slide declares no ids"
+                : ` (declared: ${known.join(", ")})`),
+          });
+          return;
+        }
+        if (reached.has(id)) {
+          context.addIssue({
+            code: "custom",
+            path: ["say", index],
+            message: `activates ${JSON.stringify(id)}, which an earlier cue already reaches`,
           });
         }
+        reached.add(id);
       });
-    }
-    (entry.slide.code?.marks ?? []).forEach((raw, index) => {
-      if (checkMark(raw) !== undefined) return;
-      const { id } = raw as AuthoredMark;
-      if (!declared.has(id)) declared.set(id, index);
     });
-
-    const cues = Array.isArray(entry.say) ? entry.say : [];
-    const reached = new Set<string>();
-    cues.forEach((cue, index) => {
-      if (!isSpeechCue(cue) || cue.activates === undefined) return;
-      const id = cue.activates;
-      if (!declared.has(id)) {
-        const known = [...declared.keys()];
-        context.addIssue({
-          code: "custom",
-          path: ["say", index],
-          message:
-            `activates ${JSON.stringify(id)}, which nothing on this slide declares` +
-            (known.length === 0
-              ? "; this slide declares no ids"
-              : ` (declared: ${known.join(", ")})`),
-        });
-        return;
-      }
-      if (reached.has(id)) {
-        context.addIssue({
-          code: "custom",
-          path: ["say", index],
-          message: `activates ${JSON.stringify(id)}, which an earlier cue already reaches`,
-        });
-      }
-      reached.add(id);
-    });
-  });
+}
 
 const defaultsSchema = z.strictObject({
   pre_say: durationLiteral.optional(),
@@ -594,32 +843,62 @@ const defaultsSchema = z.strictObject({
   instructions: nonEmptyString.optional(),
 });
 
-const documentSchema = z.strictObject({
-  title: nonEmptyString,
-  defaults: defaultsSchema.optional(),
-  slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
-});
-
 /**
- * What each object accepts, keyed by its path with list indices collapsed to `[]`, so an
- * unknown-key error can say what *was* allowed. Read off the schemas rather than restated,
- * because a hand-maintained copy of a schema is a documentation bug waiting to happen.
+ * The whole schema, built around one repository reader.
+ *
+ * Built per parse rather than at module scope because validating a specimen may mean *reading
+ * a file*, and the thing that does the reading is an argument — which is what keeps every test
+ * in this repository free of the disk.
  */
-const ALLOWED_KEYS: Record<string, readonly string[]> = {
-  "": Object.keys(documentSchema.shape),
-  defaults: Object.keys(defaultsSchema.shape),
-  "slides[]": Object.keys(entrySchema.shape),
-  "slides[].slide": Object.keys(slideSchema.shape),
-  "slides[].slide.code": Object.keys(codeSchema.shape),
-};
+function buildDocumentSchema(read: RepositoryReader) {
+  const entrySchema = buildEntrySchema(read);
+  const documentSchema = z.strictObject({
+    title: nonEmptyString,
+    defaults: defaultsSchema.optional(),
+    slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
+  });
+
+  /**
+   * What each object accepts, keyed by its path with list indices collapsed to `[]`, so an
+   * unknown-key error can say what *was* allowed. Read off the schemas rather than restated,
+   * because a hand-maintained copy of a schema is a documentation bug waiting to happen.
+   */
+  const allowedKeys: Record<string, readonly string[]> = {
+    "": Object.keys(documentSchema.shape),
+    defaults: Object.keys(defaultsSchema.shape),
+    "slides[]": Object.keys(entrySchema.shape),
+    "slides[].slide": Object.keys(entrySchema.shape.slide.shape),
+  };
+
+  return { documentSchema, allowedKeys };
+}
+
+export interface ParseOptions {
+  /**
+   * How a quoted specimen reaches a file. Defaults to the repository, with traversal refused
+   * (`./source.ts`); tests pass a map so that parsing stays deterministic and offline.
+   */
+  readonly read?: RepositoryReader;
+}
 
 /**
  * Parse and validate presentation YAML.
  *
  * `source` names the file in error messages and is not read from disk — callers that
  * already have the text, including tests, do not need one to exist.
+ *
+ * A deck that quotes files is not pure: parsing now reads the repository. That is the
+ * "truthful extraction" step of the compilation model, and it happens here rather than at
+ * render time so that a file that has moved fails before anything is synthesized.
  */
-export function parsePresentation(text: string, source: string): Presentation {
+export function parsePresentation(
+  text: string,
+  source: string,
+  options: ParseOptions = {},
+): Presentation {
+  const read = onceReader(options.read ?? repositoryReader());
+  const { documentSchema, allowedKeys } = buildDocumentSchema(read);
+
   let document: unknown;
   try {
     document = parseYaml(text);
@@ -638,7 +917,7 @@ export function parsePresentation(text: string, source: string): Presentation {
   if (!result.success) {
     throw new PresentationError(
       `${source} is not a valid presentation:`,
-      result.error.issues.map(describeIssue),
+      result.error.issues.map((issue) => describeIssue(issue, allowedKeys)),
     );
   }
 
@@ -666,7 +945,7 @@ export function parsePresentation(text: string, source: string): Presentation {
     slides: raw.slides.map((entry, index) => ({
       ordinal: index + 1,
       title: entry.slide.title.trim(),
-      body: bodyOf(entry.slide),
+      body: bodyOf(entry.slide, read),
       say: toCues(entry.say),
       preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
       postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
@@ -740,10 +1019,13 @@ function collapseWhitespace(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
-function describeIssue(issue: z.core.$ZodIssue): string {
+function describeIssue(
+  issue: z.core.$ZodIssue,
+  allowedKeys: Record<string, readonly string[]>,
+): string {
   const where = describePath(issue.path);
   if (issue.code === "unrecognized_keys") {
-    const allowed = ALLOWED_KEYS[normalizePath(issue.path)];
+    const allowed = allowedKeys[normalizePath(issue.path)];
     const named = issue.keys.map((key) => JSON.stringify(key)).join(", ");
     const suffix = allowed === undefined ? "" : ` (allowed: ${allowed.join(", ")})`;
     return `${where}: unknown field ${named}${suffix}`;
