@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { chooseLayout } from "../render/layout.ts";
 import { repositoryRoot } from "../tts/model.ts";
 import {
   DEFAULT_MIN_SLIDE_MS,
@@ -37,7 +38,7 @@ test("the canonical example parses", () => {
   const presentation = parsePresentation(readFileSync(path, "utf8"), path);
 
   assert.equal(presentation.title, "WitnessGlass: What Did the Agent Actually Do?");
-  assert.equal(presentation.slides.length, 2);
+  assert.equal(presentation.slides.length, 4);
 
   const [first, second] = presentation.slides;
   assert.ok(first !== undefined && second !== undefined);
@@ -48,9 +49,20 @@ test("the canonical example parses", () => {
   assert.equal(first.preSayMs, 750);
   assert.equal(first.postSayMs, 1200);
 
-  // Block scalars keep the author's line breaks; narration should not.
-  assert.doesNotMatch(first.say, /\n/);
-  assert.match(first.say, /^Coding agents perform/);
+  // The deck is the design laboratory: its slides must keep selecting different
+  // compositions, or it stops exercising what it exists to exercise.
+  assert.deepEqual(presentation.slides.map(chooseLayout), [
+    "matrix",
+    "statement",
+    "index",
+    "lead",
+  ]);
+
+  // The canonical deck uses the cue grammar: speech, a pause, then more speech.
+  assert.deepEqual(
+    first.say.map((cue) => cue.kind),
+    ["speech", "pause", "speech"],
+  );
 });
 
 test("defaults apply where the source is silent", () => {
@@ -147,7 +159,7 @@ slides:
 
 test("missing narration names the slide", () => {
   assert.deepEqual(problems("title: A deck\nslides:\n  - slide: { title: One }\n"), [
-    "slide 1, say: is required (expected string)",
+    "slide 1, say: is required",
   ]);
 });
 
@@ -248,5 +260,118 @@ slides:
     post_say: soon
 `).length,
     3,
+  );
+});
+
+test("a scalar say is shorthand for one speech cue", () => {
+  const presentation = parsePresentation(
+    "title: A deck\nslides:\n  - slide: { title: One }\n    say: |\n      Two lines\n      of prose.\n",
+    "test.yaml",
+  );
+  // Line breaks are a reading convenience, not an instruction: a newline is not a pause.
+  assert.deepEqual(presentation.slides[0]?.say, [
+    { kind: "speech", text: "Two lines of prose." },
+  ]);
+});
+
+test("a cue list becomes speech and pauses in order", () => {
+  const presentation = parsePresentation(
+    `
+title: A deck
+slides:
+  - slide: { title: One }
+    say:
+      - "First phrase."
+      - pause: 400ms
+      - "Second phrase."
+      - pause: 1.5s
+      - "Third."
+`,
+    "test.yaml",
+  );
+  assert.deepEqual(presentation.slides[0]?.say, [
+    { kind: "speech", text: "First phrase." },
+    { kind: "pause", milliseconds: 400 },
+    { kind: "speech", text: "Second phrase." },
+    { kind: "pause", milliseconds: 1500 },
+    { kind: "speech", text: "Third." },
+  ]);
+});
+
+test("a bad cue is reported by its position, counting from one", () => {
+  assert.deepEqual(
+    problems(`
+title: A deck
+slides:
+  - slide: { title: One }
+    say:
+      - "Fine."
+      - pause: soon
+      - "Also fine."
+`),
+    ['slide 1, narration cue 2: pause must be a duration like "750ms", "1.5s" or "2s"'],
+  );
+
+  assert.match(
+    String(
+      problems(
+        'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Fine."\n      - silence: 400ms\n',
+      )[0],
+    ),
+    /^slide 1, narration cue 2: unknown cue "silence"/,
+  );
+
+  assert.match(
+    String(
+      problems(
+        "title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - 42\n",
+      )[0],
+    ),
+    /^slide 1, narration cue 1: must be narration text/,
+  );
+});
+
+test("a pause cue takes no other keys", () => {
+  assert.match(
+    String(
+      problems(
+        'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Hi."\n      - {pause: 400ms, voice: af_heart}\n',
+      )[0],
+    ),
+    /^slide 1, narration cue 2: unknown cue/,
+  );
+});
+
+test("zero-length pauses are rejected as almost certainly a mistake", () => {
+  assert.deepEqual(
+    problems(
+      'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Hi."\n      - pause: 0ms\n',
+    ),
+    ["slide 1, narration cue 2: pause must be longer than zero"],
+  );
+});
+
+test("narration that is only silence is rejected", () => {
+  assert.deepEqual(
+    problems(
+      "title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - pause: 400ms\n",
+    ),
+    ["slide 1, say: must contain something to say, not only pauses"],
+  );
+});
+
+test("an empty cue list is rejected", () => {
+  assert.deepEqual(
+    problems("title: A deck\nslides:\n  - slide: {title: One}\n    say: []\n"),
+    ["slide 1, say: must list at least one narration cue"],
+  );
+});
+
+test("say must be text or cues, not something else entirely", () => {
+  assert.match(
+    String(
+      problems("title: A deck\nslides:\n  - slide: {title: One}\n    say: {a: 1}\n")[0],
+    ),
+    /^slide 1, say: must be narration text/,
   );
 });

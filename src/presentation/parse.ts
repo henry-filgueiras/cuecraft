@@ -36,13 +36,26 @@ export const DEFAULT_POST_SAY_MS = 900;
 export const DEFAULT_MIN_SLIDE_MS = 3000;
 export const DEFAULT_SPEED = 1;
 
+/**
+ * One step in a slide's narration.
+ *
+ * `say` used to be a single opaque string, which meant every phrase boundary and every silence
+ * was Kokoro's guess. A cue list makes both authorable without inventing markup: there is no
+ * inline syntax, nothing embedded in the prose, and exactly two things a cue can be. Emphasis,
+ * intonation and rate are deliberately absent because Kokoro cannot honour them (dragon:3), and
+ * a control that does nothing is worse than no control.
+ */
+export type NarrationCue =
+  | { readonly kind: "speech"; readonly text: string }
+  | { readonly kind: "pause"; readonly milliseconds: number };
+
 export interface AuthoredSlide {
   /** 1-based, and used in every message the author sees. */
   readonly ordinal: number;
   readonly title: string;
   readonly bullets: readonly string[];
-  /** Narration prose, whitespace-collapsed. Plain text; cuecraft has no markup. */
-  readonly say: string;
+  /** Ordered narration cues. A scalar `say` is shorthand for one speech cue. */
+  readonly say: readonly NarrationCue[];
   readonly preSayMs: number;
   readonly postSayMs: number;
   readonly minSlideMs: number;
@@ -74,9 +87,89 @@ const slideSchema = z.strictObject({
   bullets: z.array(nonEmptyString).optional(),
 });
 
+export const CUE_HINT = 'narration text, or a pause such as { pause: "400ms" }';
+
+/**
+ * Why this is one `unknown` with a hand-written check rather than a `z.union`.
+ *
+ * A union reports failures as one `invalid_union` issue whose branch errors are nested inside
+ * it, so the flat issue list the error formatter walks would say "slide 2, say: invalid input"
+ * and lose the cue index entirely. Adding issues by hand keeps the path — `slides[1].say.2`
+ * becomes "slide 2, narration cue 3" — which is the only part of the message an author can act
+ * on.
+ */
+function checkCue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value.trim().length === 0 ? "must not be empty" : undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return `must be ${CUE_HINT}`;
+  }
+
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== "pause") {
+    return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
+  }
+
+  const raw = (value as { pause: unknown }).pause;
+  if (typeof raw !== "string" || !isDurationLiteral(raw)) {
+    return `pause must be ${DURATION_HINT}`;
+  }
+  if (parseDurationMs(raw) <= 0) {
+    return "pause must be longer than zero";
+  }
+  return undefined;
+}
+
+const saySchema = z.unknown().superRefine((value, context) => {
+  // `z.unknown()` accepts a missing key, so absence has to be caught here rather than by
+  // the schema. A slide with no narration has no duration, so it is never valid.
+  if (value === undefined || value === null) {
+    context.addIssue({ code: "custom", message: "is required" });
+    return;
+  }
+
+  if (typeof value === "string") {
+    if (value.trim().length === 0) {
+      context.addIssue({ code: "custom", message: "must not be empty" });
+    }
+    return;
+  }
+
+  if (!Array.isArray(value)) {
+    context.addIssue({
+      code: "custom",
+      message: `must be ${CUE_HINT}, or a list of those`,
+    });
+    return;
+  }
+
+  if (value.length === 0) {
+    context.addIssue({ code: "custom", message: "must list at least one narration cue" });
+    return;
+  }
+
+  let spoken = 0;
+  value.forEach((cue, index) => {
+    const problem = checkCue(cue);
+    if (problem !== undefined) {
+      context.addIssue({ code: "custom", message: problem, path: [index] });
+    } else if (typeof cue === "string") {
+      spoken += 1;
+    }
+  });
+
+  if (spoken === 0) {
+    context.addIssue({
+      code: "custom",
+      message: "must contain something to say, not only pauses",
+    });
+  }
+});
+
 const entrySchema = z.strictObject({
   slide: slideSchema,
-  say: nonEmptyString,
+  say: saySchema,
   pre_say: durationLiteral.optional(),
   post_say: durationLiteral.optional(),
 });
@@ -164,7 +257,7 @@ export function parsePresentation(text: string, source: string): Presentation {
       ordinal: index + 1,
       title: entry.slide.title.trim(),
       bullets: (entry.slide.bullets ?? []).map((bullet) => bullet.trim()),
-      say: collapseWhitespace(entry.say),
+      say: toCues(entry.say),
       preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
       postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
       minSlideMs,
@@ -177,8 +270,30 @@ function optionalDuration(value: string | undefined): number | undefined {
 }
 
 /**
+ * Turn validated `say` into cues.
+ *
+ * A scalar is shorthand for one speech cue, which is what keeps every deck written before the
+ * grammar existed working unchanged. Nothing here can fail: `saySchema` already rejected
+ * everything this would have to complain about.
+ */
+function toCues(value: unknown): readonly NarrationCue[] {
+  if (typeof value === "string") {
+    return [{ kind: "speech", text: collapseWhitespace(value) }];
+  }
+  return (value as unknown[]).map((cue): NarrationCue =>
+    typeof cue === "string"
+      ? { kind: "speech", text: collapseWhitespace(cue) }
+      : {
+          kind: "pause",
+          milliseconds: parseDurationMs((cue as { pause: string }).pause),
+        },
+  );
+}
+
+/**
  * Block scalars carry the author's line breaks, which are a reading convenience rather
- * than an instruction — Kokoro has no pause primitive to give them meaning (dragon:3).
+ * than an instruction — a newline is not a pause. Authors who want one now write one
+ * (dragon:3).
  */
 function collapseWhitespace(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -206,7 +321,12 @@ function describePath(path: readonly PropertyKey[]): string {
   }
   const slide = `slide ${path[1] + 1}`;
   const rest = path.slice(2);
-  return rest.length === 0 ? slide : `${slide}, ${rest.map(String).join(".")}`;
+  if (rest.length === 0) return slide;
+  // `say.2` means the third cue, and saying so beats making the author count from zero.
+  if (rest[0] === "say" && typeof rest[1] === "number") {
+    return `${slide}, narration cue ${rest[1] + 1}`;
+  }
+  return `${slide}, ${rest.map(String).join(".")}`;
 }
 
 function normalizePath(path: readonly PropertyKey[]): string {

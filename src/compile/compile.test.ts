@@ -71,9 +71,9 @@ test("scene duration is padding plus narration, floored by the minimum", () => {
   );
 });
 
-test("narration files are named by slide, zero-padded so they sort", () => {
-  assert.equal(narrationFileName({ ordinal: 1 }), "slide-01.wav");
-  assert.equal(narrationFileName({ ordinal: 12 }), "slide-12.wav");
+test("narration files are named by slide and clip, zero-padded so they sort", () => {
+  assert.equal(narrationFileName({ ordinal: 1 }, 1), "slide-01-01.wav");
+  assert.equal(narrationFileName({ ordinal: 12 }, 3), "slide-12-03.wav");
 });
 
 test("every slide is synthesized exactly once, in order", async () => {
@@ -118,14 +118,17 @@ test("compiled slides carry their measured audio and derived duration", async ()
 
   const [slide] = compiled.slides;
   assert.ok(slide !== undefined);
+  const [clip] = slide.narration.clips;
+  assert.ok(clip !== undefined);
   assert.equal(slide.narration.durationSeconds, 4);
-  assert.equal(slide.narration.src, "narration/slide-01.wav");
+  assert.equal(clip.src, "narration/slide-01-01.wav");
+  assert.equal(clip.offsetSeconds, 0);
   assert.equal(slide.sceneMs, 500 + 4000 + 1000);
   assert.deepEqual(slide.bullets, ["a", "b"]);
 
   // The audio must exist where the composition will look for it.
-  assert.equal(join(compiled.publicDir, slide.narration.src), slide.narration.path);
-  assert.equal(await readFile(slide.narration.path, "utf8"), "not really a wav");
+  assert.equal(join(compiled.publicDir, clip.src), clip.path);
+  assert.equal(await readFile(clip.path, "utf8"), "not really a wav");
 });
 
 test("deck-wide voice and speed reach the narrator", async () => {
@@ -166,8 +169,8 @@ test("stale narration from a previous render is cleared, not reused", async () =
     synthesize: fakeNarrator(),
   });
   assert.deepEqual((await readdir(narrationDir)).sort(), [
-    "slide-01.wav",
-    "slide-02.wav",
+    "slide-01-01.wav",
+    "slide-02-01.wav",
   ]);
 
   // Re-render a deck that lost a slide. Without content addressing (decision:3), the only
@@ -177,7 +180,7 @@ test("stale narration from a previous render is cleared, not reused", async () =
     "test.yaml",
   );
   await compilePresentation(shorter, { workspace: path, synthesize: fakeNarrator() });
-  assert.deepEqual(await readdir(narrationDir), ["slide-01.wav"]);
+  assert.deepEqual(await readdir(narrationDir), ["slide-01-01.wav"]);
 });
 
 test("a failing narrator fails the compile rather than producing a silent deck", async () => {
@@ -215,4 +218,90 @@ test("progress is reported per slide as narration lands", async () => {
     [1, 1.2],
     [2, 3],
   ]);
+});
+
+test("each speech cue becomes its own clip, offset past the pauses before it", async () => {
+  const narrator = fakeNarrator();
+  const compiled = await compilePresentation(
+    parsePresentation(
+      `
+title: A deck
+slides:
+  - slide: { title: One }
+    say:
+      - "Alpha."
+      - pause: 500ms
+      - "Beta beta."
+`,
+      "test.yaml",
+    ),
+    { workspace: await workspace(), synthesize: narrator },
+  );
+
+  // "Alpha." is 6 characters, so 1.2s; "Beta beta." is 10, so 2s.
+  assert.deepEqual(narrator.calls, ["Alpha.", "Beta beta."]);
+  const narration = compiled.slides[0]?.narration;
+  assert.ok(narration !== undefined);
+  assert.deepEqual(
+    narration.clips.map((clip) => [clip.src, clip.offsetSeconds, clip.durationSeconds]),
+    [
+      ["narration/slide-01-01.wav", 0, 1.2],
+      ["narration/slide-01-02.wav", 1.7, 2],
+    ],
+  );
+  assert.equal(narration.durationSeconds, 3.7);
+});
+
+test("narration duration includes authored pauses, so timing accounts for silence", async () => {
+  const source = (pause: string) =>
+    `title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Alpha."\n      - pause: ${pause}\n      - "Beta."\n`;
+
+  const [quick, slow] = await Promise.all([
+    compilePresentation(parsePresentation(source("100ms"), "t.yaml"), {
+      workspace: await workspace(),
+      synthesize: fakeNarrator(),
+    }),
+    compilePresentation(parsePresentation(source("1s"), "t.yaml"), {
+      workspace: await workspace(),
+      synthesize: fakeNarrator(),
+    }),
+  ]);
+
+  const difference =
+    (slow.slides[0]?.narration.durationSeconds ?? 0) -
+    (quick.slides[0]?.narration.durationSeconds ?? 0);
+  assert.equal(Math.round(difference * 1000), 900);
+  assert.equal(
+    (slow.slides[0]?.sceneMs ?? 0) - (quick.slides[0]?.sceneMs ?? 0),
+    900,
+    "a pause must lengthen the slide, not be absorbed by it",
+  );
+});
+
+test("a trailing pause extends the track past the last clip", async () => {
+  const compiled = await compilePresentation(
+    parsePresentation(
+      'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Alpha."\n      - pause: 800ms\n',
+      "test.yaml",
+    ),
+    { workspace: await workspace(), synthesize: fakeNarrator() },
+  );
+  const narration = compiled.slides[0]?.narration;
+  assert.ok(narration !== undefined);
+  assert.equal(narration.clips.length, 1);
+  assert.equal(narration.durationSeconds, 2);
+});
+
+test("a legacy scalar say still compiles to exactly one clip", async () => {
+  const narrator = fakeNarrator();
+  const compiled = await compilePresentation(
+    parsePresentation(
+      "title: A deck\nslides:\n  - slide: {title: One}\n    say: |\n      Ten chars.\n",
+      "test.yaml",
+    ),
+    { workspace: await workspace(), synthesize: narrator },
+  );
+  assert.deepEqual(narrator.calls, ["Ten chars."]);
+  assert.equal(compiled.slides[0]?.narration.clips.length, 1);
+  assert.equal(compiled.slides[0]?.narration.durationSeconds, 2);
 });

@@ -13,19 +13,38 @@ import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
  * iterating on visual design never re-synthesizes anything.
  */
 
-export interface NarrationArtifact {
+/** One synthesized fragment of a slide's narration. */
+export interface SpeechClip {
+  /** 1-based position among this slide's speech cues. */
+  readonly ordinal: number;
+  readonly text: string;
   /** Absolute path to the WAV on disk. */
   readonly path: string;
   /** Path relative to the render workspace's public directory, for `staticFile()`. */
   readonly src: string;
+  /** Seconds from the start of the slide's narration to the start of this clip. */
+  readonly offsetSeconds: number;
   /** Measured from the returned samples, never estimated. */
+  readonly durationSeconds: number;
+}
+
+/**
+ * A slide's narration as a track rather than a file.
+ *
+ * Speech cues become separate clips and pauses become the space between them. Nothing is
+ * mixed or concatenated here — the clips are placed on Remotion's timeline, which already
+ * owns that (decision:5). The only thing this layer computes is *when*.
+ */
+export interface Narration {
+  readonly clips: readonly SpeechClip[];
+  /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
   readonly voice: string;
   readonly speed: number;
 }
 
 export interface CompiledSlide extends AuthoredSlide {
-  readonly narration: NarrationArtifact;
+  readonly narration: Narration;
   /** `max(minimum, pre_say + narration + post_say)`, in milliseconds. */
   readonly sceneMs: number;
 }
@@ -58,7 +77,7 @@ export interface CompileOptions {
   /** Disposable directory for this presentation's narration and bundle. */
   readonly workspace: string;
   readonly synthesize: SynthesizeNarration;
-  readonly onProgress?: (slide: AuthoredSlide, narration: NarrationArtifact) => void;
+  readonly onProgress?: (slide: AuthoredSlide, narration: Narration) => void;
 }
 
 /** `max(minimum slide duration, pre_say + narration + post_say)` — decision:1. */
@@ -71,15 +90,15 @@ export function deriveSceneMs(input: {
   return Math.max(input.minSlideMs, input.preSayMs + input.narrationMs + input.postSayMs);
 }
 
-export function narrationFileName(slide: { ordinal: number }): string {
-  return `slide-${String(slide.ordinal).padStart(2, "0")}.wav`;
+export function narrationFileName(slide: { ordinal: number }, clip: number): string {
+  return `slide-${String(slide.ordinal).padStart(2, "0")}-${String(clip).padStart(2, "0")}.wav`;
 }
 
 /**
  * Synthesize every slide's narration and derive its scene length.
  *
  * Sequential on purpose: one Kokoro graph is resident per process (decision:8) and this
- * round is not optimizing throughput. Each `say` is synthesized exactly once per
+ * round is not optimizing throughput. Each speech cue is synthesized exactly once per
  * invocation — the content-addressed cache of decision:3 is still deliberately absent.
  */
 export async function compilePresentation(
@@ -96,20 +115,45 @@ export async function compilePresentation(
 
   const slides: CompiledSlide[] = [];
   for (const slide of presentation.slides) {
-    const fileName = narrationFileName(slide);
-    const spoken = await options.synthesize({
-      text: slide.say,
-      output: join(narrationDir, fileName),
-      ...(presentation.voice === undefined ? {} : { voice: presentation.voice }),
-      speed: presentation.speed,
-    });
+    const clips: SpeechClip[] = [];
+    let offsetSeconds = 0;
+    let voice = presentation.voice ?? "";
+    let speed = presentation.speed;
 
-    const narration: NarrationArtifact = {
-      path: join(narrationDir, fileName),
-      src: `narration/${fileName}`,
-      durationSeconds: spoken.durationSeconds,
-      voice: spoken.voice,
-      speed: spoken.speed,
+    for (const cue of slide.say) {
+      if (cue.kind === "pause") {
+        offsetSeconds += cue.milliseconds / 1000;
+        continue;
+      }
+
+      const fileName = narrationFileName(slide, clips.length + 1);
+      const spoken = await options.synthesize({
+        text: cue.text,
+        output: join(narrationDir, fileName),
+        ...(presentation.voice === undefined ? {} : { voice: presentation.voice }),
+        speed: presentation.speed,
+      });
+      voice = spoken.voice;
+      speed = spoken.speed;
+
+      clips.push({
+        ordinal: clips.length + 1,
+        text: cue.text,
+        path: join(narrationDir, fileName),
+        src: `narration/${fileName}`,
+        offsetSeconds,
+        durationSeconds: spoken.durationSeconds,
+      });
+      offsetSeconds += spoken.durationSeconds;
+    }
+
+    // A trailing pause counts: an author who asks for silence before the slide turns should
+    // get it, and `post_say` is a deck-wide default rather than a per-slide instrument.
+    const narration: Narration = {
+      clips,
+      durationSeconds: offsetSeconds,
+      voice,
+      speed,
     };
 
     options.onProgress?.(slide, narration);

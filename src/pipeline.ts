@@ -4,7 +4,7 @@ import { basename, extname, join, resolve } from "node:path";
 import {
   compilePresentation,
   type CompiledPresentation,
-  type NarrationArtifact,
+  type Narration,
 } from "./compile/compile.ts";
 import { buildTimeline, type Timeline } from "./compile/timeline.ts";
 import type { AuthoredSlide } from "./presentation/parse.ts";
@@ -44,7 +44,7 @@ export class StageError extends Error {
 export interface RenderEvents {
   readonly onStage?: (stage: Stage) => void;
   readonly onWarning?: (message: string) => void;
-  readonly onNarration?: (slide: AuthoredSlide, narration: NarrationArtifact) => void;
+  readonly onNarration?: (slide: AuthoredSlide, narration: Narration) => void;
   readonly onProgress?: (progress: number) => void;
 }
 

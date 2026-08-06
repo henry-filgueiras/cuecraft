@@ -19,12 +19,24 @@ Kokoro does not. Reading the model's actual ONNX inputs rather than anyone's des
 the entire control surface is three tensors:
 
 - `input_ids` — the phonemized text
-- `style` — a 256-float voice tensor, selected by name from 28 English voices
+- `style` — a 256-float tensor, selected by voice name **and by token count**
 - `speed` — one float scaling predicted phoneme durations
 
 That is the whole surface. There is no instruction string, no SSML, no emphasis marker, no pause
 primitive, no pitch or energy control. Punctuation influences prosody only indirectly, by way of
 the phonemes eSpeak NG produces for it.
+
+**Correction, sprint 3.** The `style` description above was originally written as "a 256-float
+voice tensor, selected by name", and so was decision:8's pipeline diagram. That is wrong.
+`af_heart.bin` is 522,240 bytes — 510 x 256 x 4 — and kokoro-js slices it by utterance length:
+
+    const offset = 256 * Math.min(Math.max(tokenCount - 2, 0), 509);
+
+Each voice is a *table* of 510 style vectors, one per token count. How long an utterance is
+changes which prosody embedding produces it. Measured, the rate difference between a 68-token and
+a 132-token utterance is small (the same sentence occupies 3.64s alone and 3.68s inside a longer
+call), so this is not a large lever — but it is a real one, and it means splitting an utterance is
+not merely a way of inserting silence.
 
 Two further limits surfaced while building the seam:
 
@@ -47,6 +59,28 @@ Kokoro's control surface exposed exactly once, deck-wide.
 The 420-character guard has not yet constrained anything: the canonical example's longest `say` is
 126 characters and synthesizes in about a second. The ceiling is waiting for a real deck, not for a
 decision.
+
+**Advanced, not resolved, by decision:11.** `say` now takes an ordered list of speech cues and
+explicit pauses, each cue synthesized separately and placed on the Remotion timeline. That
+delivers the chunking and the pauses this dragon's candidate direction proposed, and the reworked
+canonical deck sounds materially more deliberate for it.
+
+What that leaves:
+
+- **Pauses are additive, not absolute.** Every Kokoro clip carries roughly 300ms of leading and
+  470ms of trailing silence, so two cues already sit ~780ms apart before any authored pause. The
+  authored number is silence *added between clips*. Trimming the edges would mean processing audio
+  here, which decision:5 forbids; measuring them and reporting the true gap is possible and has not
+  been done.
+- **Joins have not been evaluated as joins.** decision:11's cues are separated by deliberate
+  silence, which is the easy case. Concatenating two fragments of a single sentence with no gap —
+  the case this dragon actually poses — is still untested, and nothing carries prosodic state
+  across the boundary.
+- **The 420-character guard is untouched.** Cue text is checked individually, which makes the
+  ceiling easier to live with and no less arbitrary. Narration that must be one continuous
+  utterance longer than a window still has no answer.
+- **Emphasis and intonation still have none.** No candidate exists under Kokoro. decision:11
+  deliberately shipped nothing for them rather than shipping controls the model ignores.
 
 ## Question
 
