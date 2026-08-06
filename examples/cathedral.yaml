@@ -1,0 +1,104 @@
+# cuecraft, as a place you can walk through.
+#
+#   cuecraft render examples/cathedral.yaml -o out/cathedral.mp4
+#
+# One slide. One semantic world, laid out once, several times wider than the frame it is seen
+# through — so cuecraft has to *choose where to look*, and the only thing it has to choose from
+# is which concept the narration just reached.
+#
+# The two things below the `world:` key are the whole of the vocabulary: what exists, and what
+# feeds what. There is no position, no size, no colour, no order, no camera, no zoom, no path
+# and no duration for anything to move over. Every one of those is derived:
+#
+#   dagre lays the world out          -> where each entity is, and how each relation routes
+#   the graph's own shape             -> each entity's colour, and which one is the product
+#   measured narration                -> when each entity ignites
+#   the newly reached entity, plus
+#     whatever it connects to that
+#     has already been established    -> what the shot contains
+#   d3's smooth-zoom interpolation    -> the path between two shots, and how long it takes
+#   the end of the narration          -> the pull back to the whole machine
+#
+# The final reveal is not written down anywhere here. It happens because the closing lines reach
+# no entity at all, and a remark about nothing in particular is a remark about all of it.
+#
+# See decision:22 for the body and the camera, decision:23 for why the concept being spoken about
+# is the brightest thing on the frame, and dragon:8 for whether any of this should be permanent.
+
+title: "cuecraft: the machine underneath"
+
+slides:
+  - slide:
+      title: "What happens after you stop writing"
+
+      world:
+        entities:
+          source: The source you write
+          cues: Narration cues
+          content: Semantic content
+          speech: Speech, measured here
+          timing: Derived timing
+          elements: What narration can reach
+          composition: Chosen composition
+          anchors: Semantic anchors
+          state: Presentation state
+          remotion: Remotion
+          video: One video file
+
+        relations:
+          - source -> cues
+          - source -> content
+          - cues -> speech
+          - speech -> timing
+          - content -> composition
+          - content -> elements
+          - cues -> anchors
+          - timing -> anchors
+          - elements -> anchors
+          - composition -> state
+          - anchors -> state
+          - state -> remotion
+          - remotion -> video
+
+    # Long enough that the world is established as a place before anything is said about it,
+    # and long enough at the end to hold the shot it pulls back to.
+    pre_say: 2200ms
+    post_say: 2000ms
+
+    say:
+      - "This is what happens after you stop writing."
+      - pause: 500ms
+
+      - speech: "It starts here. Text that says what you mean, and nothing about how it looks."
+        activates: source
+
+      - speech: "It splits in two. What you intend to say,"
+        activates: cues
+      - speech: "and what the slide actually is."
+        activates: content
+
+      - speech: "The words are spoken here, on this machine, and then measured."
+        activates: speech
+      - speech: "That measurement is the only clock cuecraft has."
+        activates: timing
+
+      - speech: "On the other side, content chooses its own composition."
+        activates: composition
+      - speech: "And everything narration can reach has a name."
+        activates: elements
+
+      - speech: "Here the two halves meet. A sentence knows what it is about, so the moment it is spoken is the moment that thing lights up."
+        activates: anchors
+      - speech: "All of it collapses into one answer. What is on screen, and when."
+        activates: state
+      - speech: "A browser draws every frame of that,"
+        activates: remotion
+      - speech: "and what you are left with is an ordinary file."
+        activates: video
+      - pause: 700ms
+
+      # Neither of these reaches anything, and both come after every cue that does — so this is
+      # where cuecraft stops looking at concepts and shows the machine they were part of.
+      - "Not one line of that source said where any of this goes."
+      - pause: 400ms
+      - "You described a world. The rest is a consequence."
