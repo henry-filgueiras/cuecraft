@@ -72,10 +72,15 @@ slides:
 
   # 3 — THE EVIDENCE, and the claim the earlier cut of this deck could only assert.
   #
-  # Two truthful states of the same slide. The `after` is quoted from the file, exactly as the
-  # scene above quotes it; the `before` is what that slide said until the identity was added.
-  # Which lines were removed, which were added, and which are context are all derived — there
-  # is no annotation here saying "this line changed", because the compiler can see that itself.
+  # The scene above showed that slide whole. This one shows the narration half of it, twice:
+  # once as it was written before, and once as it is written now. `opens` is the only thing
+  # here that decides how much source is on the frame — it names the construct the story is
+  # about, and cuecraft shows that construct and nothing around it. It replaced a version of
+  # this scene that quoted the whole slide, and the code on that one set at 30px because
+  # fourteen lines had to fit so that five of them could be the point.
+  #
+  # Which lines were removed, which were added, and which are context are all derived. There is
+  # no annotation here saying "this line changed", because the compiler can see that itself.
   #
   # And `activates: change` reaches an identity nothing in this file declares. The diff knows
   # which region of itself is the change, so it declares one, scoped to this slide like any
@@ -87,14 +92,6 @@ slides:
         before:
           language: yaml
           source: |
-            slide:
-              title: "Coding agents are black boxes"
-              bullets:
-                - Read files
-                - Search code
-                - Run tools
-                - Decide
-
             say:
               - "Coding agents do a surprising amount of invisible work."
               - pause: 350ms
@@ -102,11 +99,12 @@ slides:
         after:
           file: examples/witnessglass.yaml
           slide: "Coding agents are black boxes"
+          opens: "say:"
 
     say:
-      - "None of that was there to begin with."
-      - pause: 300ms
-      - speech: "Somebody named one term, and pointed one sentence at it."
+      - "Here is the narration half of that slide, as it was written first."
+      - pause: 350ms
+      - speech: "One sentence was split, and the half about tools was pointed at the term for it."
         activates: change
       - pause: 500ms
       - "Nothing in that edit is a time, or a frame, or a position."

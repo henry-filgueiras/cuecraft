@@ -180,3 +180,95 @@ test("a file that is not YAML at all fails as a quote, not as a crash", () => {
     SourceError,
   );
 });
+
+/**
+ * Narrowing to a construct.
+ *
+ * decision:18 could only quote a whole slide, and the evidence scene that came out of it set at
+ * 30px because fourteen lines had to be on the frame for five of them to be the point. These
+ * pin the mechanism that fixed that, and — more importantly — pin that it never guesses.
+ */
+
+const NESTED = `title: A deck
+
+slides:
+  - slide:
+      title: "Quoted"
+      bullets:
+        - id: tools
+          text: Run tools
+        - Decide
+
+    say:
+      - "First."
+      - speech: "Second."
+        activates: tools
+`;
+
+test("a construct is the line that opens it plus everything under it", () => {
+  assert.equal(
+    quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "say:" }),
+    ["say:", '  - "First."', '  - speech: "Second."', "    activates: tools"].join("\n"),
+  );
+});
+
+test("a construct keeps its own shape, re-indented against its opening line", () => {
+  // Dedenting against the shallowest line *beneath* the opener would flatten the list onto the
+  // key and stop being the structure that was selected.
+  assert.equal(
+    quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "bullets:" }),
+    ["bullets:", "  - id: tools", "    text: Run tools", "  - Decide"].join("\n"),
+  );
+});
+
+test("a construct may be a single line, and may be a list item", () => {
+  assert.equal(
+    quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "activates:" }),
+    "activates: tools",
+  );
+  assert.equal(
+    quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "- speech:" }),
+    ['- speech: "Second."', "  activates: tools"].join("\n"),
+  );
+});
+
+test("the slide is what makes the selector resolvable", () => {
+  // `say:` occurs once per slide, so it is unique inside one and hopeless across a file. This
+  // is the whole reason the selector is scoped rather than global.
+  const twoSlides = `${NESTED}
+  - slide:
+      title: "Other"
+
+    say:
+      - "Elsewhere."
+`;
+  assert.equal(
+    quoteSlide(twoSlides, { file: "d.yaml", slide: "Other", opens: "say:" }),
+    ["say:", '  - "Elsewhere."'].join("\n"),
+  );
+});
+
+test("a selector that matches nothing fails, and never widens to the whole slide", () => {
+  assert.throws(
+    () => quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "steps:" }),
+    (error: Error) =>
+      error instanceof SourceError &&
+      /no line of .* opens with "steps:"/.test(error.message),
+  );
+});
+
+test("an ambiguous selector fails, because showing a guess is the defect being fixed", () => {
+  assert.throws(
+    () => quoteSlide(NESTED, { file: "d.yaml", slide: "Quoted", opens: "- " }),
+    (error: Error) =>
+      error instanceof SourceError && /matches \d+ lines of/.test(error.message),
+  );
+});
+
+test("narrowing composes with everything the whole-slide quote already refuses", () => {
+  assert.throws(
+    () => quoteSlide(NESTED, { file: "d.yaml", slide: "Missing", opens: "say:" }),
+    (error: Error) =>
+      error instanceof SourceError && /has no slide titled/.test(error.message),
+  );
+});

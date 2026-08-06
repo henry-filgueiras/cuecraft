@@ -128,8 +128,13 @@ export function resolveMarkSpans(
  *
  * A blank line inside a section is a breath, not a boundary. A blank line followed by something
  * at the original indentation is the boundary, and is not included.
+ *
+ * Exported because this one rule does two jobs. A mark uses it to decide how much of a specimen
+ * to emphasise; `./source.ts` uses it to decide how much of a file to *show* — the construct a
+ * line opens is both the semantic point of interest and the smallest unit that contains it, in
+ * a language where indentation carries structure.
  */
-function blockEnd(lines: readonly string[], from: number): number {
+export function blockEnd(lines: readonly string[], from: number): number {
   const base = indentOf(lines[from] ?? "");
   let end = from;
   for (let index = from + 1; index < lines.length; index += 1) {
@@ -141,7 +146,7 @@ function blockEnd(lines: readonly string[], from: number): number {
   return end;
 }
 
-function indentOf(line: string): number {
+export function indentOf(line: string): number {
   return line.length - line.trimStart().length;
 }
 

@@ -215,7 +215,7 @@ const markSchema = z.unknown().superRefine((value, context) => {
  * the truth to live.
  */
 const INLINE_SPECIMEN_KEYS = ["language", "source"] as const;
-const QUOTED_SPECIMEN_KEYS = ["file", "slide"] as const;
+const QUOTED_SPECIMEN_KEYS = ["file", "slide", "opens"] as const;
 
 export const SPECIMEN_HINT =
   '{ language: yaml, source: "..." } or ' +
@@ -224,6 +224,9 @@ export const SPECIMEN_HINT =
 export interface ResolvedSpecimen {
   readonly language: CodeLanguage;
   readonly source: string;
+  /** The construct selector this specimen used, if it quoted one. Kept only to compare the
+   *  two states of a change: see `resolveChangeBody`. */
+  readonly opens?: string;
 }
 
 interface SpecimenIssue {
@@ -282,16 +285,19 @@ function resolveSpecimen(
   }
 
   if (written) {
-    if (record["slide"] !== undefined) {
-      return {
-        issues: [
-          {
-            path: ["slide"],
-            message:
-              "names a region of a file; a specimen written here has no file to take it from",
-          },
-        ],
-      };
+    for (const key of ["slide", "opens"] as const) {
+      if (record[key] !== undefined) {
+        return {
+          issues: [
+            {
+              path: [key],
+              message:
+                "selects a region of a file; a specimen written here is already the region you " +
+                "meant to show, so there is nothing left to select",
+            },
+          ],
+        };
+      }
     }
     const language = record["language"];
     if (typeof language !== "string" || !isCodeLanguage(language)) {
@@ -344,10 +350,31 @@ function resolveSpecimen(
     };
   }
 
+  const opens = record["opens"];
+  if (opens !== undefined && (typeof opens !== "string" || opens.trim().length === 0)) {
+    return {
+      issues: [
+        {
+          path: ["opens"],
+          message:
+            "must be part of the line that opens the construct you want shown, such as " +
+            '"say:" — the same way a mark names a line',
+        },
+      ],
+    };
+  }
+
   try {
     const language = languageOf(file);
-    const source = quoteSlide(read(file), { file, slide });
-    return { specimen: { language, source }, issues: [] };
+    const source = quoteSlide(read(file), {
+      file,
+      slide,
+      ...(opens === undefined ? {} : { opens }),
+    });
+    return {
+      specimen: { language, source, ...(opens === undefined ? {} : { opens }) },
+      issues: [],
+    };
   } catch (error) {
     if (error instanceof SourceError) {
       return { issues: [{ path: [], message: error.message }] };
@@ -479,6 +506,28 @@ function resolveChangeBody(
     };
   }
 
+  // Where both states select a construct, they must select it the same way. cuecraft does not
+  // try to work out that `say:` in one revision corresponds to `narration:` in another — that
+  // is arbitrary code correspondence, and it is not a problem a presentation tool should be
+  // solving. A stable selector is the narrow, checkable version of the same guarantee.
+  if (
+    before.opens !== undefined &&
+    after.opens !== undefined &&
+    before.opens !== after.opens
+  ) {
+    return {
+      issues: [
+        {
+          path: [],
+          message:
+            `selects ${JSON.stringify(before.opens)} before and ${JSON.stringify(after.opens)} ` +
+            "after; both states must name the same construct, or the diff is between two " +
+            "different things and means nothing",
+        },
+      ],
+    };
+  }
+
   const derived = deriveChange(before.source, after.source);
   if (derived.changedRows.length === 0) {
     return {
@@ -488,6 +537,22 @@ function resolveChangeBody(
           message:
             "before and after are the same source; there is no change to show, and a slide " +
             "that says something changed had better be able to point at it",
+        },
+      ],
+    };
+  }
+  // Nothing in common is the signature of a mis-selection: two regions that share not one line
+  // are a replacement rather than a change, and rendering them as a diff would claim a
+  // correspondence that is not there. This is the check that catches containment which is
+  // inconsistent between the two states in the way that actually misleads.
+  if (derived.changedRows.length === derived.rows.length) {
+    return {
+      issues: [
+        {
+          path: [],
+          message:
+            "before and after have no line in common; that is a replacement rather than a " +
+            "change, and usually means the two states are not showing the same construct",
         },
       ],
     };

@@ -4,6 +4,7 @@ import { parseDocument, parse as parseYaml } from "yaml";
 
 import { repositoryRoot } from "../repository.ts";
 import { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
+import { blockEnd, indentOf, matchingLines, specimenLines } from "./specimen.ts";
 
 /**
  * Quoting real source instead of copying it.
@@ -22,10 +23,17 @@ import { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
  *
  *     file:  examples/witnessglass.yaml
  *     slide: "Coding agents are black boxes"
+ *     opens: "say:"
  *
  * No line numbers, no ranges, no offsets, no path expressions. That is the same stance
  * `specimen.ts` takes for marks — address content by what it says — narrowed to the one thing
  * a presentation file has that is both structural and named by its author.
+ *
+ * **The two keys are one selector with two jobs.** `slide` says which slide, and is what makes
+ * the second key resolvable: `say:` occurs once per slide, so it is unique inside one and
+ * hopeless across a file. `opens` then names the semantic point of interest inside that scope,
+ * and the region shown is the construct beginning there. Nothing else is expressible, and that
+ * is the point — this is a way of naming a construct, not a way of querying a document.
  *
  * The extracted text is **verbatim**, including comments, minus only the list marker and the
  * common indentation, which is exactly what YAML's own block scalar removes from an inline
@@ -45,6 +53,26 @@ export interface QuotedRegion {
   readonly file: string;
   /** The title of the slide to quote. Titles are how a deck's author names its slides. */
   readonly slide: string;
+  /**
+   * Optional: narrow to the construct that this line opens.
+   *
+   * decision:18 could only quote a whole slide, and that turned out to be the reason its
+   * evidence scene set at 30px — fourteen lines were on the frame so that five of them could
+   * be the point. `opens` names the *semantic point of interest*, and the region shown is the
+   * construct beginning there: that line plus everything indented beneath it, which in YAML is
+   * exactly the mapping, sequence or block it opens.
+   *
+   * One key rather than two, because in a language where indentation carries structure the
+   * point and its containing unit are the same thing. `opens: "say:"` means "the narration
+   * block", not "the four characters `say:`", and a separate `containing:` selector would have
+   * nothing left to say.
+   *
+   * Matching is the mark grammar of `./specimen.ts`, and it is scoped to the quoted slide —
+   * which is what makes it usable at all. `say:` appears once per slide in a real deck, so the
+   * same selector applied to a whole file is ambiguous by construction, and the slide is what
+   * makes it unique.
+   */
+  readonly opens?: string;
 }
 
 /** Reads a repository-relative path, or explains why it cannot. Injected so tests stay pure. */
@@ -213,7 +241,61 @@ export function quoteSlide(text: string, region: QuotedRegion): string {
     );
   }
 
-  return quoted;
+  return region.opens === undefined ? quoted : narrowToConstruct(quoted, region);
+}
+
+/**
+ * Narrow a quoted slide to the construct one of its lines opens.
+ *
+ * Zero matches and two matches are hard failures, exactly as they are for a mark: showing the
+ * wrong region of a file under a heading that says "this is the source" is the defect this whole
+ * mechanism exists to prevent, and it is the one a fallback would reintroduce. There is
+ * deliberately no widening to the whole slide when the selector misses.
+ *
+ * The construct is re-indented against its *own* opening line rather than against the shallowest
+ * line beneath it. The two are not the same: dedenting `say:` and its items by the items'
+ * indentation would flatten the list onto the key and produce something that is no longer the
+ * structure being shown.
+ */
+function narrowToConstruct(quoted: string, region: QuotedRegion): string {
+  const opens = region.opens ?? "";
+  const lines = specimenLines(quoted);
+  const matches = matchingLines(lines, opens);
+  const where = `slide ${JSON.stringify(region.slide)} of ${JSON.stringify(region.file)}`;
+
+  if (matches.length === 0) {
+    throw new SourceError(
+      `no line of ${where} opens with ${JSON.stringify(opens)}; a selector names a line by ` +
+        "part of what it says, and this one matches nothing",
+    );
+  }
+  if (matches.length > 1) {
+    throw new SourceError(
+      `${JSON.stringify(opens)} matches ${matches.length} lines of ${where}; a selector must ` +
+        "identify exactly one construct, so name more of the line",
+    );
+  }
+
+  const from = matches[0] ?? 0;
+  const to = blockEnd(lines, from);
+  const base = indentOf(lines[from] ?? "");
+  const narrowed = lines
+    .slice(from, to + 1)
+    .map((line) => (line === "" ? "" : line.slice(base)))
+    .join("\n");
+
+  // The construct has been cut out of a slide, so it has to stand as a document of its own —
+  // not as any particular shape, because a construct may legitimately be a mapping, a list, or
+  // a single key, but as something that parses at all.
+  try {
+    parseYaml(narrowed);
+  } catch (error) {
+    throw new SourceError(
+      `narrowing ${where} to ${JSON.stringify(opens)} produced text that is not valid YAML: ` +
+        (error as Error).message,
+    );
+  }
+  return narrowed;
 }
 
 interface SequenceItem {

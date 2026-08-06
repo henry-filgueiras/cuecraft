@@ -1062,3 +1062,146 @@ test("a slide's content is one thing, and a change is one of the things it can b
     /has "bullets" and "change"/,
   );
 });
+
+const NARROWING_DECK = `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        file: other.yaml
+        slide: "Quoted"
+        opens: "say:"
+        marks:
+          - id: link
+            line: "activates:"
+    say:
+      - speech: "Look here."
+        activates: link
+`;
+
+test("a quoted specimen may narrow to the construct the story is about", () => {
+  const body = withFile(NARROWING_DECK).slides[0]?.body;
+  assert.ok(body?.kind === "code");
+  // Only the construct, and nothing of the slide around it.
+  assert.equal(
+    body.source,
+    ["say:", '  - speech: "They run tools."', "    activates: tools"].join("\n"),
+  );
+});
+
+test("narrowing failures name the slide and never fall back to more source", () => {
+  assert.match(
+    quotedProblems(NARROWING_DECK.replace('opens: "say:"', 'opens: "steps:"'))[0] ?? "",
+    /^slide 1, slide\.code: no line of slide "Quoted" of "other\.yaml" opens with "steps:"/,
+  );
+  assert.match(
+    quotedProblems(NARROWING_DECK.replace('opens: "say:"', 'opens: "- "'))[0] ?? "",
+    /^slide 1, slide\.code: "- " matches 2 lines of/,
+  );
+});
+
+test("marks resolve against the narrowed region, not the slide it came from", () => {
+  // `title:` is in the slide but not in the `say:` construct, so a mark naming it is a dangling
+  // reference rather than a silently wider specimen.
+  assert.match(
+    quotedProblems(NARROWING_DECK.replace('line: "activates:"', 'line: "title:"'))[0] ??
+      "",
+    /^slide 1, slide\.code\.marks\.0: line "title:" does not appear/,
+  );
+});
+
+test("a specimen written out has nothing left to select", () => {
+  assert.match(
+    quotedProblems(`title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        opens: "say:"
+        source: |
+          say: "Words."
+    say: Hello.
+`)[0] ?? "",
+    /^slide 1, slide\.code\.opens: selects a region of a file/,
+  );
+});
+
+const NARROWED_CHANGE = `title: A deck
+slides:
+  - slide:
+      title: One
+      change:
+        before:
+          language: yaml
+          source: |
+            say:
+              - speech: "They run tools."
+        after:
+          file: other.yaml
+          slide: "Quoted"
+          opens: "say:"
+    say:
+      - speech: "It changed."
+        activates: change
+`;
+
+test("a change narrows the same way, and still derives its own endpoint", () => {
+  const slide = withFile(NARROWED_CHANGE).slides[0];
+  assert.ok(slide !== undefined && slide.body.kind === "change");
+  assert.equal(slide.body.after.split("\n").length, 3);
+  assert.deepEqual(
+    bodyElements(slide.body).map((element) => element.id),
+    [CHANGE_ELEMENT_ID],
+  );
+});
+
+test("two states may not select two different constructs", () => {
+  // cuecraft does not work out that one revision's `say:` is another's `narration:`. A stable
+  // selector is the narrow, checkable version of that guarantee.
+  assert.match(
+    quotedProblems(`title: A deck
+slides:
+  - slide:
+      title: One
+      change:
+        before:
+          file: other.yaml
+          slide: "Quoted"
+          opens: "bullets:"
+        after:
+          file: other.yaml
+          slide: "Quoted"
+          opens: "say:"
+    say:
+      - speech: "It changed."
+        activates: change
+`)[0] ?? "",
+    /selects "bullets:" before and "say:" after; both states must name the same construct/,
+  );
+});
+
+test("two regions with no line in common are a replacement, not a change", () => {
+  // The signature of a mis-selection: rendering it as a diff would claim a correspondence
+  // between the two states that is not there.
+  assert.match(
+    quotedProblems(`title: A deck
+slides:
+  - slide:
+      title: One
+      change:
+        before:
+          language: yaml
+          source: |
+            first: 1
+        after:
+          language: yaml
+          source: |
+            second: 2
+    say:
+      - speech: "It changed."
+        activates: change
+`)[0] ?? "",
+    /before and after have no line in common; that is a replacement rather than a change/,
+  );
+});

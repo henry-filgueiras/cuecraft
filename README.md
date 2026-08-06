@@ -218,17 +218,25 @@ asserting something false. So a specimen can name a file and a slide of it inste
 code:
   file: examples/witnessglass.yaml
   slide: "Coding agents are black boxes"
+  opens: "say:"
 ```
 
 The text is the file's, verbatim and dedented, and `language` comes from the extension. A slide
 is named by its title because that is the one durable, author-chosen name a presentation file
-has. A file that is missing, a title that matches no slide or two, and a mark that no longer
+has. `opens` is optional and names the construct you actually want on the frame — the line that
+opens it, plus everything indented beneath it, which in YAML is exactly the mapping or list it
+begins. It is scoped to the slide, which is what makes a selector like `say:` resolvable at all.
+
+Reach for it whenever the evidence is smaller than the slide holding it. Showing more source
+than the story needs is not free: type is sized to fit what you selected, so a fourteen-line
+slide sets at 30px where its four-line narration block sets at 36px
+([`archaeology/decisions/0020-*.md`](archaeology/decisions/)). A file that is missing, a title that matches no slide or two, and a mark that no longer
 matches a line are all compile errors naming the slide — a deck that would display stale source
 refuses to build instead. Paths are relative to the repository and may not escape it
 ([`archaeology/decisions/0018-*.md`](archaeology/decisions/)).
 
-**Showing a change.** A `change` takes two truthful source states — each written out or quoted —
-and nothing else:
+**Showing a change.** A `change` takes two truthful source states — each written out or quoted,
+and each narrowed the same way — and nothing else:
 
 ```yaml
 change:
@@ -239,11 +247,16 @@ change:
   after:
     file: examples/witnessglass.yaml
     slide: "Coding agents are black boxes"
+    opens: "say:"
 
 say:
-  - speech: "Somebody named one term, and pointed one sentence at it."
+  - speech: "One sentence was split, and pointed at the term for it."
     activates: change
 ```
+
+Where both states select a construct they must select the same one, and two states with no line
+in common are rejected as a replacement rather than a change — cuecraft will not guess that one
+revision's `say:` is another's `narration:`.
 
 Which lines were removed, added, or unchanged is derived, not annotated. So is the identity:
 `change` names the changed region, is declared by the body rather than by the author, and is
