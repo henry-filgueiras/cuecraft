@@ -14,7 +14,11 @@ out/
 
 # Scratch audio from `cuecraft speak` / `npm run speak`.
 tmp/
-*.wav
+# Repository root only, and deliberately not `*.wav`: a recursive rule would also
+# swallow frozen narration assets wherever they eventually land (decision:3,
+# dragon:2), and Git cannot re-add an ignored file without a fight. Generated
+# narration is already covered by .cuecraft/, out/, and tmp/ above.
+/*.wav
 
 # Frozen narration assets are deliberately NOT ignored: once promoted, they
 # are repository-managed source, not build output.
