@@ -47,11 +47,42 @@ export interface Clip {
   readonly durationInFrames: number;
 }
 
+export interface SceneBullet {
+  readonly text: string;
+  /** The semantic identity this element carries, if the author gave it one. */
+  readonly id?: string;
+}
+
+/**
+ * A resolved link between a moment in the narration and an element on the slide.
+ *
+ * Deliberately a record of the *relationship* rather than a field on the bullet saying when
+ * to light up. Both endpoints stay addressable, so the same structure answers "when does
+ * this bullet become established?" and "which narration reaches this bullet?" — and a later
+ * caption, seek or debugger would read it in the other direction without this having to be
+ * rebuilt (decision:14). Nothing today reads it backwards; the point is that it could.
+ */
+export interface Anchor {
+  readonly id: string;
+  /** Index into `Scene.bullets`. */
+  readonly bulletIndex: number;
+  /** Index into `Scene.clips`. */
+  readonly clipIndex: number;
+  /**
+   * Absolute frame at which the relationship activates: the clip's start plus its measured
+   * leading silence, so the visual lands with the first spoken sound rather than with the
+   * clip boundary about nine frames earlier.
+   */
+  readonly frame: number;
+}
+
 export interface Scene {
   readonly ordinal: number;
   readonly title: string;
-  readonly bullets: readonly string[];
+  readonly bullets: readonly SceneBullet[];
   readonly layout: LayoutArchetype;
+  /** Empty on a slide that names no identities, which is most of them. */
+  readonly anchors: readonly Anchor[];
   /** Absolute frame at which the slide appears. */
   readonly from: number;
   readonly durationInFrames: number;
@@ -112,6 +143,30 @@ export function buildTimeline(
       return placed;
     });
 
+    // Both ends of every relationship, resolved to a frame. Validation already guaranteed
+    // that each `activates` names a bullet on this slide, so a miss here is a compiler bug
+    // rather than an authoring error, and dropping it silently is not an option.
+    const anchors: Anchor[] = [];
+    slide.narration.clips.forEach((clip, clipIndex) => {
+      if (clip.activates === undefined) return;
+      const bulletIndex = slide.bullets.findIndex(
+        (bullet) => bullet.id === clip.activates,
+      );
+      if (bulletIndex === -1) {
+        throw new Error(
+          `slide ${slide.ordinal}: narration activates "${clip.activates}" but no bullet declares it`,
+        );
+      }
+      const placed = clips[clipIndex];
+      if (placed === undefined) return;
+      anchors.push({
+        id: clip.activates,
+        bulletIndex,
+        clipIndex,
+        frame: placed.from + framesFor(clip.leadingSilenceSeconds, fps),
+      });
+    });
+
     // The track runs to whichever is later: the last clip's end, or a trailing pause.
     const narrationDurationInFrames = Math.max(
       cursor,
@@ -126,8 +181,13 @@ export function buildTimeline(
     const scene: Scene = {
       ordinal: slide.ordinal,
       title: slide.title,
-      bullets: slide.bullets,
+      bullets: slide.bullets.map((bullet): SceneBullet =>
+        bullet.id === undefined
+          ? { text: bullet.text }
+          : { text: bullet.text, id: bullet.id },
+      ),
       layout: chooseLayout(slide),
+      anchors,
       from,
       durationInFrames,
       narrationFrom,

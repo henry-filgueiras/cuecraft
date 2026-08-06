@@ -45,18 +45,36 @@ slides:
       - "You almost never get to see how the time was actually spent."
 
   # Four compact phrases whose order is part of the point -> index.
+  #
+  # This is also the anchored slide. Each bullet carries a semantic identity, and the
+  # narration cue that reaches it says so. cuecraft works out *when* from the measured
+  # audio; nothing here is a timestamp or a frame. See archaeology/decisions/0014-*.md.
   - slide:
       title: "WitnessGlass records the work"
       bullets:
-        - Which tool the agent invoked
-        - How long the call took
-        - What the tool returned
-        - Why it was called at all
+        - id: tool
+          text: Which tool the agent invoked
+        - id: timing
+          text: How long the call took
+        - id: result
+          text: What the tool returned
+        - id: reason
+          text: Why it was called at all
 
     say:
-      - "WitnessGlass records every tool call as a structured event."
-      - pause: 300ms
-      - "Which tool ran, how long it took, and what came back."
+      # eSpeak reads "records" as the noun after a noun-phrase subject, so this one
+      # occurrence is spelled differently for synthesis only — decision:12.
+      - speech: "WitnessGlass records every tool call as a structured event."
+        pronounce:
+          records: rekords
+      - speech: "Which tool the agent invoked,"
+        activates: tool
+      - speech: "how long the call took,"
+        activates: timing
+      - speech: "what it returned,"
+        activates: result
+      - speech: "and why it was called at all."
+        activates: reason
 
   # Full sentences, too long to be labels -> lead.
   - slide:

@@ -43,6 +43,7 @@ function fakeNarrator(): SynthesizeNarration & { calls: string[] } {
     await writeFile(request.output, "not really a wav");
     return {
       durationSeconds: request.text.length / 5,
+      leadingSilenceSeconds: 0.3,
       voice: request.voice ?? "af_heart",
       speed: request.speed ?? 1,
     };
@@ -124,7 +125,7 @@ test("compiled slides carry their measured audio and derived duration", async ()
   assert.equal(clip.src, "narration/slide-01-01.wav");
   assert.equal(clip.offsetSeconds, 0);
   assert.equal(slide.sceneMs, 500 + 4000 + 1000);
-  assert.deepEqual(slide.bullets, ["a", "b"]);
+  assert.deepEqual(slide.bullets, [{ text: "a" }, { text: "b" }]);
 
   // The audio must exist where the composition will look for it.
   assert.equal(join(compiled.publicDir, clip.src), clip.path);
@@ -138,6 +139,7 @@ test("deck-wide voice and speed reach the narrator", async () => {
     await writeFile(request.output, "");
     return {
       durationSeconds: 1,
+      leadingSilenceSeconds: 0.3,
       voice: request.voice ?? "af_heart",
       speed: request.speed ?? 1,
     };

@@ -40,12 +40,14 @@ slides:
   - slide:
       title: "First"
       bullets:
-        - One
+        - id: one
+          text: One
         - Two
     say:
       - "This is the first slide."
       - pause: 600ms
-      - "It has two clips."
+      - speech: "It has two clips."
+        activates: one
 
   - slide:
       title: "Second"

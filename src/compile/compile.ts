@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
+import { spokenText } from "../presentation/parse.ts";
 
 /**
  * The compilation boundary: authored intent plus measured narration.
@@ -26,6 +27,14 @@ export interface SpeechClip {
   readonly offsetSeconds: number;
   /** Measured from the returned samples, never estimated. */
   readonly durationSeconds: number;
+  /**
+   * Seconds from the clip's start to its first audible sample. Kokoro puts about 310ms of
+   * silence in front of every utterance; a visual event aligned to the clip rather than to
+   * the sound would land that much early (decision:13).
+   */
+  readonly leadingSilenceSeconds: number;
+  /** The semantic identity this clip reaches, if the authored cue named one. */
+  readonly activates?: string;
 }
 
 /**
@@ -65,12 +74,12 @@ export interface CompiledPresentation {
  * model load.
  */
 export interface SynthesizeNarration {
-  (request: {
-    text: string;
-    output: string;
-    voice?: string;
-    speed?: number;
-  }): Promise<{ durationSeconds: number; voice: string; speed: number }>;
+  (request: { text: string; output: string; voice?: string; speed?: number }): Promise<{
+    durationSeconds: number;
+    leadingSilenceSeconds: number;
+    voice: string;
+    speed: number;
+  }>;
 }
 
 export interface CompileOptions {
@@ -128,7 +137,9 @@ export async function compilePresentation(
 
       const fileName = narrationFileName(slide, clips.length + 1);
       const spoken = await options.synthesize({
-        text: cue.text,
+        // What is synthesized, which may differ from what the source says by exactly the
+        // per-occurrence spellings the author supplied (decision:12).
+        text: spokenText(cue),
         output: join(narrationDir, fileName),
         ...(presentation.voice === undefined ? {} : { voice: presentation.voice }),
         speed: presentation.speed,
@@ -143,6 +154,8 @@ export async function compilePresentation(
         src: `narration/${fileName}`,
         offsetSeconds,
         durationSeconds: spoken.durationSeconds,
+        leadingSilenceSeconds: spoken.leadingSilenceSeconds,
+        ...(cue.activates === undefined ? {} : { activates: cue.activates }),
       });
       offsetSeconds += spoken.durationSeconds;
     }

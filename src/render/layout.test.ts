@@ -17,7 +17,7 @@ import {
  */
 
 function layoutOf(title: string, bullets: readonly string[]): LayoutArchetype {
-  return chooseLayout({ title, bullets });
+  return chooseLayout({ title, bullets: bullets.map((text) => ({ text })) });
 }
 
 const TERSE = ["Read files", "Search code", "Run tools", "Decide"];
@@ -32,7 +32,10 @@ const LONG = [
 ];
 
 test("content shape is measured, not guessed", () => {
-  const shape = analyzeContent({ title: "A title", bullets: ["ab", "abcd"] });
+  const shape = analyzeContent({
+    title: "A title",
+    bullets: [{ text: "ab" }, { text: "abcd" }],
+  });
   assert.equal(shape.bulletCount, 2);
   assert.equal(shape.longestBullet, 4);
   assert.equal(shape.averageBullet, 3);

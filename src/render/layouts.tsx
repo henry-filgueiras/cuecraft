@@ -38,6 +38,49 @@ function contentDelay(index: number): number {
 }
 
 /**
+ * How established an element is, from 0 to 1.
+ *
+ * An element the narration never reaches is fully established from the moment it arrives —
+ * which is every slide in the deck that names no identities, so nothing changes for them.
+ * An anchored element arrives dormant and is established when the narration gets to it
+ * (decision:14). The frames are absolute, so this is measured against the composition clock
+ * rather than the sequence-local one.
+ */
+function establishment(absoluteFrame: number, anchorFrame: number | undefined): number {
+  if (anchorFrame === undefined) return 1;
+  return interpolate(
+    absoluteFrame,
+    [anchorFrame, anchorFrame + MOTION.establish],
+    [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ease },
+  );
+}
+
+/**
+ * The one activation treatment: contrast and the accent coming up together.
+ *
+ * Dormant is legible but recessive, so the whole structure is readable as a still from the
+ * first frame and the narration builds emphasis rather than revealing information. Nothing
+ * moves except a four-pixel settle — motion here would compete with the narration it is
+ * supposed to be following.
+ */
+function established(
+  degree: number,
+  base: string,
+): { color: string; opacity: number; transform: string } {
+  return {
+    color: degree === 1 ? base : COLORS.dormant,
+    opacity: 0.55 + 0.45 * degree,
+    transform: `translateY(${(1 - degree) * 4}px)`,
+  };
+}
+
+/** Bullet index to the frame its narration reaches it, for the anchored slides. */
+function anchorFrames(scene: Scene): ReadonlyMap<number, number> {
+  return new Map(scene.anchors.map((anchor) => [anchor.bulletIndex, anchor.frame]));
+}
+
+/**
  * The shared canvas: flat background, side margins, and a progress rule on the bottom edge.
  *
  * The background is flat on purpose. A soft radial highlight was tried and looked fine in
@@ -197,7 +240,7 @@ function Matrix({ scene }: { scene: Scene }) {
       >
         {scene.bullets.map((bullet, index) => (
           <div
-            key={bullet}
+            key={bullet.text}
             style={{
               display: "flex",
               flexDirection: "column",
@@ -222,7 +265,7 @@ function Matrix({ scene }: { scene: Scene }) {
                 color: COLORS.paper,
               }}
             >
-              {bullet}
+              {bullet.text}
             </div>
           </div>
         ))}
@@ -237,8 +280,9 @@ function Matrix({ scene }: { scene: Scene }) {
  * Numbered rows separated by hairlines. The ordinals are the accent and the structure at
  * once, which is why this archetype needs no other mark.
  */
-function IndexList({ scene }: { scene: Scene }) {
+function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const anchors = anchorFrames(scene);
   return (
     <>
       <Rule frame={frame} />
@@ -263,51 +307,54 @@ function IndexList({ scene }: { scene: Scene }) {
           marginTop: SPACE.lg,
         }}
       >
-        {scene.bullets.map((bullet, index) => (
-          <div
-            key={bullet}
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: SPACE.xl,
-              paddingTop: SPACE.lg,
-              paddingBottom: SPACE.lg,
-              borderTop: `1px solid ${COLORS.hairline}`,
-              // The closing rule belongs to the last row, not to the container: on the
-              // container it draws before any row has arrived, leaving a line under an
-              // empty space during the entrance.
-              ...(index === scene.bullets.length - 1
-                ? { borderBottom: `1px solid ${COLORS.hairline}` }
-                : {}),
-              ...reveal(frame, contentDelay(index)),
-            }}
-          >
-            <span
+        {scene.bullets.map((bullet, index) => {
+          const degree = establishment(absoluteFrame, anchors.get(index));
+          return (
+            <div
+              key={bullet.text}
               style={{
-                flex: "none",
-                width: 92,
-                fontSize: TYPE.ordinal,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                color: COLORS.accent,
-                fontVariantNumeric: "tabular-nums",
+                display: "flex",
+                alignItems: "baseline",
+                gap: SPACE.xl,
+                paddingTop: SPACE.lg,
+                paddingBottom: SPACE.lg,
+                borderTop: `1px solid ${COLORS.hairline}`,
+                // The closing rule belongs to the last row, not to the container: on the
+                // container it draws before any row has arrived, leaving a line under an
+                // empty space during the entrance.
+                ...(index === scene.bullets.length - 1
+                  ? { borderBottom: `1px solid ${COLORS.hairline}` }
+                  : {}),
+                ...reveal(frame, contentDelay(index)),
               }}
             >
-              {String(index + 1).padStart(2, "0")}
-            </span>
-            <span
-              style={{
-                fontSize: TYPE.row,
-                fontWeight: 400,
-                letterSpacing: "-0.014em",
-                lineHeight: 1.16,
-                color: COLORS.paper,
-              }}
-            >
-              {bullet}
-            </span>
-          </div>
-        ))}
+              <span
+                style={{
+                  flex: "none",
+                  width: 92,
+                  fontSize: TYPE.ordinal,
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  fontVariantNumeric: "tabular-nums",
+                  ...established(degree, COLORS.accent),
+                }}
+              >
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span
+                style={{
+                  fontSize: TYPE.row,
+                  fontWeight: 400,
+                  letterSpacing: "-0.014em",
+                  lineHeight: 1.16,
+                  ...established(degree, COLORS.paper),
+                }}
+              >
+                {bullet.text}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -358,7 +405,7 @@ function Lead({ scene }: { scene: Scene }) {
         }}
       >
         {scene.bullets.map((bullet, index) => (
-          <div key={bullet} style={{ ...reveal(frame, contentDelay(index)) }}>
+          <div key={bullet.text} style={{ ...reveal(frame, contentDelay(index)) }}>
             {/* The same accent mark the matrix cells carry, at half the width. Without it
                 this column reads as a caption rather than as part of the deck. */}
             <div
@@ -382,7 +429,7 @@ function Lead({ scene }: { scene: Scene }) {
                 textWrap: "balance",
               }}
             >
-              {bullet}
+              {bullet.text}
             </div>
           </div>
         ))}
@@ -391,7 +438,20 @@ function Lead({ scene }: { scene: Scene }) {
   );
 }
 
-export function Slide({ scene, slideCount }: { scene: Scene; slideCount: number }) {
+export function Slide({
+  scene,
+  slideCount,
+  absoluteFrame,
+}: {
+  scene: Scene;
+  slideCount: number;
+  /**
+   * The composition's own frame, not the sequence-local one. Anchor frames are absolute
+   * because they come from measured audio on the deck's clock, and re-deriving them
+   * against a shifting sequence origin is how synchronization quietly goes wrong.
+   */
+  absoluteFrame: number;
+}) {
   return (
     <Frame scene={scene} slideCount={slideCount}>
       {scene.layout === "statement" ? (
@@ -399,7 +459,7 @@ export function Slide({ scene, slideCount }: { scene: Scene; slideCount: number 
       ) : scene.layout === "matrix" ? (
         <Matrix scene={scene} />
       ) : scene.layout === "index" ? (
-        <IndexList scene={scene} />
+        <IndexList scene={scene} absoluteFrame={absoluteFrame} />
       ) : (
         <Lead scene={scene} />
       )}

@@ -101,7 +101,7 @@ export function PresentationVideo({ timeline }: PresentationProps) {
                 {/* Shifts the local frame so entrance motion starts when the slide
                     becomes visible rather than while it is still transparent. */}
                 <Sequence from={appearAt} layout="none" name="content">
-                  <Slide scene={scene} slideCount={scenes.length} />
+                  <Slide scene={scene} slideCount={scenes.length} absoluteFrame={frame} />
                 </Sequence>
               </SceneLayer>
             </Sequence>

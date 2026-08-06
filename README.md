@@ -39,7 +39,7 @@ npm run render -- examples/witnessglass.yaml -o out/witnessglass.mp4
 ```
 Rendered out/witnessglass.mp4
   4 slides
-  00:38.4
+  00:42.7
   1920x1080 @ 30fps, h264/aac
   layouts 1:matrix  2:statement  3:index  4:lead
 ```
@@ -52,6 +52,7 @@ What exists now:
 
 - YAML parsing and strict validation, with errors that name the slide and field
 - narration as an ordered list of speech and pauses, synthesized locally and measured
+- semantic anchors linking narration moments to slide elements, with times derived not authored
 - narration-derived timing, converted to frames in exactly one place
 - four curated slide compositions, chosen from the shape of the content
 - 1920x1080 H.264/AAC output via Remotion
@@ -137,6 +138,47 @@ is silence _added_ between clips, and small values go a long way.
 
 There is no emphasis, pitch, rate or style control, because the local model has none. See
 [`archaeology/dragons/0003-*.md`](archaeology/dragons/).
+
+**Pronunciation.** eSpeak decides pronunciation from spelling and limited context, and it gets
+heteronyms wrong after a noun-phrase subject — "WitnessGlass records the work" comes out as the
+plural noun. Repair one occurrence without touching the prose:
+
+```yaml
+- speech: "WitnessGlass records every tool call as a structured event."
+  pronounce:
+    records: rekords
+```
+
+The substitution is whole-word and applies to that cue only, because `records` legitimately has
+two pronunciations and a deck-wide entry would be wrong on the next slide. It is a respelling
+handed to eSpeak rather than a phoneme, so verify it by listening
+([`archaeology/decisions/0012-*.md`](archaeology/decisions/)).
+
+**Semantic anchors.** A bullet can carry an identity, and a narration cue can say it reaches it:
+
+```yaml
+bullets:
+  - id: tool
+    text: Which tool the agent invoked
+  - id: timing
+    text: How long the call took
+
+say:
+  - speech: "Which tool the agent invoked,"
+    activates: tool
+  - speech: "how long the call took,"
+    activates: timing
+```
+
+Anchored elements are on screen from the first frame but recessive, and become established as the
+narration reaches them, accumulating. There is no timestamp and no frame number: cuecraft derives
+the moment from the measured audio, so rewording narration can never desynchronize a deck. A cue
+that activates an identity no bullet declares is a compile error.
+
+Granularity is the cue, because that is the only exact timing Kokoro's graph makes available —
+it outputs a waveform and nothing else, so there are no word timings to be had
+([`archaeology/decisions/0013-*.md`](archaeology/decisions/),
+[`0014-*.md`](archaeology/decisions/)).
 
 **Layout is not authored.** cuecraft looks at what a slide contains — how many bullets, how
 long they are — and picks one of four compositions:

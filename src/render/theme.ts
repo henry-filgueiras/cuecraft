@@ -22,6 +22,8 @@ export const COLORS = {
   muted: "#C2CBD9",
   /** Ordinals and secondary marks. Present, never competing. */
   dim: "#6B7688",
+  /** An anchored element the narration has not reached yet: legible, recessive. */
+  dormant: "#78849B",
   /** Used sparingly: the rule, the ordinals, the cell edges, the progress bar. */
   accent: "#D9A05B",
   /** Structural lines. Visible at 1080p, invisible as decoration. */
@@ -107,6 +109,8 @@ export const MOTION = {
   contentDelay: 9,
   /** Separation between successive content elements. */
   stagger: 5,
+  /** How long an anchored element takes to become established once narration reaches it. */
+  establish: 10,
 } as const;
 
 /**

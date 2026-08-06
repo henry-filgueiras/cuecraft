@@ -4,12 +4,16 @@ import { test } from "node:test";
 import type { CompiledPresentation, CompiledSlide, SpeechClip } from "./compile.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
 
-type SlideOverrides = Omit<Partial<CompiledSlide>, "narration"> & {
+type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "bullets"> & {
+  bullets?: readonly { text: string; id?: string }[];
   ordinal: number;
   /** Speech durations in seconds; pauses are expressed by the gaps in `offsets`. */
   speech?: readonly number[];
   offsets?: readonly number[];
   narrationSeconds?: number;
+  leadingSilence?: number;
+  /** Per speech cue; an empty string means this cue reaches nothing. */
+  activates?: readonly string[];
 };
 
 /**
@@ -29,6 +33,8 @@ function slide(overrides: SlideOverrides): CompiledSlide {
       src: `narration/slide-0${overrides.ordinal}-0${index + 1}.wav`,
       offsetSeconds: offset,
       durationSeconds: duration,
+      leadingSilenceSeconds: overrides.leadingSilence ?? 0,
+      ...(overrides.activates?.[index] ? { activates: overrides.activates[index] } : {}),
     };
   });
 
@@ -245,13 +251,122 @@ test("every scene carries the composition its content selected", () => {
   const timeline = buildTimeline(
     presentation([
       slide({ ordinal: 1, title: "A statement", bullets: [] }),
-      slide({ ordinal: 2, title: "Terms", bullets: ["Read", "Write"] }),
-      slide({ ordinal: 3, title: "Steps", bullets: ["Which tool the agent invoked"] }),
-      slide({ ordinal: 4, title: "Points", bullets: ["a".repeat(60)] }),
+      slide({
+        ordinal: 2,
+        title: "Terms",
+        bullets: [{ text: "Read" }, { text: "Write" }],
+      }),
+      slide({
+        ordinal: 3,
+        title: "Steps",
+        bullets: [{ text: "Which tool the agent invoked" }],
+      }),
+      slide({ ordinal: 4, title: "Points", bullets: [{ text: "a".repeat(60) }] }),
     ]),
   );
   assert.deepEqual(
     timeline.scenes.map((scene) => scene.layout),
     ["statement", "matrix", "index", "lead"],
   );
+});
+
+test("an anchor activates when its clip's sound starts, not when the clip does", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        preSayMs: 500,
+        bullets: [
+          { text: "First", id: "one" },
+          { text: "Second", id: "two" },
+        ],
+        speech: [2, 2],
+        activates: [undefined, "one", "two"].slice(1) as readonly string[],
+        leadingSilence: 0.3,
+      }),
+    ]),
+  );
+  const scene = timeline.scenes[0];
+  assert.ok(scene !== undefined);
+
+  // pre_say 500ms -> frame 15. Clip one starts there; its sound starts 0.3s (9 frames)
+  // later. Clip two starts at 15 + 60 = 75, sound at 84.
+  assert.deepEqual(scene.anchors, [
+    { id: "one", bulletIndex: 0, clipIndex: 0, frame: 24 },
+    { id: "two", bulletIndex: 1, clipIndex: 1, frame: 84 },
+  ]);
+});
+
+test("anchors keep both ends of the relationship addressable", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        bullets: [{ text: "A" }, { text: "B", id: "b" }],
+        speech: [1, 1],
+        activates: ["", "b"],
+      }),
+    ]),
+  );
+  const [anchor] = timeline.scenes[0]?.anchors ?? [];
+  assert.ok(anchor !== undefined);
+
+  // Visual end, and narration end, from the same record.
+  assert.equal(timeline.scenes[0]?.bullets[anchor.bulletIndex]?.text, "B");
+  assert.equal(timeline.scenes[0]?.clips[anchor.clipIndex]?.from, 23 + 30);
+});
+
+test("an anchor sits inside its own clip", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        bullets: [{ text: "A", id: "a" }],
+        speech: [3],
+        activates: ["a"],
+        leadingSilence: 0.31,
+      }),
+    ]),
+  );
+  const scene = timeline.scenes[0];
+  const anchor = scene?.anchors[0];
+  const clip = scene?.clips[anchor?.clipIndex ?? 0];
+  assert.ok(scene !== undefined && anchor !== undefined && clip !== undefined);
+  assert.ok(anchor.frame >= clip.from, "activation precedes its own clip");
+  assert.ok(
+    anchor.frame < clip.from + clip.durationInFrames,
+    "activation lands after its own clip ends",
+  );
+});
+
+test("anchors survive a pause between the cues that carry them", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        preSayMs: 0,
+        bullets: [
+          { text: "A", id: "a" },
+          { text: "B", id: "b" },
+        ],
+        speech: [1, 1],
+        offsets: [0, 2],
+        activates: ["a", "b"],
+        leadingSilence: 0.2,
+      }),
+    ]),
+  );
+  // A one-second pause sits between the clips, so the second anchor moves with it.
+  assert.deepEqual(
+    timeline.scenes[0]?.anchors.map((anchor) => anchor.frame),
+    [6, 66],
+  );
+});
+
+test("a slide with no anchors carries none, and is otherwise unchanged", () => {
+  const timeline = buildTimeline(
+    presentation([slide({ ordinal: 1, bullets: [{ text: "Plain" }], speech: [2] })]),
+  );
+  assert.deepEqual(timeline.scenes[0]?.anchors, []);
+  assert.equal(timeline.scenes[0]?.clips.length, 1);
 });

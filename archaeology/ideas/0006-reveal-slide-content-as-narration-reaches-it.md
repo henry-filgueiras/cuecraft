@@ -2,8 +2,9 @@
 id: ide_01KZC3N0RFX6DK5GNZXZE5VCC4
 sequence: 6
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-06
+adopted-by: "[[dec_01KZC5V2MBYQMA5JWZTA3TVYC0|Link narration to slide elements by identity, and derive the time]]"
 ---
 
 # Reveal slide content as narration reaches it
@@ -42,3 +43,13 @@ number of bullets, and breaks the moment an author adds a sentence.
 Adopt when watching a deck shows the reveal order fighting the narration rather than supporting
 it. On the four-slide canonical deck it does not — the entrance settles within a second and the
 narration runs over a static frame, which is restrained and fine.
+
+**Adopted by decision:14, in a different shape than sketched here.** Two things this sketch got
+wrong. Positional association was indeed brittle, and was rejected in favour of named identities,
+so the number of cues and the number of bullets are independent. And "reveal" turned out to be the
+wrong verb: revealing items withholds the structure and makes the still frame worse, so anchored
+elements are present from the first frame and *establish* rather than appear.
+
+What it got right is that the cue boundaries decision:11 created are the mechanism, and that
+word-level synchronization is a different and much larger problem — which decision:13 confirms is
+not available at all from this stack.

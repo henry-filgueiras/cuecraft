@@ -20,7 +20,7 @@ export type LayoutArchetype = "statement" | "matrix" | "index" | "lead";
 
 export interface SlideContent {
   readonly title: string;
-  readonly bullets: readonly string[];
+  readonly bullets: readonly { readonly text: string }[];
 }
 
 /**
@@ -46,7 +46,7 @@ export interface ContentShape {
 }
 
 export function analyzeContent(content: SlideContent): ContentShape {
-  const lengths = content.bullets.map((bullet) => bullet.length);
+  const lengths = content.bullets.map((bullet) => bullet.text.length);
   const longest = lengths.length === 0 ? 0 : Math.max(...lengths);
   const total = lengths.reduce((sum, length) => sum + length, 0);
 
