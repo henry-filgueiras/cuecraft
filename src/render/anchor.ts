@@ -49,6 +49,28 @@ export const ANCHOR_TIMING = {
 export const HEAT_FRAMES =
   ANCHOR_TIMING.heatRise + ANCHOR_TIMING.heatHold + ANCHOR_TIMING.heatFall;
 
+export type AnchorTiming = { readonly [K in keyof typeof ANCHOR_TIMING]: number };
+
+/**
+ * The same envelope, stretched for a composition whose elements are not all on screen.
+ *
+ * Every other archetype activates something the viewer is already looking at, so eight tenths of
+ * a second is generous. The atlas activates something the camera is still travelling towards:
+ * a plate ignites, and the shot arrives about a second later. With the deck's envelope the flare
+ * would have burned out before the frame got there, and the causal link — that sentence lit that
+ * concept — is exactly what the transient exists to carry.
+ *
+ * So heat rises where the word lands, holds while the camera flies, and settles once it arrives.
+ * Same three numbers, same shape, different duration; nothing else about activation changes.
+ */
+export const WORLD_TIMING: AnchorTiming = {
+  establish: 26,
+  heatRise: 6,
+  heatHold: 30,
+  heatFall: 34,
+  sweep: 40,
+} as const;
+
 export interface AnchorState {
   /**
    * How established the element is, 0 to 1. Monotonically rises once and stays. Drives the
@@ -82,14 +104,15 @@ export const ESTABLISHED: AnchorState = { degree: 1, heat: 0, sweep: 1 };
 export function anchorState(
   absoluteFrame: number,
   anchorFrame: number | undefined,
+  timing: AnchorTiming = ANCHOR_TIMING,
 ): AnchorState {
   if (anchorFrame === undefined) return ESTABLISHED;
 
   const since = absoluteFrame - anchorFrame;
   return {
-    degree: easeOut(ramp(since, ANCHOR_TIMING.establish)),
-    heat: heatAt(since),
-    sweep: easeOut(ramp(since, ANCHOR_TIMING.sweep)),
+    degree: easeOut(ramp(since, timing.establish)),
+    heat: heatAt(since, timing),
+    sweep: easeOut(ramp(since, timing.sweep)),
   };
 }
 
@@ -99,8 +122,8 @@ export function anchorState(
  * Eased on both flanks. A linear attack on a colour change reads as a hard cut at this
  * duration, and a linear decay reads as the accent being switched off rather than settling.
  */
-function heatAt(since: number): number {
-  const { heatRise, heatHold, heatFall } = ANCHOR_TIMING;
+function heatAt(since: number, timing: AnchorTiming): number {
+  const { heatRise, heatHold, heatFall } = timing;
   if (since <= 0 || since >= heatRise + heatHold + heatFall) return 0;
   if (since < heatRise) return easeOut(since / heatRise);
   if (since < heatRise + heatHold) return 1;

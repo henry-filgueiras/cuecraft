@@ -1,5 +1,6 @@
 import type { CodeLanguage } from "./language.ts";
 import type { AuthoredMark } from "./specimen.ts";
+import type { AuthoredEntity, AuthoredRelation } from "./world.ts";
 
 /**
  * What a slide's content *is*, and which parts of it narration can reach.
@@ -48,6 +49,13 @@ export type SlideBody =
       /** Two truthful source states. What differs between them is nobody's to annotate. */
       readonly before: string;
       readonly after: string;
+    }
+  | {
+      readonly kind: "world";
+      /** What exists. Ordered as authored, which is the order narration reaches them in. */
+      readonly entities: readonly AuthoredEntity[];
+      /** How it relates. Where any of it *sits* is derived — see `../render/world.ts`. */
+      readonly relations: readonly AuthoredRelation[];
     };
 
 /**
@@ -83,6 +91,8 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       return body.marks;
     case "change":
       return [{ id: CHANGE_ELEMENT_ID }];
+    case "world":
+      return body.entities;
     default:
       return body.items;
   }

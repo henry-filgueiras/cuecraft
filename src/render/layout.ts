@@ -12,7 +12,7 @@
  * character counts can tell them apart. So the role is consulted first, and shape now decides
  * only *within* the list role.
  *
- * Seven, and seven is still a ceiling rather than a starting point. Every archetype here exists
+ * Eight, and eight is still a ceiling rather than a starting point. Every archetype here exists
  * because a real slide looked wrong without it, and the rule that selects it is a comparison
  * against a number, not a solver. If selection ever needs a scoring function, the right move is
  * to delete an archetype rather than add a heuristic.
@@ -27,7 +27,14 @@
 import type { SlideBody } from "../presentation/parse.ts";
 
 export type LayoutArchetype =
-  "statement" | "matrix" | "index" | "lead" | "cascade" | "specimen" | "revision";
+  | "statement"
+  | "matrix"
+  | "index"
+  | "lead"
+  | "cascade"
+  | "specimen"
+  | "revision"
+  | "atlas";
 
 export interface SlideContent {
   readonly title: string;
@@ -84,6 +91,9 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   presentation scale. There is no second arrangement of code worth having.
  * - **revision** — one source becoming another. The same block, with the changed lines swapping
  *   in place while everything around them holds still.
+ * - **atlas** — a semantic world. The only composition that is larger than the frame: the world
+ *   is laid out once in its own coordinates and a derived camera travels through it as the
+ *   narration does. Nothing else here has a camera, and nothing else needs one.
  * - **cascade** — stages of a transformation. They descend and step right along a single
  *   traced line, so the frame reads as something being carried forward rather than listed.
  *
@@ -99,6 +109,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
 export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "code") return "specimen";
   if (content.body.kind === "change") return "revision";
+  if (content.body.kind === "world") return "atlas";
   if (content.body.kind === "steps") return "cascade";
 
   const shape = analyzeContent(content);

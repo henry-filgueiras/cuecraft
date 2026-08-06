@@ -236,6 +236,71 @@ export function fitSpecimen(
   );
 }
 
+/**
+ * How a semantic world is set, in world units.
+ *
+ * A second coordinate system, and the only one in cuecraft: everything here is measured in the
+ * world's own space, and what a viewer sees is that space through a derived camera
+ * (`./world.ts`). A plate 340 units wide is about 750 screen pixels when the camera is close and
+ * about 150 when it pulls back to the whole machine, which is the point of having a camera.
+ */
+export const WORLD = {
+  /** Label size. Large in world units because a plate is read from across the room, close up. */
+  label: 52,
+  lineHeight: 1.2,
+  /** Advance width of the heading face at plate weight, as a fraction of the size. */
+  charWidth: 0.55,
+  /**
+   * Characters before a label wraps.
+   *
+   * Deliberately tight. A wide plate widens its whole rank, a widened rank widens the world, and
+   * a wider world is a smaller world in the one shot that has to show all of it. Two short lines
+   * also read faster than one long one, so the constraint and the typography agree.
+   */
+  measure: 12,
+  padX: 40,
+  padY: 36,
+  minPlateWidth: 320,
+  /**
+   * Space between ranks, and between plates within a rank.
+   *
+   * Not symmetric, and the asymmetry is the whole tuning. A layered layout of a transformation is
+   * naturally long and flat; separating the *lanes* more than the *stages* pushes it back towards
+   * a shape a 16:9 frame can hold, and it separates the narration lane from the content lane,
+   * which is a thing the world is actually claiming.
+   */
+  ranksep: 140,
+  nodesep: 560,
+  edgesep: 30,
+  plateRadius: 10,
+  /** Stroke of a plate's edge, and of a relation. */
+  plateStroke: 2.5,
+  edgeStroke: 4,
+  /** The travelling accent that runs along a relation as it establishes. */
+  pulseLength: 190,
+  /** The blueprint field behind the world, and the fainter one behind that. */
+  gridStep: 130,
+  gridParallax: 0.55,
+} as const;
+
+/**
+ * A world's colour, read off the flow.
+ *
+ * Three stops, and the two ends are colours the deck already owns: the cool of a specimen's keys
+ * at the source end, the deck accent at the output end, through a warm near-white in between.
+ * So the ramp is not a new palette, it is the palette arranged along the machine — cool where
+ * cuecraft is reading, warm where it is producing.
+ *
+ * Nothing authored reaches this. An entity's position in the ramp is its position in the graph.
+ */
+const FLOW = ["#63C6EA", "#C6CBEA", "#F0A94F"] as const;
+
+export function flowColor(depth: number): string {
+  const t = depth < 0 ? 0 : depth > 1 ? 1 : depth;
+  const [cool, middle, warm] = FLOW;
+  return t < 0.5 ? mix(cool, middle, t * 2) : mix(middle, warm, (t - 0.5) * 2);
+}
+
 /** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
 export const HEADING_WIDTH = 1500;
 
@@ -276,6 +341,18 @@ export function mix(from: string, to: string, amount: number): string {
     Math.round(value + ((b[index] ?? 0) - value) * t),
   );
   return `#${blended.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * A `#rrggbb` colour at an alpha.
+ *
+ * The atlas needs glows and washes that sit *over* things rather than replacing them, which is
+ * the one thing `mix` cannot express. Four lines, and it stays four lines.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const a = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+  const [r, g, b] = channels(hex);
+  return `rgba(${r}, ${g}, ${b}, ${Math.round(a * 1000) / 1000})`;
 }
 
 function channels(hex: string): [number, number, number] {

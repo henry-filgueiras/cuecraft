@@ -192,6 +192,14 @@ test("selection stays total across every body a source can produce", () => {
     { kind: "steps", items: [{ text: "x" }] },
     { kind: "code", language: "yaml", source: "a: 1", marks: [] },
     { kind: "change", language: "yaml", before: "a: 1", after: "a: 2" },
+    {
+      kind: "world",
+      entities: [
+        { id: "a", text: "A" },
+        { id: "b", text: "B" },
+      ],
+      relations: [{ from: "a", to: "b" }],
+    },
   ] as const;
   const archetypes = [
     "statement",
@@ -201,6 +209,7 @@ test("selection stays total across every body a source can produce", () => {
     "cascade",
     "specimen",
     "revision",
+    "atlas",
   ];
   for (const body of bodies) {
     const chosen = chooseLayout({ title: "A title", body });
@@ -217,4 +226,26 @@ test("shape analysis ignores content that has no items to measure", () => {
   assert.equal(shape.bulletCount, 0);
   assert.equal(shape.terse, false);
   assert.equal(shape.compact, false);
+});
+
+test("a world is an atlas, whatever shape its labels happen to have", () => {
+  // The role decides, and nothing about the labels can change the answer — a world of two terse
+  // entities and a world of eleven long ones get the same composition, because both are worlds.
+  const world = (labels: readonly string[]) =>
+    chooseLayout({
+      title: "A title",
+      body: {
+        kind: "world",
+        entities: labels.map((text, index) => ({ id: `e${index}`, text })),
+        relations: labels.slice(1).map((_, index) => ({
+          from: `e${index}`,
+          to: `e${index + 1}`,
+        })),
+      },
+    });
+  assert.equal(world(["A", "B"]), "atlas");
+  assert.equal(
+    world(["The source you write", "Speech, measured on this machine", "One video file"]),
+    "atlas",
+  );
 });

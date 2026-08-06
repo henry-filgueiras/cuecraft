@@ -262,7 +262,7 @@ slides:
     say: Hello.
 `),
     [
-      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change)',
+      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world)',
     ],
   );
 
@@ -1204,4 +1204,59 @@ slides:
 `)[0] ?? "",
     /before and after have no line in common; that is a replacement rather than a change/,
   );
+});
+
+const WORLD_DECK = `
+title: A deck
+slides:
+  - slide:
+      title: A world
+      world:
+        entities:
+          source: The source you write
+          speech: Speech, measured here
+          video: One video file
+        relations:
+          - source -> speech
+          - speech -> video
+    say:
+      - speech: It starts here.
+        activates: source
+      - speech: And ends here.
+        activates: video
+`;
+
+test("a world is a body, and its entities are what narration can reach", () => {
+  const presentation = parsePresentation(WORLD_DECK, "test.yaml");
+  const [slide] = presentation.slides;
+  assert.ok(slide !== undefined);
+  assert.equal(slide.body.kind, "world");
+  assert.equal(chooseLayout(slide), "atlas");
+
+  // The same seam every other body resolves through: an anchor is an index into this list,
+  // and adding the fifth role needed no change to anchoring, timing or validation.
+  assert.deepEqual(
+    bodyElements(slide.body).map((element) => element.id),
+    ["source", "speech", "video"],
+  );
+});
+
+test("a cue reaching an entity nobody declared is reported with the entities that exist", () => {
+  const reported = problems(WORLD_DECK.replace("activates: video", "activates: audio"));
+  assert.equal(reported.length, 1);
+  assert.match(reported[0] ?? "", /activates "audio"/);
+  assert.match(reported[0] ?? "", /declared: source, speech, video/);
+});
+
+test("a world is one of the body keys, not an addition to them", () => {
+  const reported = problems(
+    WORLD_DECK.replace("      world:", "      bullets: [a]\n      world:"),
+  );
+  assert.match(reported[0] ?? "", /"bullets" and "world"/);
+});
+
+test("a malformed world is reported under the key that holds it", () => {
+  const reported = problems(WORLD_DECK.replace("speech -> video", "speech -> nowhere"));
+  assert.match(reported[0] ?? "", /world\.relations\.1/);
+  assert.match(reported[0] ?? "", /no entity declares/);
 });

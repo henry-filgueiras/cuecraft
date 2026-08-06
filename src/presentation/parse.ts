@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { deriveChange } from "./change.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
+import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
 import { type CodeLanguage, CODE_LANGUAGES, isCodeLanguage } from "./language.ts";
 import {
   languageOf,
@@ -13,8 +14,10 @@ import {
   type RepositoryReader,
 } from "./source.ts";
 import { type AuthoredMark, markProblem, specimenLines } from "./specimen.ts";
+import { resolveWorld } from "./world.ts";
 
 import { CHANGE_ELEMENT_ID, type AuthoredItem, type SlideBody } from "./body.ts";
+export type { AuthoredEntity, AuthoredRelation, AuthoredWorld } from "./world.ts";
 export type { AuthoredMark } from "./specimen.ts";
 export {
   bodyElements,
@@ -117,15 +120,7 @@ const durationLiteral = z.custom<string>(
   { message: `must be ${DURATION_HINT}` },
 );
 
-/**
- * Anchor identities are kebab-case and start with a letter.
- *
- * Narrow on purpose: an identity appears in two places in the source and has to be matched
- * exactly, so the set of things it can be should be small enough to type correctly twice.
- */
-export const ANCHOR_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-export const ANCHOR_ID_HINT =
-  "lower-case letters, digits and hyphens, starting with a letter";
+export { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
 
 export const ITEM_HINT = 'text, or { id: some-name, text: "..." }';
 
@@ -591,6 +586,7 @@ function buildSlideSchema(read: RepositoryReader) {
       steps: z.array(itemSchema).optional(),
       code: z.unknown().optional(),
       change: z.unknown().optional(),
+      world: z.unknown().optional(),
     })
     .superRefine((slide, context) => {
       const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
@@ -622,10 +618,19 @@ function buildSlideSchema(read: RepositoryReader) {
           });
         }
       }
+      if (slide.world !== undefined) {
+        for (const issue of resolveWorld(slide.world).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["world", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
     });
 }
 
-const BODY_KEYS = ["bullets", "steps", "code", "change"] as const;
+const BODY_KEYS = ["bullets", "steps", "code", "change", "world"] as const;
 
 /** A validated item, in either of its two authored forms. */
 function itemOf(value: unknown): AuthoredItem {
@@ -653,9 +658,16 @@ function bodyOf(
     steps?: unknown[] | undefined;
     code?: unknown;
     change?: unknown;
+    world?: unknown;
   },
   read: RepositoryReader,
 ): SlideBody {
+  if (slide.world !== undefined) {
+    const { world } = resolveWorld(slide.world);
+    if (world === undefined)
+      throw new Error("world passed validation but did not resolve");
+    return { kind: "world", entities: world.entities, relations: world.relations };
+  }
   if (slide.code !== undefined) {
     const { body } = resolveCode(slide.code, read);
     if (body === undefined)
@@ -862,6 +874,15 @@ function buildEntrySchema(read: RepositoryReader) {
         const { id } = raw as AuthoredMark;
         if (!declared.has(id)) declared.set(id, index);
       });
+      // A world's identities are its entity keys, and unlike a bullet's `id` they are not
+      // optional — `resolveWorld` has already rejected any that are misspelled or duplicated,
+      // so anything that survived it can be declared here as it stands.
+      if (entry.slide.world !== undefined) {
+        const { world } = resolveWorld(entry.slide.world);
+        (world?.entities ?? []).forEach((entity, index) => {
+          if (!declared.has(entity.id)) declared.set(entity.id, index);
+        });
+      }
       // The one identity nobody typed. A change knows which region of itself is the change, so
       // it declares that region and narration reaches it by name like any other element — the
       // author supplies the semantic structure and the compiler supplies the endpoint.

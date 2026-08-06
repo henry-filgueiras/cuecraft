@@ -6,7 +6,12 @@ import { deriveChange } from "../presentation/change.ts";
 import type { AuthoredItem, SlideBody } from "../presentation/body.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
-import { anchorState, type AnchorState } from "./anchor.ts";
+import {
+  anchorState,
+  type AnchorState,
+  type AnchorTiming,
+  WORLD_TIMING,
+} from "./anchor.ts";
 import {
   CONTINUATION,
   type Fragment,
@@ -15,6 +20,17 @@ import {
   wrapLine,
 } from "./projection.ts";
 import { sliceTokens, tokenizeLine } from "./tokens.ts";
+import {
+  cameraAt,
+  cameraTrack,
+  layoutWorld,
+  viewportTransform,
+  worldOf,
+  type Point,
+  type Rect,
+  type WorldLayout,
+  type WorldNode,
+} from "./world.ts";
 import {
   CODE,
   CODE_COLORS,
@@ -26,22 +42,27 @@ import {
   MOTION,
   SPACE,
   TYPE,
+  WORLD,
   codeBox,
   fitHeading,
   fitTerm,
+  flowColor,
   mix,
+  withAlpha,
 } from "./theme.ts";
 
 /**
- * The six curated compositions.
+ * The eight curated compositions.
  *
  * `layout.ts` decides which one a slide gets from what its content means and what shape it has;
  * these render it. They share a frame, a type scale, one motion primitive and one activation
  * vocabulary, and nothing else — each is allowed to be an opinionated arrangement rather than a
- * parameterisation of a single template, which is the whole point of having six.
+ * parameterisation of a single template, which is the whole point of having eight.
  *
- * What they deliberately do not have: cards, borders around content, drop shadows, gradients,
- * or icons. Structure is carried by scale, position, and hairlines.
+ * Seven of them deliberately do not have: cards, borders around content, drop shadows, gradients,
+ * or icons. Structure is carried by scale, position, and hairlines. The eighth — `atlas` — has a
+ * plate, a glow and a camera, because it is not composing a page: it is looking at a place that
+ * does not fit on one. Where the other seven end at the frame's edge, it begins there.
  */
 
 const ease = Easing.out(Easing.cubic);
@@ -76,11 +97,12 @@ function contentDelay(index: number): number {
 function anchorStatesFor(
   scene: Scene,
   absoluteFrame: number,
+  timing?: AnchorTiming,
 ): (index: number) => AnchorState {
   const frames = new Map(
     scene.anchors.map((anchor) => [anchor.elementIndex, anchor.frame]),
   );
-  return (index: number) => anchorState(absoluteFrame, frames.get(index));
+  return (index: number) => anchorState(absoluteFrame, frames.get(index), timing);
 }
 
 /** Text moving from recessive to established, shared by every archetype that has any. */
@@ -109,12 +131,28 @@ const items = (body: SlideBody): readonly AuthoredItem[] =>
 function Frame({
   scene,
   slideCount,
+  bleed = false,
   children,
 }: {
   scene: Scene;
   slideCount: number;
+  /**
+   * Drop the margins and the progress rule.
+   *
+   * Exactly one composition asks for this, and its reason is structural rather than stylistic:
+   * the atlas has no edges to respect, because what it is showing extends past all four of them.
+   * Chrome drawn over a window is chrome drawn over a window.
+   */
+  bleed?: boolean;
   children: ReactNode;
 }) {
+  if (bleed) {
+    return (
+      <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
+        {children}
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
       <AbsoluteFill
@@ -951,6 +989,449 @@ function Lead({ scene }: { scene: Scene }) {
   );
 }
 
+/**
+ * **atlas** — the content is a semantic world, and the world is bigger than the frame.
+ *
+ * Every other composition fits a slide into 1920x1080 and stops. This one lays the world out once
+ * in its own coordinates (`./world.ts`), which come out several times wider than the viewport,
+ * and then *looks at part of it*. The camera is the composition.
+ *
+ * What the author wrote is what exists and what relates to what. What is derived here is the
+ * position of every plate, the route of every relation, the colour of both, which bounds each
+ * narration event wants on screen, how long the move to those bounds should take, and the wide
+ * shot at the end. There is no key in the source format that could change any of it.
+ *
+ * The activation vocabulary is recalibrated rather than reused, because this is the composition
+ * where the old one visibly failed. Three states, and only one of them is tinted:
+ *
+ *     future        latent — the structure is there, dim, and readable as structure
+ *     hot           ignition — accent stroke, bloom, a signal running down the relation
+ *     established   normal — full white label, the plate's own colour, no residue
+ *
+ * The deck's earlier reading gave *established* a dull colour of its own, so a slide accumulated
+ * grey. Here established is the visual baseline and `future` is the only attenuated state, which
+ * means the world gets brighter as it is explained instead of duller. Contrast is spent on the
+ * moment rather than smeared across the aftermath — and while anything is hot, everything else
+ * steps back, so the newly relevant concept is the brightest thing on the frame by a margin
+ * nobody has to look for.
+ */
+function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const world = worldOf(scene.body);
+  const layout = useMemo(
+    () => (world === undefined ? undefined : layoutWorld(world)),
+    [world],
+  );
+
+  const track = useMemo(() => {
+    if (layout === undefined) return [];
+    return cameraTrack(
+      layout,
+      scene.anchors.map((anchor) => ({ frame: anchor.frame, id: anchor.id })),
+      { from: scene.from, until: revealFrom(scene) },
+    );
+  }, [layout, scene]);
+
+  if (layout === undefined) return null;
+
+  const view = cameraAt(track, absoluteFrame);
+  const viewport = { width: 1920, height: 1080 };
+  const scale = viewport.width / view.width;
+
+  const stateOf = anchorStatesFor(scene, absoluteFrame, WORLD_TIMING);
+  const states = new Map(
+    layout.nodes.map((node, index) => [node.id, stateOf(index)] as const),
+  );
+  const heat = (id: string): number => states.get(id)?.heat ?? 0;
+  const degree = (id: string): number => states.get(id)?.degree ?? 0;
+  const sweep = (id: string): number => states.get(id)?.sweep ?? 0;
+  const attention = Math.max(0, ...[...states.values()].map((state) => state.heat));
+
+  // The world layer, and a fainter copy of the field behind it moving at a fraction of the rate.
+  // Parallax is the cheapest honest depth cue there is, and it is what makes a lateral move read
+  // as travel rather than as a diagram sliding sideways.
+  const place = (factor: number): CSSProperties => {
+    const put = viewportTransform(view, viewport, factor);
+    return {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      transformOrigin: "0 0",
+      transform: `translate(${put.x}px, ${put.y}px) scale(${put.scale})`,
+    };
+  };
+
+  const opening = interpolate(frame, [0, MOTION.opener * 2], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: ease,
+  });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: COLORS.ink, overflow: "hidden" }}>
+      <div style={place(WORLD.gridParallax)}>
+        <Field
+          opacity={0.5 * opening}
+          step={WORLD.gridStep * 3}
+          scale={scale * WORLD.gridParallax}
+        />
+      </div>
+      <div style={place(1)}>
+        <Field opacity={0.85 * opening} step={WORLD.gridStep} scale={scale} />
+        <Relations
+          layout={layout}
+          degree={degree}
+          sweep={sweep}
+          heat={heat}
+          attention={attention}
+        />
+        {layout.nodes.map((node) => (
+          <Plate
+            key={node.id}
+            node={node}
+            state={states.get(node.id) as AnchorState}
+            attention={attention}
+            opening={opening}
+          />
+        ))}
+      </div>
+
+      {/* Screen space, and the only thing in the composition that does not move: a horizon the
+          travelling world is seen against. */}
+      <AbsoluteFill
+        style={{
+          background:
+            `radial-gradient(ellipse 78% 74% at 50% 48%, ${withAlpha("#05070B", 0)} 0%, ` +
+            `${withAlpha("#05070B", 0.22)} 62%, ${withAlpha("#04060A", 0.62)} 100%)`,
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: FRAME.marginX,
+          top: FRAME.marginY,
+          ...reveal(frame, 0),
+        }}
+      >
+        <Rule frame={frame} width={72} />
+        <h1
+          style={{
+            ...heading,
+            marginTop: SPACE.md,
+            fontSize: TYPE.row,
+            lineHeight: 1.08,
+            maxWidth: 900,
+            textShadow: `0 2px 34px ${withAlpha("#05070B", 0.9)}`,
+          }}
+        >
+          {scene.title}
+        </h1>
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * When the camera stops looking at concepts and shows the machine.
+ *
+ * A closing cue that reaches no entity, after every cue that reaches one, is a remark about the
+ * world rather than about anything in it — so that is where the pull back begins, and the closing
+ * lines are spoken over it. A slide whose narration ends on an activation gets the reveal in its
+ * `post_say` instead.
+ *
+ * Derived from which cues name an entity and which do not, which is a fact the author already
+ * wrote down for an entirely different reason. Nothing here is a camera instruction, and there is
+ * no key that could become one.
+ */
+function revealFrom(scene: Scene): number {
+  const lastAnchored = Math.max(-1, ...scene.anchors.map((anchor) => anchor.clipIndex));
+  const trailing = scene.clips[lastAnchored + 1];
+  if (trailing !== undefined) return trailing.from;
+
+  const last = scene.clips.at(-1);
+  return last === undefined
+    ? scene.narrationFrom + scene.narrationDurationInFrames
+    : last.from + last.durationInFrames;
+}
+
+/**
+ * The blueprint field the world is suspended in.
+ *
+ * Lines rather than a wash, because the deck already learned what eight-bit near-black does to a
+ * gradient. Two of these run at different rates; together they are the only thing that tells a
+ * viewer the camera is moving rather than the diagram.
+ *
+ * The *spacing* scales with the camera and the *thickness* does not, which is the compromise a
+ * blueprint has to make. Scaling both is technically consistent and perceptually useless: at the
+ * wide shot the lines land under a pixel and the field disappears in exactly the frame that needs
+ * it most. Spacing carries the zoom; thickness carries the legibility.
+ */
+function Field({
+  opacity,
+  step,
+  scale,
+}: {
+  opacity: number;
+  step: number;
+  scale: number;
+}) {
+  const stroke = 1.2 / Math.max(scale, 0.05);
+  const ink = withAlpha("#546A8C", 0.55);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: -24000,
+        top: -24000,
+        width: 48000,
+        height: 48000,
+        opacity,
+        backgroundImage:
+          `linear-gradient(${ink} ${stroke}px, transparent ${stroke}px), ` +
+          `linear-gradient(90deg, ${ink} ${stroke}px, transparent ${stroke}px)`,
+        backgroundSize: `${step}px ${step}px`,
+      }}
+    />
+  );
+}
+
+/**
+ * The relations, drawn in the world's own coordinates.
+ *
+ * A relation draws itself as its later end arrives — a line growing from the concept already
+ * established towards the one being introduced — with a short bright dash riding the leading edge
+ * and an arrow head fading in behind it. Direction is carried by the motion, so the head can stay
+ * small enough not to be a diagram convention.
+ *
+ * A relation neither of whose ends has been reached is still there, faintly. The world has to
+ * read as a machine from the first frame; the narration lights it, it does not build it.
+ */
+function Relations({
+  layout,
+  degree,
+  sweep,
+  heat,
+  attention,
+}: {
+  layout: WorldLayout;
+  degree: (id: string) => number;
+  sweep: (id: string) => number;
+  heat: (id: string) => number;
+  attention: number;
+}) {
+  const { bounds } = layout;
+  return (
+    <svg
+      width={bounds.width}
+      height={bounds.height}
+      viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
+      style={{ position: "absolute", left: bounds.x, top: bounds.y, overflow: "visible" }}
+    >
+      {layout.edges.map((edge) => {
+        const source = layout.byId.get(edge.from);
+        const hue = flowColor(source?.depth ?? 0);
+        const drawn = Math.min(sweep(edge.from), sweep(edge.to));
+        const live = Math.min(degree(edge.from), degree(edge.to));
+        const arriving = heat(edge.to);
+        const dim = 1 - 0.34 * attention * (1 - arriving);
+
+        return (
+          <g key={`${edge.from}-${edge.to}`}>
+            {/* The latent run. Present from the first frame at the brightness of structure. */}
+            <path
+              d={edge.path}
+              fill="none"
+              stroke={withAlpha("#647B9C", 0.42 * dim)}
+              strokeWidth={WORLD.edgeStroke * 0.55}
+              strokeLinecap="round"
+            />
+            {/* The established run, drawn as it establishes. */}
+            <path
+              d={edge.path}
+              fill="none"
+              stroke={withAlpha(hue, (0.34 + 0.34 * live) * dim)}
+              strokeWidth={WORLD.edgeStroke}
+              strokeLinecap="round"
+              strokeDasharray={edge.length}
+              strokeDashoffset={edge.length * (1 - drawn)}
+            />
+            {/* The signal. Rides the leading edge and is gone with it. */}
+            {drawn > 0 && drawn < 1 ? (
+              <path
+                d={edge.path}
+                fill="none"
+                stroke={withAlpha(hue, 0.95)}
+                strokeWidth={WORLD.edgeStroke * 1.5}
+                strokeLinecap="round"
+                strokeDasharray={`${WORLD.pulseLength} ${edge.length}`}
+                strokeDashoffset={edge.length * (1 - drawn)}
+                style={{ filter: `drop-shadow(0 0 22px ${withAlpha(hue, 0.9)})` }}
+              />
+            ) : null}
+            <ArrowHead points={edge.points} color={hue} opacity={live * dim} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** The head of a relation, built from its own last segment rather than from an SVG marker. */
+function ArrowHead({
+  points,
+  color,
+  opacity,
+}: {
+  points: readonly Point[];
+  color: string;
+  opacity: number;
+}) {
+  const tip = points.at(-1);
+  const before = points.at(-2);
+  if (tip === undefined || before === undefined || opacity <= 0.01) return null;
+
+  const angle = Math.atan2(tip.y - before.y, tip.x - before.x);
+  const size = 26;
+  const spread = 0.42;
+  const corner = (turn: number) => ({
+    x: tip.x - size * Math.cos(angle + turn),
+    y: tip.y - size * Math.sin(angle + turn),
+  });
+  const [left, right] = [corner(spread), corner(-spread)];
+
+  return (
+    <polygon
+      points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
+      fill={withAlpha(color, 0.85 * opacity)}
+    />
+  );
+}
+
+/**
+ * One entity, as a plate in the world.
+ *
+ * Future is dim but complete; established is bright, white-labelled and untinted; hot is a
+ * momentary bloom in the entity's own colour that also lifts it a little towards the viewer. The
+ * bloom is long by the deck's standards (`WORLD_TIMING`) because the camera is still travelling
+ * when it starts — the plate ignites at the word and is still burning when the shot arrives,
+ * which is what makes the arrival feel caused rather than scheduled.
+ */
+function Plate({
+  node,
+  state,
+  attention,
+  opening,
+}: {
+  node: WorldNode;
+  state: AnchorState;
+  attention: number;
+  opening: number;
+}) {
+  const hue = flowColor(node.depth);
+  const { degree, heat } = state;
+
+  // Everything that is not the moment steps back while the moment lasts. Half a stop is a lot,
+  // and it is the single most effective thing on this frame: the eye finds the brightest object
+  // before it finds anything else, so making the moment brightest is the whole job.
+  const dim = 1 - 0.5 * attention * (1 - heat);
+  const presence = (0.4 + 0.6 * degree) * dim * opening;
+
+  // Hot is the entity's own colour *brightened*, not washed towards white. A white border is
+  // merely light; a saturated one is lit, and lit is what a viewer reads as "this one".
+  const ignited = mix(hue, "#FFFFFF", 0.42);
+  const fill = node.terminal
+    ? mix("#0A0F16", hue, 0.07 + 0.1 * degree + 0.08 * heat)
+    : mix("#0B1017", hue, 0.02 + 0.05 * degree + 0.09 * heat);
+  const stroke = mix(mix("#465873", hue, 0.42 + 0.58 * degree), ignited, heat);
+  const label = mix(mix(COLORS.dim, COLORS.paper, degree), "#FFFFFF", 0.6 * heat);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: node.rect.x,
+        top: node.rect.y,
+        width: node.rect.width,
+        height: node.rect.height,
+        opacity: presence,
+        transform: `scale(${1 + 0.05 * heat})`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: WORLD.plateRadius,
+        border: `${WORLD.plateStroke + 1.5 * heat}px solid ${stroke}`,
+        backgroundColor: fill,
+        // Tight and bright rather than wide and faint. A 200-unit bloom at eight percent alpha
+        // is a gradient with about four values in it, and H.264 renders four values over three
+        // hundred pixels as visible rectangular steps — the same eight-bit near-black problem
+        // that flattened the deck's background. Halving the radius and doubling the alpha puts
+        // the same amount of light into a ramp steep enough to survive the encoder.
+        boxShadow:
+          `0 0 ${28 + 74 * heat}px ${withAlpha(hue, 0.09 + 0.2 * degree + 0.62 * heat)}, ` +
+          `inset 0 0 ${30 + 60 * heat}px ${withAlpha(hue, 0.05 + 0.18 * heat)}`,
+      }}
+    >
+      {node.terminal ? <Gate hue={hue} degree={degree} /> : null}
+      {/* Ignition. One ring, once, expanding away from the plate as it lights — the thing that
+          makes an activation visible from the corner of the eye while the camera is still on its
+          way there. Driven by `sweep` because a ring that came back would be absurd. */}
+      {state.sweep > 0 && state.sweep < 1 ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: -32,
+            borderRadius: WORLD.plateRadius + 32,
+            border: `5px solid ${withAlpha(ignited, 0.8 * (1 - state.sweep) ** 1.6)}`,
+            transform: `scale(${1 + 0.2 * state.sweep})`,
+          }}
+        />
+      ) : null}
+      <div
+        style={{
+          position: "relative",
+          padding: `0 ${WORLD.padX}px`,
+          textAlign: "center",
+          fontSize: WORLD.label,
+          fontWeight: 600,
+          letterSpacing: "-0.018em",
+          lineHeight: WORLD.lineHeight,
+          color: label,
+          textShadow: heat > 0.01 ? `0 0 ${44 * heat}px ${withAlpha(hue, heat)}` : "none",
+        }}
+      >
+        {node.lines.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the world produces, marked as an artifact rather than another concept.
+ *
+ * The terminal entity — the one no relation leaves — gets an inset frame, so the plate reads as
+ * something with a picture in it rather than as one more box in a diagram. Which entity that is
+ * is a fact about the graph, not something anybody wrote down: cuecraft finds the sink.
+ *
+ * A first cut put a working miniature of the whole world in here, and it was the right idea at
+ * the wrong scale — at the sizes this plate actually appears at, an eleven-node schematic inside
+ * it is indistinguishable from a compression artifact. The recursion is parked, not abandoned.
+ */
+function Gate({ hue, degree }: { hue: string; degree: number }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 16,
+        borderRadius: 4,
+        border: `1.5px solid ${withAlpha(hue, 0.16 + 0.3 * degree)}`,
+      }}
+    />
+  );
+}
+
 export function Slide({
   scene,
   slideCount,
@@ -966,8 +1447,10 @@ export function Slide({
   absoluteFrame: number;
 }) {
   return (
-    <Frame scene={scene} slideCount={slideCount}>
-      {scene.layout === "statement" ? (
+    <Frame scene={scene} slideCount={slideCount} bleed={scene.layout === "atlas"}>
+      {scene.layout === "atlas" ? (
+        <Atlas scene={scene} absoluteFrame={absoluteFrame} />
+      ) : scene.layout === "statement" ? (
         <Statement scene={scene} />
       ) : scene.layout === "matrix" ? (
         <Matrix scene={scene} absoluteFrame={absoluteFrame} />

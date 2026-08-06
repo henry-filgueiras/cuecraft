@@ -26,6 +26,7 @@
     "bootstrap:tts": "./scripts/bootstrap-local-tts.sh"
   },
   "devDependencies": {
+    "@types/d3-interpolate": "^3.0.4",
     "@types/node": "^22.15.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -33,8 +34,10 @@
     "typescript": "^5.8.0"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.0",
     "@remotion/bundler": "^4.0.506",
     "@remotion/renderer": "^4.0.506",
+    "d3-interpolate": "^3.0.1",
     "diff": "^9.0.0",
     "highlight.js": "^11.11.1",
     "kokoro-js": "1.2.1",
