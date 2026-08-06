@@ -37,6 +37,17 @@ Two further limits surfaced while building the seam:
   absence of pauses, but nothing carries prosodic state across the boundary, so joins may be
   audible.
 
+Since sprint 2 the source format makes this visible rather than merely true. `defaults.instructions`
+is still accepted — decision:6 put it in the format and a remote provider may yet honour it — but
+`cuecraft render` now prints a warning saying it has no effect and pointing here. Valid source that
+does nothing is worse than invalid source, and a warning is the smallest honest answer short of
+resolving this dragon. `defaults.voice` and `defaults.speed` are authorable, which is the whole of
+Kokoro's control surface exposed exactly once, deck-wide.
+
+The 420-character guard has not yet constrained anything: the canonical example's longest `say` is
+126 characters and synthesizes in about a second. The ceiling is waiting for a real deck, not for a
+decision.
+
 ## Question
 
 How does cuecraft express narration that is longer than one Kokoro window, or that needs a pause,

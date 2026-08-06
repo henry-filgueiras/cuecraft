@@ -17,6 +17,7 @@ test("render defaults its output path", () => {
     kind: "render",
     input: "talk.yaml",
     output: "presentation.mp4",
+    quiet: false,
   });
 });
 
@@ -29,6 +30,7 @@ test("render accepts an explicit output path", () => {
       kind: "render",
       input: "talk.yaml",
       output: "out.mp4",
+      quiet: false,
     });
   }
 });
@@ -94,4 +96,19 @@ test("speak rejects a non-numeric speed and unquoted text", () => {
 test("voices takes no arguments", () => {
   assert.deepEqual(parseInvocation(["voices"]), { kind: "voices" });
   assert.throws(() => parseInvocation(["voices", "af_heart"]), UsageError);
+});
+
+test("render can be quietened for scripts and CI", () => {
+  assert.deepEqual(parseInvocation(["render", "talk.yaml", "--quiet"]), {
+    kind: "render",
+    input: "talk.yaml",
+    output: "presentation.mp4",
+    quiet: true,
+  });
+  assert.deepEqual(parseInvocation(["render", "-q", "talk.yaml"]), {
+    kind: "render",
+    input: "talk.yaml",
+    output: "presentation.mp4",
+    quiet: true,
+  });
 });

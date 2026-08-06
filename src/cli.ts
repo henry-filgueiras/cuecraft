@@ -3,20 +3,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
+import { formatTimecode } from "./presentation/duration.ts";
+import { PresentationError } from "./presentation/parse.ts";
+import { renderPresentationFile, StageError } from "./pipeline.ts";
 import { SynthesisError, synthesize } from "./tts/kokoro.ts";
 import { KOKORO_VOICES } from "./tts/voices.ts";
 
 /**
- * The bootstrap CLI surface. Only argument parsing is real; `render` is not
- * implemented yet — see archaeology/decisions/0001-*.md for the intended
- * pipeline and archaeology/dragons/0001-*.md for the ordering constraint that
- * shapes it.
+ * The CLI surface. Everything cuecraft can do is reachable from here and works headless
+ * (decision:2) — the command line is the product, not a wrapper around one.
+ *
+ * See archaeology/decisions/0001-*.md for the compiler thesis and
+ * archaeology/dragons/0001-*.md for the ordering constraint that shapes `render`.
  */
 
 export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
-  | { kind: "render"; input: string; output: string }
+  | { kind: "render"; input: string; output: string; quiet: boolean }
   | { kind: "speak"; text: string; output: string; voice?: string; speed?: number }
   | { kind: "voices" };
 
@@ -35,11 +39,13 @@ Options:
   -o, --output <path>  Output path (render: presentation.mp4, speak: speech.wav)
       --voice <name>   Kokoro voice for speak (default: af_heart)
       --speed <rate>   Speaking rate for speak, 0.5–2.0 (default: 1)
+      --quiet          Suppress progress; print only the completion summary
 
-Status: experimental. \`render\` is not implemented yet.
+Status: experimental.
 
-\`speak\` synthesizes locally and needs no credentials. Run
-./scripts/bootstrap-local-tts.sh once to install the model.`;
+Narration is synthesized locally and needs no credentials. Run
+./scripts/bootstrap-local-tts.sh once to install the model. The first render also
+downloads a headless Chrome for Remotion into its own cache.`;
 
 export function parseInvocation(argv: readonly string[]): Invocation {
   const { values, positionals } = parseArgs({
@@ -48,6 +54,7 @@ export function parseInvocation(argv: readonly string[]): Invocation {
       output: { type: "string", short: "o" },
       voice: { type: "string" },
       speed: { type: "string" },
+      quiet: { type: "boolean", short: "q" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "V" },
     },
@@ -69,7 +76,12 @@ export function parseInvocation(argv: readonly string[]): Invocation {
       if (rest.length > 1) {
         throw new UsageError(`render takes one presentation file, got ${rest.length}`);
       }
-      return { kind: "render", input, output: values.output ?? "presentation.mp4" };
+      return {
+        kind: "render",
+        input,
+        output: values.output ?? "presentation.mp4",
+        quiet: values.quiet ?? false,
+      };
     }
 
     case "speak": {
@@ -101,6 +113,65 @@ export function parseInvocation(argv: readonly string[]): Invocation {
 
     default:
       throw new UsageError(`unknown command: ${command}`);
+  }
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  read: "reading source",
+  parse: "validating presentation",
+  synthesize: "synthesizing narration",
+  time: "deriving timing",
+  browser: "preparing headless browser",
+  bundle: "bundling composition",
+  compose: "resolving composition",
+  render: "rendering video",
+};
+
+async function runRender(
+  invocation: Extract<Invocation, { kind: "render" }>,
+): Promise<number> {
+  const note = (line: string): void => {
+    if (!invocation.quiet) process.stderr.write(`${line}\n`);
+  };
+
+  try {
+    const summary = await renderPresentationFile(invocation.input, invocation.output, {
+      onStage: (stage) => {
+        note(`  ${STAGE_LABELS[stage] ?? stage}...`);
+      },
+      onWarning: (message) => {
+        process.stderr.write(`cuecraft: warning: ${message}\n`);
+      },
+      onNarration: (slide, narration) => {
+        note(
+          `    slide ${slide.ordinal}: ${narration.durationSeconds.toFixed(1)}s ` +
+            `(${narration.voice} at ${narration.speed}x)`,
+        );
+      },
+    });
+
+    const { timeline, report } = summary;
+    process.stdout.write(
+      `Rendered ${invocation.output}\n` +
+        `  ${timeline.scenes.length} slide${timeline.scenes.length === 1 ? "" : "s"}\n` +
+        `  ${formatTimecode((report.totalFrames / report.fps) * 1000)}\n` +
+        `  ${report.width}x${report.height} @ ${report.fps}fps, ` +
+        `${report.codec}/${report.audioCodec}\n` +
+        `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
+        `render ${summary.renderSeconds.toFixed(1)}s\n` +
+        `  narration kept in ${summary.workspace}\n`,
+    );
+    return 0;
+  } catch (error) {
+    if (error instanceof PresentationError) {
+      process.stderr.write(`cuecraft: ${error.report()}\n`);
+      return 1;
+    }
+    if (error instanceof StageError) {
+      process.stderr.write(`cuecraft: ${error.stage} failed: ${error.message}\n`);
+      return 1;
+    }
+    throw error;
   }
 }
 
@@ -148,12 +219,7 @@ async function main(argv: readonly string[]): Promise<number> {
       return 0;
 
     case "render":
-      process.stderr.write(
-        "cuecraft: render is not implemented yet.\n" +
-          "This repository is currently a bootstrap; see archaeology/ for the " +
-          "decisions that define v0.\n",
-      );
-      return 1;
+      return runRender(invocation);
 
     case "voices":
       for (const voice of KOKORO_VOICES) {

@@ -26,34 +26,71 @@ presentation.mp4
 The YAML is the source of truth. Slides, narration audio, timing, and the final video are
 projections of it. You edit the text and recompile; you do not edit the video.
 
-## Status: bootstrap only
+## Status: first light
 
-This repository currently contains project archaeology, tooling, and a CLI skeleton. **The
-render pipeline is not implemented.** `cuecraft render` exists as a command and exits with a
-clear message saying so.
+`cuecraft render` works end to end. A YAML deck compiles to a narrated 1080p MP4 with no
+credentials, no network at render time, and nothing to click.
+
+```
+./scripts/bootstrap-local-tts.sh                                    # once
+npm run render -- examples/witnessglass.yaml -o out/witnessglass.mp4
+```
+
+```
+Rendered out/witnessglass.mp4
+  2 slides
+  00:19.2
+  1920x1080 @ 30fps, h264/aac
+```
+
+After a global install the same thing is `cuecraft render examples/witnessglass.yaml -o
+out/witnessglass.mp4`. The first render additionally downloads a Chrome Headless Shell into
+Remotion's own cache; every render after that is offline.
 
 What exists now:
 
-- decisions, parked ideas, and open questions under [`archaeology/`](archaeology/)
-- a TypeScript/Node toolchain with typecheck, tests, and formatting
-- a CLI entry point that parses arguments
-- **local text-to-speech** — `cuecraft speak` synthesizes audio on your own machine, with no
-  API key and no network (see below)
-- [`examples/witnessglass.yaml`](examples/witnessglass.yaml) — the target input format, which
-  nothing reads yet
+- YAML parsing and strict validation, with errors that name the slide and field
+- local narration synthesis, one WAV per slide, measured rather than estimated
+- narration-derived timing, converted to frames in exactly one place
+- one built-in slide look and one restrained transition
+- 1920x1080 H.264/AAC output via Remotion
+- `cuecraft speak` for trying a line of narration on its own
 
 What is aspirational:
 
-- YAML parsing and validation
-- narration caching and narration-derived slide timing
-- Remotion composition and MP4 rendering
+- narration caching, so an unchanged re-render synthesizes nothing ([dragon:1](archaeology/dragons/))
 - `cuecraft freeze` for promoting approved narration into source assets
+- pinned typography, so a render on Linux matches a render on macOS ([dragon:4](archaeology/dragons/))
 
-## Intended usage
+## How a render works
 
 ```
-cuecraft render presentation.yaml -o presentation.mp4
+presentation.yaml
+   |  parse + validate            yaml, zod
+   v
+authored presentation
+   |  synthesize each `say`       local Kokoro, measured duration
+   v
+compiled presentation            slide + audio + derived scene length
+   |  seconds -> frames          one rule, one function
+   v
+frame timeline
+   |  compose + encode           Remotion, ffmpeg
+   v
+presentation.mp4
 ```
+
+Each slide lasts `max(minimum, pre_say + narration + post_say)`. Narration starts after
+`pre_say`; the next slide never begins before it finishes. Durations become frames only at the
+last step, always rounding up, so nothing drifts. Frame counts are not expressible in the
+source — see
+[`archaeology/decisions/0009-*.md`](archaeology/decisions/).
+
+Everything a render generates — narration WAVs and the webpack bundle — lands in
+`.cuecraft/renders/<name>/`, next to the model weights and under the same rules: a projection,
+always safe to delete, never committed, never hand-edited. It is kept rather than cleaned up,
+because a render that sounds wrong is diagnosed by listening to the WAV that caused it.
+Narration is re-synthesized on every render; there is no cache yet.
 
 ## Local text-to-speech
 
@@ -100,12 +137,15 @@ under `.cuecraft/` is ever committed.
 
 Timing is derived rather than authored — a slide lasts
 `max(minimum slide duration, pre_say + narration duration + post_say)` — which means narration
-must be synthesized and measured before any frame is rendered. Because synthesis is paid and
-non-deterministic, generated audio is content-addressed by everything that determines it
-(provider, model, voice, delivery instructions, text, format) and reused when unchanged.
-Narration you approve can later be _frozen_ into repository-managed source assets, so a
-published talk keeps its exact performance even as providers drift. Rendering delegates to
-Remotion and ffmpeg; we do not build media machinery ourselves.
+must be synthesized and measured before any frame is rendered. Nothing downstream of that
+measurement is allowed to change it: the renderer fades slides within the frames the compiler
+assigned them rather than overlapping scenes, and asserts that the composition agrees with the
+timeline. Generated audio is meant to be content-addressed by everything that determines it
+(provider, model, voice, delivery instructions, text, format) and reused when unchanged; that
+cache is not built yet, so every render synthesizes afresh. Narration you approve can later be
+_frozen_ into repository-managed source assets, so a published talk keeps its exact performance
+even as providers drift. Rendering delegates to Remotion and ffmpeg; we do not build media
+machinery ourselves.
 
 The reasoning behind each of those choices is recorded in
 [`archaeology/decisions/`](archaeology/decisions/).
@@ -126,13 +166,24 @@ npm run check     # typecheck + format check + tests
 npm run build     # emit dist/
 ```
 
-`npm run check` never loads the model, so it works on a machine that has not bootstrapped local
-TTS. Tests that require the real model are named `*.live-test.ts` and run separately:
+`npm run check` never loads the model and never launches a browser, so it works on a machine
+that has not bootstrapped anything. Tests with real prerequisites are named by suffix and run
+separately:
 
 ```
 ./scripts/bootstrap-local-tts.sh
-npm run test:tts
+npm run test:tts       # *.live-test.ts  — real Kokoro synthesis
+npm run test:render    # *.render-test.ts — synthesis + headless Chromium + ffprobe
 ```
+
+`test:render` compiles a two-slide fixture all the way to an MP4 and checks the container,
+codecs, resolution, frame rate, and that its duration matches the derived timeline. It does not
+judge how the video looks; that test is watching it.
+
+Machine prerequisites beyond Node: **ffprobe** (from ffmpeg) for `test:render`, and about
+100 MB of disk for the Chrome Headless Shell that Remotion downloads on first render. The
+composition is the one part of the source Node never executes — Remotion's bundler compiles it,
+which is why it lives in `.tsx` and is typechecked by `tsconfig.render.json`.
 
 Durable project knowledge lives in [`archaeology/`](archaeology/), managed with
 [scarp](https://crates.io/crates/scarp):

@@ -1,8 +1,10 @@
-# Reference input for the v0 format.
+# The canonical input for the v0 format, and the acceptance artifact for every
+# render change:
 #
-# Nothing parses this file yet — it exists to pin down what the compiler is
-# being built to accept. See archaeology/decisions/0001-*.md (thesis) and
-# archaeology/decisions/0002-*.md (what v0 does and does not include).
+#   cuecraft render examples/witnessglass.yaml -o out/witnessglass.mp4
+#
+# See archaeology/decisions/0001-*.md (thesis), 0002-*.md (what v0 does and does
+# not include), and 0009-*.md (how this becomes a video).
 
 title: "WitnessGlass: What Did the Agent Actually Do?"
 
