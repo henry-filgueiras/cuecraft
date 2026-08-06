@@ -16,8 +16,9 @@ scarp list dragons      # open questions that are not yet settled
 scarp show decision:3   # or any collection:sequence reference
 ```
 
-Several things that look like gaps are decisions. `render` failing with "not implemented", the
-absence of a GUI, and the single scene type are all intentional and documented.
+Several things that look like gaps are decisions. The absence of a GUI, the single scene type,
+the fixed set of composition archetypes, and the fact that an author cannot set a size, a
+position, a colour or a time are all intentional and documented.
 
 ## Use scarp for durable knowledge, not ad-hoc files
 

@@ -1,0 +1,165 @@
+# cuecraft, explaining itself.
+#
+#   cuecraft render examples/cuecraft.yaml -o out/cuecraft.mp4
+#
+# Six scenes, about eighty seconds. The argument is: presentations are usually authored as
+# mechanics, cuecraft asks for intent instead, and everything mechanical is derived from it.
+#
+# Two of the scenes show cuecraft source, because the claim is only worth making if a viewer
+# can check it. The last one shows its own source — what is on screen at the end is what
+# produced the frame you are looking at.
+#
+# Nothing in this file says where anything goes, how big it is, or when it happens.
+
+title: "cuecraft: author relationships, derive mechanics"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1100ms
+
+slides:
+  # 1 — THE PROBLEM, in the viewer's own vocabulary before it is taken away from them.
+  # A slide that is one sentence and nothing else.
+  - slide:
+      title: "Presentations are built out of boxes, pixels and seconds"
+
+    # A beat before the turn. The second sentence is the whole reason for the first.
+    pre_say: 1000ms
+    say:
+      - "A presentation is usually built out of boxes, pixels and seconds."
+      - pause: 450ms
+      - "None of that is what you meant to say."
+
+  # 2 — THE SOURCE. The centre of the video: a real cuecraft slide, shown whole, with the
+  # narration walking its three parts. What is on screen is what an author actually types.
+  - slide:
+      title: "One slide, in full"
+      code:
+        language: yaml
+        source: |
+          slide:
+            title: "Coding agents are black boxes"
+            bullets:
+              - id: tools
+                text: Run tools
+
+          say:
+            - "Agents do a lot of invisible work."
+            - speech: "They read, search, and run tools."
+              activates: tools
+
+        # Three parts of the specimen that the narration reaches. Each names the line it
+        # opens rather than a line number, so inserting a line above it changes nothing.
+        marks:
+          - id: content
+            line: "slide:"
+          - id: narration
+            line: "say:"
+          - id: link
+            line: "activates:"
+
+    say:
+      - "So cuecraft asks for something else."
+      - speech: "You describe what is on the slide,"
+        activates: content
+      - speech: "and what to say about it."
+        activates: narration
+      - pause: 400ms
+      - speech: "And when one sentence is about one thing in particular, it says so."
+        activates: link
+      - pause: 350ms
+      - "There is no timeline here. Nothing has a position, and nothing has a time."
+
+  # 3 — WHAT HAPPENS TO IT. Stages of one transformation, not a list of features: each stage
+  # consumes the one before it, and the narration walks them in order.
+  - slide:
+      title: "Then it works out the rest"
+      steps:
+        - id: speech
+          text: Speech
+        - id: timing
+          text: Timing
+        - id: composition
+          text: Composition
+        - id: video
+          text: Video
+
+    say:
+      - "Everything else is derived."
+      - speech: "The narration is spoken locally, on your machine."
+        activates: speech
+      - speech: "Its real duration becomes the slide's duration."
+        activates: timing
+      - speech: "The shape of the content chooses the composition."
+        activates: composition
+      - speech: "And the whole thing is rendered."
+        activates: video
+
+  # 4 — THE CONSEQUENCE, stated as absence. Four parallel terms, each struck off by name.
+  - slide:
+      title: "Things you never write"
+      bullets:
+        - id: coordinates
+          text: Coordinates
+        - id: durations
+          text: Durations
+        - id: keyframes
+          text: Keyframes
+        - id: layouts
+          text: Layouts
+
+    say:
+      - "So there are things you never write."
+      - speech: "No coordinates."
+        activates: coordinates
+      - speech: "No durations."
+        activates: durations
+      - speech: "No keyframes."
+        activates: keyframes
+      - speech: "And no layout to pick."
+        activates: layouts
+      - pause: 400ms
+      - "Change a sentence, and everything downstream follows it."
+
+  # 5 — THE RESULT. The calm scene after the cascade, and the one that says what you are left
+  # holding: a file, not a runtime.
+  - slide:
+      title: "What comes out is an ordinary video"
+      bullets:
+        - One file, with the narration already mixed into it
+        - Nothing to install, and nothing to play it back with
+        - A source small enough to read in about a minute
+
+    say:
+      - "What comes out is an ordinary video."
+      - pause: 300ms
+      - "One file, with the narration already mixed in. Nothing to install."
+      - pause: 300ms
+      - "And the source stays small enough to read in a minute."
+
+  # 6 — THE CLOSE, and the one piece of recursion in the deck. The specimen on screen is this
+  # slide's own source, so the thesis is checkable rather than asserted. It stops one level
+  # short: the block that displays the block is not itself displayed.
+  - slide:
+      title: "Author relationships. Derive mechanics."
+      code:
+        language: yaml
+        source: |
+          slide:
+            title: "Author relationships. Derive mechanics."
+
+          say:
+            - "That is this slide, in full."
+            - pause: 600ms
+            - "Author relationships."
+            - pause: 400ms
+            - "Derive mechanics."
+
+    # Room at the end to let the last frame land rather than cutting on the final syllable.
+    post_say: 2200ms
+    say:
+      - "That is this slide, in full."
+      - pause: 600ms
+      - "Author relationships."
+      - pause: 400ms
+      - "Derive mechanics."
