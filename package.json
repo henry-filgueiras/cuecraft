@@ -18,11 +18,17 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run typecheck && npm run format:check && npm run test"
+    "check": "npm run typecheck && npm run format:check && npm run test",
+    "speak": "node src/cli.ts speak",
+    "test:tts": "node --test \"src/**/*.live-test.ts\"",
+    "bootstrap:tts": "./scripts/bootstrap-local-tts.sh"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "prettier": "^3.5.0",
     "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "kokoro-js": "1.2.1"
   }
 }

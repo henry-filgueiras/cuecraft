@@ -37,14 +37,15 @@ What exists now:
 - decisions, parked ideas, and open questions under [`archaeology/`](archaeology/)
 - a TypeScript/Node toolchain with typecheck, tests, and formatting
 - a CLI entry point that parses arguments
+- **local text-to-speech** — `cuecraft speak` synthesizes audio on your own machine, with no
+  API key and no network (see below)
 - [`examples/witnessglass.yaml`](examples/witnessglass.yaml) — the target input format, which
   nothing reads yet
 
 What is aspirational:
 
 - YAML parsing and validation
-- TTS synthesis and narration caching
-- narration-derived slide timing
+- narration caching and narration-derived slide timing
 - Remotion composition and MP4 rendering
 - `cuecraft freeze` for promoting approved narration into source assets
 
@@ -53,6 +54,47 @@ What is aspirational:
 ```
 cuecraft render presentation.yaml -o presentation.mp4
 ```
+
+## Local text-to-speech
+
+Narration is synthesized locally by [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), an
+82M-parameter Apache-2.0 model. No credentials, no metered API, no audio leaving the machine.
+
+Install it once:
+
+```
+./scripts/bootstrap-local-tts.sh
+```
+
+That checks your Node version, installs the pinned npm dependencies, downloads about 321 MB of
+model weights from an immutable Hugging Face commit into `.cuecraft/models/`, verifies every
+file by SHA-256, and synthesizes a test phrase. It is safe to rerun: already-present artifacts
+are re-verified rather than re-downloaded, and a corrupted one is replaced.
+
+Then:
+
+```
+npm run speak -- "Good evening. Your laptop is now doing the talking." -o tmp/hello.wav
+cuecraft voices          # list the 28 available voices
+cuecraft speak "..." --voice bm_george --speed 1.2
+```
+
+Output is 24 kHz mono WAV. On an M-series Mac a line synthesizes at roughly a tenth of its own
+duration.
+
+**What actually runs.** Text is normalized and converted to IPA phonemes in-process by eSpeak NG
+compiled to WebAssembly; the phonemes become token ids; those plus a 256-float voice tensor and
+a speed scalar feed a StyleTTS2 ONNX graph executed by ONNX Runtime's native binding. cuecraft
+implements none of that — see
+[`archaeology/decisions/0008-*.md`](archaeology/decisions/) for what came from where, and what
+was rejected.
+
+**What is pinned.** Model weights by Hugging Face commit plus SHA-256, in
+[`kokoro-model.lock.json`](kokoro-model.lock.json); voice data and the inference library by
+`package-lock.json`. Nothing resolves against a mutable ref.
+
+**Resetting.** `rm -rf .cuecraft/models` removes the entire local model installation. Nothing
+under `.cuecraft/` is ever committed.
 
 ## Design in one paragraph
 
@@ -82,6 +124,14 @@ Requires Node >= 22.18 (source files run directly via Node's TypeScript type str
 npm install
 npm run check     # typecheck + format check + tests
 npm run build     # emit dist/
+```
+
+`npm run check` never loads the model, so it works on a machine that has not bootstrapped local
+TTS. Tests that require the real model are named `*.live-test.ts` and run separately:
+
+```
+./scripts/bootstrap-local-tts.sh
+npm run test:tts
 ```
 
 Durable project knowledge lives in [`archaeology/`](archaeology/), managed with

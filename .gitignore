@@ -6,8 +6,15 @@ dist/
 
 # Generated projections — always safe to delete, never source.
 # See archaeology/decisions/0003-*.md for the cache/frozen distinction.
+# .cuecraft/ also holds the downloaded Kokoro weights: pinned by
+# kokoro-model.lock.json, reproducible from it, and never committed
+# (decision:8). Deleting it fully resets the local model installation.
 .cuecraft/
 out/
+
+# Scratch audio from `cuecraft speak` / `npm run speak`.
+tmp/
+*.wav
 
 # Frozen narration assets are deliberately NOT ignored: once promoted, they
 # are repository-managed source, not build output.
