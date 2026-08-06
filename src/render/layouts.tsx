@@ -1264,8 +1264,14 @@ function Relations({
                 stroke={withAlpha(hue, 0.95)}
                 strokeWidth={WORLD.edgeStroke * 1.5}
                 strokeLinecap="round"
+                // The dash sits immediately *behind* the leading edge of the line being drawn:
+                // the pattern repeats every `pulse + length`, so offsetting by
+                // `pulse - drawn * length` puts its start at `drawn * length - pulse` and its
+                // end exactly where the line has got to. Offsetting by the remaining length
+                // instead — which is what the drawing line itself uses — runs it backwards,
+                // from the concept being introduced towards the one already established.
                 strokeDasharray={`${WORLD.pulseLength} ${edge.length}`}
-                strokeDashoffset={edge.length * (1 - drawn)}
+                strokeDashoffset={WORLD.pulseLength - drawn * edge.length}
                 style={{ filter: `drop-shadow(0 0 22px ${withAlpha(hue, 0.9)})` }}
               />
             ) : null}
