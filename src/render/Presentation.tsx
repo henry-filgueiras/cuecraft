@@ -9,7 +9,7 @@ import {
 } from "remotion";
 
 import type { Timeline } from "../compile/timeline.ts";
-import { Slide } from "./Slide.tsx";
+import { Slide } from "./layouts.tsx";
 import { COLORS, MOTION } from "./theme.ts";
 
 /**
@@ -28,7 +28,10 @@ import { COLORS, MOTION } from "./theme.ts";
  * `pre_say` gets a quicker transition rather than motion over its own narration.
  *
  * Audio sits outside the fading wrapper on its own absolute sequences: opacity is a visual
- * concern and must never be able to touch narration.
+ * concern and must never be able to touch narration. A slide's narration is now several
+ * clips rather than one, each placed at the frame the timeline computed for it, with
+ * authored pauses appearing as the gaps between them. Remotion mixes them into the output
+ * track; nothing here concatenates audio (decision:5).
  */
 
 /**
@@ -95,28 +98,29 @@ export function PresentationVideo({ timeline }: PresentationProps) {
                 fadeOut={fadeOut}
                 durationInFrames={scene.durationInFrames}
               >
-                <Slide
-                  scene={scene}
-                  slideCount={scenes.length}
-                  deckTitle={timeline.title}
-                  appearAt={appearAt}
-                />
+                {/* Shifts the local frame so entrance motion starts when the slide
+                    becomes visible rather than while it is still transparent. */}
+                <Sequence from={appearAt} layout="none" name="content">
+                  <Slide scene={scene} slideCount={scenes.length} />
+                </Sequence>
               </SceneLayer>
             </Sequence>
           );
         })}
       </AbsoluteFill>
 
-      {scenes.map((scene) => (
-        <Sequence
-          key={scene.ordinal}
-          from={scene.narrationFrom}
-          durationInFrames={scene.narrationDurationInFrames}
-          name={`narration-${scene.ordinal}`}
-        >
-          <Audio src={staticFile(scene.narrationSrc)} />
-        </Sequence>
-      ))}
+      {scenes.flatMap((scene) =>
+        scene.clips.map((clip, index) => (
+          <Sequence
+            key={`${scene.ordinal}-${index}`}
+            from={clip.from}
+            durationInFrames={clip.durationInFrames}
+            name={`narration-${scene.ordinal}-${index + 1}`}
+          >
+            <Audio src={staticFile(clip.src)} />
+          </Sequence>
+        )),
+      )}
     </AbsoluteFill>
   );
 }

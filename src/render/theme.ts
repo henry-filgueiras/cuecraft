@@ -14,38 +14,66 @@
 export const FONT_STACK = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
 export const COLORS = {
-  /** Deck background. Everything fades to and from this. */
-  ink: "#0B0E14",
-  /** Titles. */
-  paper: "#F3F6FB",
-  /** Bullets: below title contrast, still comfortably above WCAG AA on ink. */
-  muted: "#B7C1D1",
-  /** Footer furniture. Present, never competing. */
-  faint: "#5B6578",
-  /** Used three times per frame and nowhere else. */
+  /** Deck background. Everything fades to and from this. Flat — see Frame. */
+  ink: "#0A0D12",
+  /** Titles and statements. */
+  paper: "#F5F7FB",
+  /** Bullets, terms and rows: below title contrast, well above WCAG AA on ink. */
+  muted: "#C2CBD9",
+  /** Ordinals and secondary marks. Present, never competing. */
+  dim: "#6B7688",
+  /** Used sparingly: the rule, the ordinals, the cell edges, the progress bar. */
   accent: "#D9A05B",
-  /** Inactive progress segments. */
-  inactive: "rgba(255, 255, 255, 0.13)",
+  /** Structural lines. Visible at 1080p, invisible as decoration. */
+  hairline: "rgba(255, 255, 255, 0.11)",
+  /** The unfilled part of the progress rule. */
+  track: "rgba(255, 255, 255, 0.07)",
 } as const;
 
-export const LAYOUT = {
-  paddingX: 150,
-  paddingY: 96,
-  contentMaxWidth: 1380,
-  ruleWidth: 64,
-  ruleHeight: 5,
-  ruleGap: 44,
-  titleSize: 88,
-  titleGap: 62,
-  bulletSize: 40,
-  bulletGap: 30,
-  dashWidth: 22,
-  dashHeight: 3,
-  dashGap: 26,
-  footerSize: 19,
-  segmentWidth: 34,
-  segmentHeight: 4,
-  segmentGap: 10,
+/**
+ * A modular type scale, in pixels at 1920x1080.
+ *
+ * The First Light deck set titles at 88px and bullets at 40px, which is laptop-reading size:
+ * on a projector across a room the bullets disappeared and two thirds of the canvas went
+ * unused. Everything here is substantially larger, and the archetypes are built so that the
+ * largest element on a slide is genuinely large.
+ *
+ * Not exposed to authors. Typography is a decision cuecraft makes, not a knob it offers.
+ */
+export const TYPE = {
+  /** A slide that is one sentence. */
+  display: 150,
+  /** A heading above a composition. */
+  title: 104,
+  /** A heading holding its own column. */
+  lead: 88,
+  /** A short parallel label in the matrix field. */
+  term: 66,
+  /** A numbered row. */
+  row: 54,
+  /** An item in a stacked list. */
+  item: 46,
+  /** Ordinals: 01, 02, 03. */
+  ordinal: 34,
+} as const;
+
+/** An 8px rhythm. Every gap in the archetypes is one of these. */
+export const SPACE = {
+  xs: 8,
+  sm: 16,
+  md: 24,
+  lg: 40,
+  xl: 64,
+  xxl: 96,
+  huge: 132,
+} as const;
+
+export const FRAME = {
+  /** Side margin. Generous, and the same on every archetype so the deck shares an edge. */
+  marginX: 132,
+  marginY: 108,
+  /** Full-bleed rule along the bottom edge showing progress through the deck. */
+  progressHeight: 5,
 } as const;
 
 /**
@@ -69,9 +97,27 @@ export const MOTION = {
   fadeIn: 12,
   /** The deck settling back to background at the end. */
   closer: 18,
-  titleRise: 14,
+  /** How long any one element takes to arrive. */
+  rise: 13,
+  /** How far it travels while arriving. */
+  riseDistance: 22,
+  /** The accent rule drawing itself. */
   ruleDraw: 16,
-  bulletRise: 12,
-  bulletDelay: 10,
-  bulletStagger: 5,
+  /** Delay before the first content element follows the title. */
+  contentDelay: 9,
+  /** Separation between successive content elements. */
+  stagger: 5,
 } as const;
+
+/**
+ * Step a heading down as it gets longer, so a long title wraps to two readable lines
+ * instead of three cramped ones or one that overflows.
+ *
+ * Deterministic and derived from the content, like layout selection itself — authors do not
+ * set sizes (decision:10).
+ */
+export function fitHeading(length: number, base: number): number {
+  if (length > 58) return Math.round(base * 0.7);
+  if (length > 38) return Math.round(base * 0.84);
+  return base;
+}

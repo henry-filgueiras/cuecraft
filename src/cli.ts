@@ -143,20 +143,29 @@ async function runRender(
         process.stderr.write(`cuecraft: warning: ${message}\n`);
       },
       onNarration: (slide, narration) => {
+        const clips = narration.clips.length;
         note(
           `    slide ${slide.ordinal}: ${narration.durationSeconds.toFixed(1)}s ` +
+            `in ${clips} clip${clips === 1 ? "" : "s"} ` +
             `(${narration.voice} at ${narration.speed}x)`,
         );
       },
     });
 
     const { timeline, report } = summary;
+    // Which composition each slide was given. Layout is chosen from content and never
+    // authored, so this is the only place an author can see what the renderer decided.
+    const layouts = timeline.scenes
+      .map((scene) => `${scene.ordinal}:${scene.layout}`)
+      .join("  ");
+
     process.stdout.write(
       `Rendered ${invocation.output}\n` +
         `  ${timeline.scenes.length} slide${timeline.scenes.length === 1 ? "" : "s"}\n` +
         `  ${formatTimecode((report.totalFrames / report.fps) * 1000)}\n` +
         `  ${report.width}x${report.height} @ ${report.fps}fps, ` +
         `${report.codec}/${report.audioCodec}\n` +
+        `  layouts ${layouts}\n` +
         `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
         `  narration kept in ${summary.workspace}\n`,

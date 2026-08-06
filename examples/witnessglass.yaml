@@ -3,39 +3,70 @@
 #
 #   cuecraft render examples/witnessglass.yaml -o out/witnessglass.mp4
 #
+# This deck is also the design laboratory. Its four slides have deliberately
+# different content shapes so that each one selects a different composition —
+# nothing here names a layout, and nothing here sets a size or a position.
+#
 # See archaeology/decisions/0001-*.md (thesis), 0002-*.md (what v0 does and does
-# not include), and 0009-*.md (how this becomes a video).
+# not include), 0009-*.md (how this becomes a video), and 0010-*.md (how a shape
+# becomes a composition).
 
 title: "WitnessGlass: What Did the Agent Actually Do?"
 
 defaults:
   pre_say: 750ms
   post_say: 1200ms
-  # Delivery is a plain-language instruction passed through to the provider
-  # rather than a bespoke markup — see archaeology/decisions/0006-*.md.
-  instructions: "Measured and clear, like explaining to a colleague."
 
 slides:
+  # Four two-word labels: parallel, terse, no order worth showing -> matrix.
   - slide:
       title: "Coding agents are black boxes"
       bullets:
-        - They read files
-        - Search repositories
-        - Execute tools
-        - Make decisions
+        - Read files
+        - Search code
+        - Run tools
+        - Decide
 
-    say: |
-      Coding agents perform a surprising amount of invisible work.
-      We usually see the final answer, but not how their time was spent.
+    # Each cue is a separate synthesis call, so each gets a complete intonation
+    # contour instead of one long declarative arc. The pause is the beat before
+    # the list, and lands while the terms are still arriving on screen.
+    say:
+      - "Coding agents do a surprising amount of invisible work."
+      - pause: 350ms
+      - "They read files, search code, run tools, and decide what to do next."
 
+  # A title and nothing else -> statement.
+  - slide:
+      title: "You see the answer. You never see the work."
+
+    say:
+      - "You get the final answer."
+      - pause: 500ms
+      - "You almost never get to see how the time was actually spent."
+
+  # Four compact phrases whose order is part of the point -> index.
   - slide:
       title: "WitnessGlass records the work"
       bullets:
-        - Tool invocation
-        - Timing
-        - Result
-        - Semantic context
+        - Which tool the agent invoked
+        - How long the call took
+        - What the tool returned
+        - Why it was called at all
 
-    say: |
-      WitnessGlass turns that invisible work into structured events
-      that can be inspected after the session.
+    say:
+      - "WitnessGlass records every tool call as a structured event."
+      - pause: 300ms
+      - "Which tool ran, how long it took, and what came back."
+
+  # Full sentences, too long to be labels -> lead.
+  - slide:
+      title: "So the session stops being a black box"
+      bullets:
+        - Replay a session instead of recalling it
+        - Measure where the time actually went
+        - Review it the way you review a colleague
+
+    say:
+      - "So you can stop guessing."
+      - pause: 450ms
+      - "Replay the session, measure it, and review it like any other work."

@@ -24,6 +24,11 @@ import { repositoryRoot } from "../tts/model.ts";
 
 const run = promisify(execFile);
 
+/**
+ * Two slides, two archetypes, and both narration forms: the first uses the cue grammar with
+ * an explicit pause, the second the legacy scalar. Anything that breaks either one breaks
+ * this fixture.
+ */
 const FIXTURE = `
 title: "Render test"
 
@@ -37,7 +42,10 @@ slides:
       bullets:
         - One
         - Two
-    say: This is the first slide.
+    say:
+      - "This is the first slide."
+      - pause: 600ms
+      - "It has two clips."
 
   - slide:
       title: "Second"
@@ -152,7 +160,7 @@ test(
     const summary = await renderPresentationFile(input, join(workspace, "kept.mp4"));
 
     const wav = await readFile(
-      join(summary.workspace, "public", "narration", "slide-01.wav"),
+      join(summary.workspace, "public", "narration", "slide-01-01.wav"),
     );
     assert.equal(wav.subarray(0, 4).toString("ascii"), "RIFF");
     assert.ok(summary.workspace.startsWith(join(repositoryRoot(), ".cuecraft")));

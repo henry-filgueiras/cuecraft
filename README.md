@@ -38,9 +38,10 @@ npm run render -- examples/witnessglass.yaml -o out/witnessglass.mp4
 
 ```
 Rendered out/witnessglass.mp4
-  2 slides
-  00:19.2
+  4 slides
+  00:38.4
   1920x1080 @ 30fps, h264/aac
+  layouts 1:matrix  2:statement  3:index  4:lead
 ```
 
 After a global install the same thing is `cuecraft render examples/witnessglass.yaml -o
@@ -50,9 +51,9 @@ Remotion's own cache; every render after that is offline.
 What exists now:
 
 - YAML parsing and strict validation, with errors that name the slide and field
-- local narration synthesis, one WAV per slide, measured rather than estimated
+- narration as an ordered list of speech and pauses, synthesized locally and measured
 - narration-derived timing, converted to frames in exactly one place
-- one built-in slide look and one restrained transition
+- four curated slide compositions, chosen from the shape of the content
 - 1920x1080 H.264/AAC output via Remotion
 - `cuecraft speak` for trying a line of narration on its own
 
@@ -69,10 +70,11 @@ presentation.yaml
    |  parse + validate            yaml, zod
    v
 authored presentation
-   |  synthesize each `say`       local Kokoro, measured duration
+   |  synthesize each cue         local Kokoro, measured duration
    v
-compiled presentation            slide + audio + derived scene length
+compiled presentation            slide + narration track + derived scene length
    |  seconds -> frames          one rule, one function
+   |  content shape -> layout    deterministic, four archetypes
    v
 frame timeline
    |  compose + encode           Remotion, ffmpeg
@@ -91,6 +93,65 @@ Everything a render generates — narration WAVs and the webpack bundle — land
 always safe to delete, never committed, never hand-edited. It is kept rather than cleaned up,
 because a render that sounds wrong is diagnosed by listening to the WAV that caused it.
 Narration is re-synthesized on every render; there is no cache yet.
+
+## Writing a deck
+
+A slide says what it means. It never says how it should look.
+
+```yaml
+title: "WitnessGlass: What Did the Agent Actually Do?"
+
+defaults:
+  pre_say: 750ms
+  post_say: 1200ms
+
+slides:
+  - slide:
+      title: "Coding agents are black boxes"
+      bullets:
+        - Read files
+        - Search code
+        - Run tools
+        - Decide
+
+    say:
+      - "Coding agents do a surprising amount of invisible work."
+      - pause: 350ms
+      - "They read files, search code, run tools, and decide what to do next."
+```
+
+**Narration** is an ordered list of cues. A cue is either prose to speak or
+`{ pause: <duration> }`. Each speech cue is synthesized separately, so each gets a complete
+intonation contour instead of one long flat arc — which is most of what makes a slide sound
+deliberate. A plain string still works and means one cue:
+
+```yaml
+say: |
+  One cue, written the old way.
+```
+
+Two things worth knowing. Punctuation inside a cue is Kokoro's real phrasing control: commas
+and full stops are where it breathes. And every generated clip carries its own leading and
+trailing silence — about 780ms sits between two cues before you author anything — so `pause`
+is silence _added_ between clips, and small values go a long way.
+
+There is no emphasis, pitch, rate or style control, because the local model has none. See
+[`archaeology/dragons/0003-*.md`](archaeology/dragons/).
+
+**Layout is not authored.** cuecraft looks at what a slide contains — how many bullets, how
+long they are — and picks one of four compositions:
+
+| shape                            | composition                                              |
+| -------------------------------- | -------------------------------------------------------- |
+| no bullets                       | **statement** — the title is the slide, at display scale |
+| up to 6 labels, ≤24 characters   | **matrix** — a field of terms under hairlines            |
+| up to 6 phrases, ≤38 characters  | **index** — numbered rows                                |
+| anything longer or more numerous | **lead** — heading in its own column, points beside it   |
+
+`cuecraft render` reports which slide got which. There is no `layout:` key, no font size, no
+coordinate, and no theme: the source expresses intent and the renderer decides how that looks
+(see [`archaeology/decisions/0010-*.md`](archaeology/decisions/)). To change how a slide looks,
+change what it says.
 
 ## Local text-to-speech
 
@@ -120,8 +181,9 @@ Output is 24 kHz mono WAV. On an M-series Mac a line synthesizes at roughly a te
 duration.
 
 **What actually runs.** Text is normalized and converted to IPA phonemes in-process by eSpeak NG
-compiled to WebAssembly; the phonemes become token ids; those plus a 256-float voice tensor and
-a speed scalar feed a StyleTTS2 ONNX graph executed by ONNX Runtime's native binding. cuecraft
+compiled to WebAssembly; the phonemes become token ids; those plus a 256-float style tensor —
+picked from the voice's table by token count — and a speed scalar feed a StyleTTS2 ONNX graph
+executed by ONNX Runtime's native binding. cuecraft
 implements none of that — see
 [`archaeology/decisions/0008-*.md`](archaeology/decisions/) for what came from where, and what
 was rejected.
