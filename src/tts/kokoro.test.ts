@@ -9,6 +9,7 @@ import {
   MIN_SPEED,
   normalizeRequest,
   SynthesisError,
+  leadingSilence,
 } from "./kokoro.ts";
 import { DEFAULT_VOICE, isKokoroVoice, KOKORO_VOICES } from "./voices.ts";
 
@@ -126,4 +127,33 @@ test("a malformed artifact checksum is rejected", () => {
     files: [{ path: "config.json", bytes: 44, sha256: "not-a-hash" }],
   };
   assert.throws(() => parseModelPin(pin, "test"), /sha256/);
+});
+
+test("leading silence is measured against the clip's own peak", () => {
+  const rate = 100;
+  // 30 samples of silence, then a quiet-but-real signal.
+  const samples = new Float32Array(100);
+  for (let i = 30; i < 100; i += 1) samples[i] = 0.2 * Math.sin(i);
+  assert.ok(Math.abs(leadingSilence(samples, rate) - 0.3) < 0.02);
+});
+
+test("a loud clip and a quiet one report the same onset", () => {
+  const rate = 100;
+  const build = (peak: number): Float32Array => {
+    const s = new Float32Array(100);
+    for (let i = 20; i < 100; i += 1) s[i] = peak * Math.sin(i);
+    return s;
+  };
+  // Kokoro's output level varies by roughly a factor of two between utterances, so an
+  // absolute floor would report different onsets for the same speech at different levels.
+  assert.equal(leadingSilence(build(0.85), rate), leadingSilence(build(0.42), rate));
+});
+
+test("silence has no onset to find", () => {
+  assert.equal(leadingSilence(new Float32Array(240), 24000), 0.01);
+});
+
+test("a clip that starts immediately has no leading silence", () => {
+  const samples = new Float32Array(100).fill(0.5);
+  assert.equal(leadingSilence(samples, 100), 0);
 });

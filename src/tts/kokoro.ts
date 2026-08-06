@@ -68,7 +68,34 @@ export interface SynthesisResult {
   readonly sampleCount: number;
   /** Measured from the returned samples, never assumed — decision:4 and dragon:1. */
   readonly durationSeconds: number;
+  /**
+   * Seconds of near-silence before the first audible sample.
+   *
+   * Kokoro puts about 310ms of it in front of every utterance, consistently enough to
+   * measure but not consistently enough to assume. Anything that lines a visual event up
+   * with a spoken word needs this: without it, "when the clip starts" is nine frames before
+   * "when the words start" (decision:13).
+   */
+  readonly leadingSilenceSeconds: number;
   readonly bytes: number;
+}
+
+/**
+ * Where the audible part of a waveform begins.
+ *
+ * Relative to the clip's own peak rather than an absolute floor, because Kokoro's output
+ * level varies by roughly a factor of two between utterances. This is measurement, not
+ * processing: no sample is altered and nothing is written differently (decision:5).
+ */
+export function leadingSilence(samples: Float32Array, sampleRate: number): number {
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  if (peak === 0) return samples.length / sampleRate;
+
+  const threshold = Math.max(peak * 0.02, 0.005);
+  let index = 0;
+  while (index < samples.length && Math.abs(samples[index] ?? 0) < threshold) index += 1;
+  return index / sampleRate;
 }
 
 /**
@@ -198,6 +225,7 @@ export async function synthesize(request: SynthesisRequest): Promise<SynthesisRe
     channels: 1,
     sampleCount: audio.audio.length,
     durationSeconds: audio.audio.length / audio.sampling_rate,
+    leadingSilenceSeconds: leadingSilence(audio.audio, audio.sampling_rate),
     bytes: wav.byteLength,
   };
 }

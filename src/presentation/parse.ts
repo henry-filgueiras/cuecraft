@@ -46,14 +46,34 @@ export const DEFAULT_SPEED = 1;
  * a control that does nothing is worse than no control.
  */
 export type NarrationCue =
-  | { readonly kind: "speech"; readonly text: string }
+  | {
+      readonly kind: "speech";
+      readonly text: string;
+      /**
+       * The semantic identity this cue reaches, if any. Not a time and not an animation:
+       * the author states that this moment in the narration and some element on the slide
+       * are the same idea, and the compiler works out when that happens (decision:14).
+       */
+      readonly activates?: string;
+      /**
+       * Per-occurrence spelling substitutions applied before synthesis only. See
+       * decision:12 — this repairs one word in one cue, and is not a dictionary.
+       */
+      readonly pronounce?: ReadonlyMap<string, string>;
+    }
   | { readonly kind: "pause"; readonly milliseconds: number };
+
+/** A bullet, which may carry a semantic identity that narration can reach. */
+export interface AuthoredBullet {
+  readonly text: string;
+  readonly id?: string;
+}
 
 export interface AuthoredSlide {
   /** 1-based, and used in every message the author sees. */
   readonly ordinal: number;
   readonly title: string;
-  readonly bullets: readonly string[];
+  readonly bullets: readonly AuthoredBullet[];
   /** Ordered narration cues. A scalar `say` is shorthand for one speech cue. */
   readonly say: readonly NarrationCue[];
   readonly preSayMs: number;
@@ -82,12 +102,71 @@ const durationLiteral = z.custom<string>(
   { message: `must be ${DURATION_HINT}` },
 );
 
-const slideSchema = z.strictObject({
-  title: nonEmptyString,
-  bullets: z.array(nonEmptyString).optional(),
+/**
+ * Anchor identities are kebab-case and start with a letter.
+ *
+ * Narrow on purpose: an identity appears in two places in the source and has to be matched
+ * exactly, so the set of things it can be should be small enough to type correctly twice.
+ */
+export const ANCHOR_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+export const ANCHOR_ID_HINT =
+  "lower-case letters, digits and hyphens, starting with a letter";
+
+export const BULLET_HINT = 'text, or { id: some-name, text: "..." }';
+
+/**
+ * Hand-checked for the same reason cues are: a `z.union` reports its branch failures nested
+ * inside one `invalid_union` issue, so a malformed identifier would surface to the author as
+ * "Invalid input" with no indication of what was wrong with it.
+ */
+function checkBullet(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value.trim().length === 0 ? "must not be empty" : undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return `must be ${BULLET_HINT}`;
+  }
+
+  const record = value as Record<string, unknown>;
+  const extra = Object.keys(record).filter((key) => !BULLET_KEYS.includes(key));
+  if (extra.length > 0) {
+    return `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${BULLET_KEYS.join(", ")})`;
+  }
+  if (typeof record["text"] !== "string" || record["text"].trim().length === 0) {
+    return "text must not be empty";
+  }
+  if (record["id"] !== undefined) {
+    const id = record["id"];
+    if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
+      return `id must be ${ANCHOR_ID_HINT}`;
+    }
+  }
+  return undefined;
+}
+
+const BULLET_KEYS = ["text", "id"];
+
+const bulletSchema = z.unknown().superRefine((value, context) => {
+  const problem = checkBullet(value);
+  if (problem !== undefined) context.addIssue({ code: "custom", message: problem });
 });
 
-export const CUE_HINT = 'narration text, or a pause such as { pause: "400ms" }';
+const slideSchema = z.strictObject({
+  title: nonEmptyString,
+  bullets: z.array(bulletSchema).optional(),
+});
+
+/** A validated bullet, in either of its two authored forms. */
+function bulletOf(value: unknown): AuthoredBullet {
+  if (typeof value === "string") return { text: value.trim() };
+  const record = value as { text: string; id?: string };
+  return record.id === undefined
+    ? { text: record.text.trim() }
+    : { text: record.text.trim(), id: record.id };
+}
+
+export const CUE_HINT =
+  'narration text, { speech: "..." }, or a pause such as { pause: "400ms" }';
 
 /**
  * Why this is one `unknown` with a hand-written check rather than a `z.union`.
@@ -106,19 +185,73 @@ function checkCue(value: unknown): string | undefined {
     return `must be ${CUE_HINT}`;
   }
 
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== "pause") {
-    return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+
+  if (keys.includes("pause")) {
+    if (keys.length !== 1) {
+      return "a pause cue takes no other keys";
+    }
+    const raw = record["pause"];
+    if (typeof raw !== "string" || !isDurationLiteral(raw)) {
+      return `pause must be ${DURATION_HINT}`;
+    }
+    if (parseDurationMs(raw) <= 0) {
+      return "pause must be longer than zero";
+    }
+    return undefined;
   }
 
-  const raw = (value as { pause: unknown }).pause;
-  if (typeof raw !== "string" || !isDurationLiteral(raw)) {
-    return `pause must be ${DURATION_HINT}`;
+  if (keys.includes("speech")) {
+    const extra = keys.filter((key) => !SPEECH_CUE_KEYS.includes(key));
+    if (extra.length > 0) {
+      return `unknown key ${JSON.stringify(extra.join(", "))} on a speech cue (allowed: ${SPEECH_CUE_KEYS.join(", ")})`;
+    }
+    if (typeof record["speech"] !== "string" || record["speech"].trim().length === 0) {
+      return "speech must not be empty";
+    }
+    if (record["activates"] !== undefined) {
+      const id = record["activates"];
+      if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
+        return `activates must be ${ANCHOR_ID_HINT}`;
+      }
+    }
+    if (record["pronounce"] !== undefined) {
+      return checkPronounce(record["pronounce"], record["speech"]);
+    }
+    return undefined;
   }
-  if (parseDurationMs(raw) <= 0) {
-    return "pause must be longer than zero";
+
+  return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
+}
+
+const SPEECH_CUE_KEYS = ["speech", "activates", "pronounce"];
+
+/**
+ * A `pronounce` entry only means anything if the word it names is actually in this cue, so
+ * a typo in the key is caught here rather than silently doing nothing.
+ */
+function checkPronounce(value: unknown, speech: string): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "pronounce must be a map of word to spelling, such as { records: rekords }";
+  }
+  for (const [word, spelling] of Object.entries(value)) {
+    if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) {
+      return `pronounce key ${JSON.stringify(word)} must be a single word`;
+    }
+    if (typeof spelling !== "string" || spelling.trim().length === 0) {
+      return `pronounce.${word} must be the spelling to synthesize instead`;
+    }
+    if (!wordPattern(word).test(speech)) {
+      return `pronounce.${word} does not appear in this cue's speech`;
+    }
   }
   return undefined;
+}
+
+/** Whole-word, case-insensitive. Substring replacement would corrupt neighbouring words. */
+function wordPattern(word: string): RegExp {
+  return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
 }
 
 const saySchema = z.unknown().superRefine((value, context) => {
@@ -151,11 +284,14 @@ const saySchema = z.unknown().superRefine((value, context) => {
 
   let spoken = 0;
   value.forEach((cue, index) => {
+    // Counted before validation: a cue that tried to be speech and got it wrong is still
+    // an attempt to say something, and reporting "only pauses" alongside the real problem
+    // would just be a second, misleading error.
+    if (typeof cue === "string" || isSpeechCue(cue)) spoken += 1;
+
     const problem = checkCue(cue);
     if (problem !== undefined) {
       context.addIssue({ code: "custom", message: problem, path: [index] });
-    } else if (typeof cue === "string") {
-      spoken += 1;
     }
   });
 
@@ -167,12 +303,71 @@ const saySchema = z.unknown().superRefine((value, context) => {
   }
 });
 
-const entrySchema = z.strictObject({
-  slide: slideSchema,
-  say: saySchema,
-  pre_say: durationLiteral.optional(),
-  post_say: durationLiteral.optional(),
-});
+function isSpeechCue(cue: unknown): cue is { speech: string; activates?: string } {
+  return typeof cue === "object" && cue !== null && "speech" in cue;
+}
+
+/**
+ * Anchors are checked across the whole slide, because that is the only place both ends of
+ * the relationship are visible: the identity is declared on a bullet and reached by a cue.
+ *
+ * A dangling reference is the failure that matters. Silently rendering a slide whose
+ * narration was supposed to build it, without building it, is exactly the "silent
+ * synchronization loss" a compiler exists to prevent.
+ */
+const entrySchema = z
+  .strictObject({
+    slide: slideSchema,
+    say: saySchema,
+    pre_say: durationLiteral.optional(),
+    post_say: durationLiteral.optional(),
+  })
+  .superRefine((entry, context) => {
+    const declared = new Map<string, number>();
+    (entry.slide.bullets ?? []).forEach((raw, index) => {
+      if (checkBullet(raw) !== undefined) return;
+      const { id } = bulletOf(raw);
+      if (id === undefined) return;
+      const first = declared.get(id);
+      if (first === undefined) {
+        declared.set(id, index);
+      } else {
+        context.addIssue({
+          code: "custom",
+          path: ["slide", "bullets", index],
+          message: `duplicate id ${JSON.stringify(id)}; bullet ${first + 1} already uses it`,
+        });
+      }
+    });
+
+    const cues = Array.isArray(entry.say) ? entry.say : [];
+    const reached = new Set<string>();
+    cues.forEach((cue, index) => {
+      if (!isSpeechCue(cue) || cue.activates === undefined) return;
+      const id = cue.activates;
+      if (!declared.has(id)) {
+        const known = [...declared.keys()];
+        context.addIssue({
+          code: "custom",
+          path: ["say", index],
+          message:
+            `activates ${JSON.stringify(id)}, which no bullet on this slide declares` +
+            (known.length === 0
+              ? "; this slide has no bullet ids"
+              : ` (declared: ${known.join(", ")})`),
+        });
+        return;
+      }
+      if (reached.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["say", index],
+          message: `activates ${JSON.stringify(id)}, which an earlier cue already reaches`,
+        });
+      }
+      reached.add(id);
+    });
+  });
 
 const defaultsSchema = z.strictObject({
   pre_say: durationLiteral.optional(),
@@ -256,7 +451,7 @@ export function parsePresentation(text: string, source: string): Presentation {
     slides: raw.slides.map((entry, index) => ({
       ordinal: index + 1,
       title: entry.slide.title.trim(),
-      bullets: (entry.slide.bullets ?? []).map((bullet) => bullet.trim()),
+      bullets: (entry.slide.bullets ?? []).map(bulletOf),
       say: toCues(entry.say),
       preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
       postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
@@ -280,14 +475,45 @@ function toCues(value: unknown): readonly NarrationCue[] {
   if (typeof value === "string") {
     return [{ kind: "speech", text: collapseWhitespace(value) }];
   }
-  return (value as unknown[]).map((cue): NarrationCue =>
-    typeof cue === "string"
-      ? { kind: "speech", text: collapseWhitespace(cue) }
-      : {
-          kind: "pause",
-          milliseconds: parseDurationMs((cue as { pause: string }).pause),
-        },
-  );
+  return (value as unknown[]).map((cue): NarrationCue => {
+    if (typeof cue === "string") {
+      return { kind: "speech", text: collapseWhitespace(cue) };
+    }
+    const record = cue as Record<string, unknown>;
+    if (typeof record["pause"] === "string") {
+      return { kind: "pause", milliseconds: parseDurationMs(record["pause"]) };
+    }
+
+    const pronounce = record["pronounce"] as Record<string, string> | undefined;
+    return {
+      kind: "speech",
+      text: collapseWhitespace(record["speech"] as string),
+      ...(record["activates"] === undefined
+        ? {}
+        : { activates: record["activates"] as string }),
+      ...(pronounce === undefined
+        ? {}
+        : { pronounce: new Map(Object.entries(pronounce)) }),
+    };
+  });
+}
+
+/**
+ * The text actually handed to the synthesizer.
+ *
+ * Whole-word and case-insensitive, applied only to this cue. The authored text is left
+ * alone so that what the source says and what gets spoken stay separately inspectable —
+ * a caption or a frozen asset wants the former (decision:12).
+ */
+export function spokenText(cue: NarrationCue): string {
+  if (cue.kind !== "speech" || cue.pronounce === undefined) {
+    return cue.kind === "speech" ? cue.text : "";
+  }
+  let text = cue.text;
+  for (const [word, spelling] of cue.pronounce) {
+    text = text.replace(wordPattern(word), spelling);
+  }
+  return text;
 }
 
 /**

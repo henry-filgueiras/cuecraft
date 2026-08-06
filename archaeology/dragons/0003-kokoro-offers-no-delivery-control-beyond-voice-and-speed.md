@@ -82,6 +82,20 @@ What that leaves:
 - **Emphasis and intonation still have none.** No candidate exists under Kokoro. decision:11
   deliberately shipped nothing for them rather than shipping controls the model ignores.
 
+**Two more limits, found in sprint 4.**
+
+- **Heteronyms are decided before Kokoro sees anything.** eSpeak resolves `records` to the verb
+  after a pronoun or a relativizer and to the noun after any noun phrase, so "WitnessGlass records
+  the work" is spoken as the plural noun. This is not a prosody problem and no Kokoro input
+  touches it — the wrong phonemes arrive already wrong. decision:12 repairs an occurrence by
+  respelling, which is the only mechanism the installed stack leaves reachable: eSpeak's `[[...]]`
+  phoneme escape is spelled out character by character, the `phonemizer` package exposes no
+  options at all, and `generate_from_ids` — which *is* public and does accept phonemes — has no
+  supported way to obtain the rest of the utterance's phoneme string.
+- **The edge silences now have numbers.** Measured across nine clips, leading silence ranges
+  292-339ms and trailing 428-470ms. The "~780ms between cues before you author anything" figure
+  above is confirmed, and decision:13 measures it per clip rather than assuming it.
+
 ## Question
 
 How does cuecraft express narration that is longer than one Kokoro window, or that needs a pause,

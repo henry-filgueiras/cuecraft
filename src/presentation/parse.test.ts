@@ -11,6 +11,7 @@ import {
   DEFAULT_PRE_SAY_MS,
   parsePresentation,
   PresentationError,
+  spokenText,
 } from "./parse.ts";
 
 const MINIMAL = `
@@ -62,6 +63,24 @@ test("the canonical example parses", () => {
   assert.deepEqual(
     first.say.map((cue) => cue.kind),
     ["speech", "pause", "speech"],
+  );
+
+  // And it keeps exercising semantic anchors, which is the only place they are proven
+  // against real content rather than a fixture.
+  const anchored = presentation.slides.find((slide) =>
+    slide.bullets.some((bullet) => bullet.id !== undefined),
+  );
+  assert.ok(anchored !== undefined, "no slide in the canonical deck carries anchors");
+  const declared = anchored.bullets.flatMap((bullet) =>
+    bullet.id === undefined ? [] : [bullet.id],
+  );
+  const reached = anchored.say.flatMap((cue) =>
+    cue.kind === "speech" && cue.activates !== undefined ? [cue.activates] : [],
+  );
+  assert.deepEqual(
+    reached,
+    declared,
+    "every declared identity should be reached, in order",
   );
 });
 
@@ -338,7 +357,7 @@ test("a pause cue takes no other keys", () => {
         'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Hi."\n      - {pause: 400ms, voice: af_heart}\n',
       )[0],
     ),
-    /^slide 1, narration cue 2: unknown cue/,
+    /^slide 1, narration cue 2: a pause cue takes no other keys$/,
   );
 });
 
@@ -373,5 +392,183 @@ test("say must be text or cues, not something else entirely", () => {
       problems("title: A deck\nslides:\n  - slide: {title: One}\n    say: {a: 1}\n")[0],
     ),
     /^slide 1, say: must be narration text/,
+  );
+});
+
+test("a bullet may carry a semantic identity, or stay a plain string", () => {
+  const presentation = parsePresentation(
+    `
+title: A deck
+slides:
+  - slide:
+      title: One
+      bullets:
+        - id: tool
+          text: Which tool ran
+        - How long it took
+    say:
+      - speech: "Which tool ran."
+        activates: tool
+`,
+    "test.yaml",
+  );
+  assert.deepEqual(presentation.slides[0]?.bullets, [
+    { text: "Which tool ran", id: "tool" },
+    { text: "How long it took" },
+  ]);
+  assert.deepEqual(presentation.slides[0]?.say, [
+    { kind: "speech", text: "Which tool ran.", activates: "tool" },
+  ]);
+});
+
+test("a speech cue without an anchor is the same as a bare string", () => {
+  const withObject = parsePresentation(
+    'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hello."\n',
+    "test.yaml",
+  );
+  const withString = parsePresentation(
+    'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - "Hello."\n',
+    "test.yaml",
+  );
+  assert.deepEqual(withObject.slides[0]?.say, withString.slides[0]?.say);
+});
+
+test("activating an identity no bullet declares is an error", () => {
+  assert.deepEqual(
+    problems(`
+title: A deck
+slides:
+  - slide:
+      title: One
+      bullets:
+        - id: tool
+          text: Which tool ran
+    say:
+      - speech: "Timing."
+        activates: timing
+`),
+    [
+      'slide 1, narration cue 1: activates "timing", which no bullet on this slide declares (declared: tool)',
+    ],
+  );
+
+  assert.match(
+    String(
+      problems(
+        'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        activates: nope\n',
+      )[0],
+    ),
+    /this slide has no bullet ids$/,
+  );
+});
+
+test("two bullets may not claim the same identity", () => {
+  assert.deepEqual(
+    problems(`
+title: A deck
+slides:
+  - slide:
+      title: One
+      bullets:
+        - id: tool
+          text: First
+        - id: tool
+          text: Second
+    say: Hello.
+`),
+    ['slide 1, slide.bullets.1: duplicate id "tool"; bullet 1 already uses it'],
+  );
+});
+
+test("two cues may not activate the same identity", () => {
+  assert.deepEqual(
+    problems(`
+title: A deck
+slides:
+  - slide:
+      title: One
+      bullets:
+        - id: tool
+          text: First
+    say:
+      - speech: "Once."
+        activates: tool
+      - speech: "Twice."
+        activates: tool
+`),
+    ['slide 1, narration cue 2: activates "tool", which an earlier cue already reaches'],
+  );
+});
+
+test("identifiers are kebab-case and start with a letter", () => {
+  for (const id of ["Tool", "1st", "tool_name", "tool name", "-tool", "tool-"]) {
+    const source =
+      "title: A deck\nslides:\n  - slide:\n      title: One\n      bullets:\n" +
+      `        - id: ${JSON.stringify(id)}\n          text: First\n    say: Hello.\n`;
+    assert.match(
+      String(problems(source)[0]),
+      /must be lower-case letters, digits and hyphens/,
+      `${JSON.stringify(id)} was accepted`,
+    );
+  }
+
+  // And the ones that should work.
+  const ok = parsePresentation(
+    "title: A deck\nslides:\n  - slide:\n      title: One\n      bullets:\n" +
+      '        - id: "semantic-context-2"\n          text: First\n    say: Hello.\n',
+    "test.yaml",
+  );
+  assert.equal(ok.slides[0]?.bullets[0]?.id, "semantic-context-2");
+});
+
+test("a per-occurrence pronunciation replaces only that word, for synthesis only", () => {
+  const presentation = parsePresentation(
+    `
+title: A deck
+slides:
+  - slide: { title: One }
+    say:
+      - speech: "WitnessGlass records the records."
+        pronounce:
+          records: rekords
+`,
+    "test.yaml",
+  );
+  const [cue] = presentation.slides[0]?.say ?? [];
+  assert.ok(cue !== undefined && cue.kind === "speech");
+
+  // The authored text is untouched; only what is spoken changes.
+  assert.equal(cue.text, "WitnessGlass records the records.");
+  assert.equal(spokenText(cue), "WitnessGlass rekords the rekords.");
+});
+
+test("a pronunciation for a word that is not in the cue is a mistake", () => {
+  assert.deepEqual(
+    problems(
+      'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hello there."\n        pronounce:\n          records: rekords\n',
+    ),
+    ["slide 1, narration cue 1: pronounce.records does not appear in this cue's speech"],
+  );
+});
+
+test("pronunciation substitution does not corrupt neighbouring words", () => {
+  const presentation = parsePresentation(
+    'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "It re-records recordings, and records."\n        pronounce:\n          records: rekords\n',
+    "test.yaml",
+  );
+  const [cue] = presentation.slides[0]?.say ?? [];
+  assert.ok(cue !== undefined && cue.kind === "speech");
+  // "recordings" must not be touched; "re-records" contains a whole-word "records".
+  assert.equal(spokenText(cue), "It re-rekords recordings, and rekords.");
+});
+
+test("unknown keys on a speech cue are rejected", () => {
+  assert.match(
+    String(
+      problems(
+        'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        emphasise: loud\n',
+      )[0],
+    ),
+    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, pronounce\)$/,
   );
 });
