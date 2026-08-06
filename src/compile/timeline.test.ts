@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CompiledPresentation, CompiledSlide, SpeechClip } from "./compile.ts";
+import type { SlideBody } from "../presentation/parse.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
 
-type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "bullets"> & {
+function bodyOf(overrides: SlideOverrides): SlideBody {
+  if (overrides.steps !== undefined && overrides.steps.length > 0) {
+    return { kind: "steps", items: overrides.steps };
+  }
+  if (overrides.bullets !== undefined && overrides.bullets.length > 0) {
+    return { kind: "bullets", items: overrides.bullets };
+  }
+  return { kind: "none" };
+}
+
+type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
+  /** Convenience for the common body; becomes `{ kind: "bullets" }`, or `none` when empty. */
   bullets?: readonly { text: string; id?: string }[];
+  steps?: readonly { text: string; id?: string }[];
   ordinal: number;
   /** Speech durations in seconds; pauses are expressed by the gaps in `offsets`. */
   speech?: readonly number[];
@@ -41,7 +54,7 @@ function slide(overrides: SlideOverrides): CompiledSlide {
   return {
     ordinal: overrides.ordinal,
     title: overrides.title ?? `Slide ${overrides.ordinal}`,
-    bullets: overrides.bullets ?? [],
+    body: bodyOf(overrides),
     say: overrides.say ?? [{ kind: "speech", text: "Words." }],
     preSayMs: overrides.preSayMs ?? 750,
     postSayMs: overrides.postSayMs ?? 1200,
@@ -292,8 +305,8 @@ test("an anchor activates when its clip's sound starts, not when the clip does",
   // pre_say 500ms -> frame 15. Clip one starts there; its sound starts 0.3s (9 frames)
   // later. Clip two starts at 15 + 60 = 75, sound at 84.
   assert.deepEqual(scene.anchors, [
-    { id: "one", bulletIndex: 0, clipIndex: 0, frame: 24 },
-    { id: "two", bulletIndex: 1, clipIndex: 1, frame: 84 },
+    { id: "one", elementIndex: 0, clipIndex: 0, frame: 24 },
+    { id: "two", elementIndex: 1, clipIndex: 1, frame: 84 },
   ]);
 });
 
@@ -312,7 +325,11 @@ test("anchors keep both ends of the relationship addressable", () => {
   assert.ok(anchor !== undefined);
 
   // Visual end, and narration end, from the same record.
-  assert.equal(timeline.scenes[0]?.bullets[anchor.bulletIndex]?.text, "B");
+  const body = timeline.scenes[0]?.body;
+  assert.equal(
+    body?.kind === "bullets" ? body.items[anchor.elementIndex]?.text : undefined,
+    "B",
+  );
   assert.equal(timeline.scenes[0]?.clips[anchor.clipIndex]?.from, 23 + 30);
 });
 

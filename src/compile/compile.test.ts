@@ -125,7 +125,10 @@ test("compiled slides carry their measured audio and derived duration", async ()
   assert.equal(clip.src, "narration/slide-01-01.wav");
   assert.equal(clip.offsetSeconds, 0);
   assert.equal(slide.sceneMs, 500 + 4000 + 1000);
-  assert.deepEqual(slide.bullets, [{ text: "a" }, { text: "b" }]);
+  assert.deepEqual(slide.body, {
+    kind: "bullets",
+    items: [{ text: "a" }, { text: "b" }],
+  });
 
   // The audio must exist where the composition will look for it.
   assert.equal(join(compiled.publicDir, clip.src), clip.path);

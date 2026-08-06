@@ -1,3 +1,4 @@
+import { bodyElements, type SlideBody } from "../presentation/parse.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
 import type { CompiledPresentation } from "./compile.ts";
 
@@ -47,25 +48,19 @@ export interface Clip {
   readonly durationInFrames: number;
 }
 
-export interface SceneBullet {
-  readonly text: string;
-  /** The semantic identity this element carries, if the author gave it one. */
-  readonly id?: string;
-}
-
 /**
  * A resolved link between a moment in the narration and an element on the slide.
  *
- * Deliberately a record of the *relationship* rather than a field on the bullet saying when
+ * Deliberately a record of the *relationship* rather than a field on the element saying when
  * to light up. Both endpoints stay addressable, so the same structure answers "when does
- * this bullet become established?" and "which narration reaches this bullet?" — and a later
+ * this element become established?" and "which narration reaches this element?" — and a later
  * caption, seek or debugger would read it in the other direction without this having to be
  * rebuilt (decision:14). Nothing today reads it backwards; the point is that it could.
  */
 export interface Anchor {
   readonly id: string;
-  /** Index into `Scene.bullets`. */
-  readonly bulletIndex: number;
+  /** Index into `bodyElements(Scene.body)` — a list item, or a mark on a code specimen. */
+  readonly elementIndex: number;
   /** Index into `Scene.clips`. */
   readonly clipIndex: number;
   /**
@@ -79,7 +74,8 @@ export interface Anchor {
 export interface Scene {
   readonly ordinal: number;
   readonly title: string;
-  readonly bullets: readonly SceneBullet[];
+  /** Carried through verbatim: the renderer needs what the content *means*, not a flattening. */
+  readonly body: SlideBody;
   readonly layout: LayoutArchetype;
   /** Empty on a slide that names no identities, which is most of them. */
   readonly anchors: readonly Anchor[];
@@ -144,24 +140,26 @@ export function buildTimeline(
     });
 
     // Both ends of every relationship, resolved to a frame. Validation already guaranteed
-    // that each `activates` names a bullet on this slide, so a miss here is a compiler bug
+    // that each `activates` names an element on this slide, so a miss here is a compiler bug
     // rather than an authoring error, and dropping it silently is not an option.
+    //
+    // Resolution goes through `bodyElements`, so this is identical whether the identity was
+    // declared on a bullet, a step, or a mark on a code specimen.
+    const elements = bodyElements(slide.body);
     const anchors: Anchor[] = [];
     slide.narration.clips.forEach((clip, clipIndex) => {
       if (clip.activates === undefined) return;
-      const bulletIndex = slide.bullets.findIndex(
-        (bullet) => bullet.id === clip.activates,
-      );
-      if (bulletIndex === -1) {
+      const elementIndex = elements.findIndex((element) => element.id === clip.activates);
+      if (elementIndex === -1) {
         throw new Error(
-          `slide ${slide.ordinal}: narration activates "${clip.activates}" but no bullet declares it`,
+          `slide ${slide.ordinal}: narration activates "${clip.activates}" but nothing on the slide declares it`,
         );
       }
       const placed = clips[clipIndex];
       if (placed === undefined) return;
       anchors.push({
         id: clip.activates,
-        bulletIndex,
+        elementIndex,
         clipIndex,
         frame: placed.from + framesFor(clip.leadingSilenceSeconds, fps),
       });
@@ -181,11 +179,7 @@ export function buildTimeline(
     const scene: Scene = {
       ordinal: slide.ordinal,
       title: slide.title,
-      bullets: slide.bullets.map((bullet): SceneBullet =>
-        bullet.id === undefined
-          ? { text: bullet.text }
-          : { text: bullet.text, id: bullet.id },
-      ),
+      body: slide.body,
       layout: chooseLayout(slide),
       anchors,
       from,

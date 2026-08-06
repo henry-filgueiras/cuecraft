@@ -1,26 +1,34 @@
 /**
- * Choosing a composition from the shape of the content.
+ * Choosing a composition from what the content means, then from the shape it has.
  *
- * The source stays semantic: a title and some bullets. It never names a layout, a column
- * count, a font size, or a coordinate. This module looks at what the author actually wrote
- * — how many bullets, how long they are, how long the title is — and picks one of four
- * curated compositions.
+ * The source stays semantic. It never names a layout, a column count, a font size, or a
+ * coordinate. It says what its content *is* — points, stages, or code — and how much of it
+ * there is; this module turns that into one of six curated compositions.
  *
- * Four, deliberately. This is not a layout engine and must not become one. Every archetype
- * here exists because a real slide in the canonical deck looked wrong without it, and the
- * rule that selects it is a comparison against a number, not a solver. If selection ever
- * needs a scoring function, the right move is to delete an archetype rather than add a
- * heuristic.
+ * decision:10 originally derived composition from shape alone: how many bullets, how long they
+ * are. Building a real minute of video showed the limit of that. `steps` and `bullets` carry
+ * identical data and want opposite compositions, because "these are stages of one
+ * transformation" is a different claim from "these are points", and no amount of measuring
+ * character counts can tell them apart. So the role is consulted first, and shape now decides
+ * only *within* the list role.
+ *
+ * Six, and six is still a ceiling rather than a starting point. Every archetype here exists
+ * because a real slide looked wrong without it, and the rule that selects it is a comparison
+ * against a number, not a solver. If selection ever needs a scoring function, the right move is
+ * to delete an archetype rather than add a heuristic.
  *
  * Plain TypeScript rather than TSX so the whole of the decision is unit-testable without a
  * browser, and so the render summary can report what each slide was given.
  */
 
-export type LayoutArchetype = "statement" | "matrix" | "index" | "lead";
+import type { SlideBody } from "../presentation/parse.ts";
+
+export type LayoutArchetype =
+  "statement" | "matrix" | "index" | "lead" | "cascade" | "specimen";
 
 export interface SlideContent {
   readonly title: string;
-  readonly bullets: readonly { readonly text: string }[];
+  readonly body: SlideBody;
 }
 
 /**
@@ -39,14 +47,18 @@ export interface ContentShape {
   readonly longestBullet: number;
   readonly averageBullet: number;
   readonly titleLength: number;
-  /** Every bullet short enough to read as a label rather than a sentence. */
+  /** Every item short enough to read as a label rather than a sentence. */
   readonly terse: boolean;
-  /** No bullet long enough to need wrapping at numbered-row scale. */
+  /** No item long enough to need wrapping at numbered-row scale. */
   readonly compact: boolean;
 }
 
 export function analyzeContent(content: SlideContent): ContentShape {
-  const lengths = content.bullets.map((bullet) => bullet.text.length);
+  const items =
+    content.body.kind === "bullets" || content.body.kind === "steps"
+      ? content.body.items
+      : [];
+  const lengths = items.map((item) => item.text.length);
   const longest = lengths.length === 0 ? 0 : Math.max(...lengths);
   const total = lengths.reduce((sum, length) => sum + length, 0);
 
@@ -63,14 +75,26 @@ export function analyzeContent(content: SlideContent): ContentShape {
 /**
  * Pick a composition. Deterministic, total, and ordered from most specific to least.
  *
- * - **statement** — nothing but a title. The title becomes the slide, at display size.
- * - **matrix** — a handful of short parallel labels. They become a two-column field of
- *   terms rather than a list, which is what the content already is.
+ * By role:
+ *
+ * - **specimen** — a code block. Heading above, the source full width beneath it, monospace at
+ *   presentation scale. There is no second arrangement of code worth having.
+ * - **cascade** — stages of a transformation. They descend and step right along a single
+ *   traced line, so the frame reads as something being carried forward rather than listed.
+ *
+ * Then, for points, by shape:
+ *
+ * - **statement** — no content at all. The title becomes the slide, at display size.
+ * - **matrix** — a handful of short parallel labels. They become a two-column field of terms
+ *   rather than a list, which is what the content already is.
  * - **index** — a handful of compact phrases with an order worth showing. Numbered rows.
- * - **lead** — anything longer or more numerous. Title holds the left column, the list
- *   stacks on the right.
+ * - **lead** — anything longer or more numerous. Title holds the left column, the list stacks
+ *   on the right.
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
+  if (content.body.kind === "code") return "specimen";
+  if (content.body.kind === "steps") return "cascade";
+
   const shape = analyzeContent(content);
 
   if (shape.bulletCount === 0) return "statement";

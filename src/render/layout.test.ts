@@ -17,7 +17,13 @@ import {
  */
 
 function layoutOf(title: string, bullets: readonly string[]): LayoutArchetype {
-  return chooseLayout({ title, bullets: bullets.map((text) => ({ text })) });
+  return chooseLayout({
+    title,
+    body:
+      bullets.length === 0
+        ? { kind: "none" }
+        : { kind: "bullets", items: bullets.map((text) => ({ text })) },
+  });
 }
 
 const TERSE = ["Read files", "Search code", "Run tools", "Decide"];
@@ -34,7 +40,7 @@ const LONG = [
 test("content shape is measured, not guessed", () => {
   const shape = analyzeContent({
     title: "A title",
-    bullets: [{ text: "ab" }, { text: "abcd" }],
+    body: { kind: "bullets", items: [{ text: "ab" }, { text: "abcd" }] },
   });
   assert.equal(shape.bulletCount, 2);
   assert.equal(shape.longestBullet, 4);
@@ -113,4 +119,78 @@ test("selection is total and deterministic", () => {
       `unexpected archetype ${first}`,
     );
   }
+});
+
+/**
+ * The role, once there is one, decides before shape does. These are the tests that pin the
+ * claim `steps` makes: identical data, different meaning, different composition. If they ever
+ * pass with the role removed, the role was decoration.
+ */
+
+test("code is a specimen whatever shape it has", () => {
+  for (const source of ["a: 1", "a: 1\nb: 2\n  c: 3\n\nd: 4"]) {
+    assert.equal(
+      chooseLayout({
+        title: "A title",
+        body: { kind: "code", language: "yaml", source, marks: [] },
+      }),
+      "specimen",
+    );
+  }
+});
+
+test("steps are a cascade whatever shape they have", () => {
+  for (const texts of [["A"], TERSE, LONG, COMPACT]) {
+    assert.equal(
+      chooseLayout({
+        title: "A title",
+        body: { kind: "steps", items: texts.map((text) => ({ text })) },
+      }),
+      "cascade",
+    );
+  }
+});
+
+test("the same items compose differently depending on what they are said to be", () => {
+  const items = TERSE.map((text) => ({ text }));
+  assert.equal(
+    chooseLayout({ title: "A title", body: { kind: "bullets", items } }),
+    "matrix",
+  );
+  assert.equal(
+    chooseLayout({ title: "A title", body: { kind: "steps", items } }),
+    "cascade",
+  );
+});
+
+test("a role's composition does not depend on the title either", () => {
+  const items = [{ text: "Speech" }, { text: "Timing" }];
+  for (const title of ["Hi", "A".repeat(120)]) {
+    assert.equal(chooseLayout({ title, body: { kind: "steps", items } }), "cascade");
+  }
+});
+
+test("selection stays total across every body a source can produce", () => {
+  const bodies = [
+    { kind: "none" },
+    { kind: "bullets", items: [{ text: "x" }] },
+    { kind: "steps", items: [{ text: "x" }] },
+    { kind: "code", language: "yaml", source: "a: 1", marks: [] },
+  ] as const;
+  const archetypes = ["statement", "matrix", "index", "lead", "cascade", "specimen"];
+  for (const body of bodies) {
+    const chosen = chooseLayout({ title: "A title", body });
+    assert.ok(archetypes.includes(chosen), `unexpected archetype ${chosen}`);
+    assert.equal(chooseLayout({ title: "A title", body }), chosen);
+  }
+});
+
+test("shape analysis ignores content that has no items to measure", () => {
+  const shape = analyzeContent({
+    title: "A title",
+    body: { kind: "code", language: "yaml", source: "a: 1\nb: 2", marks: [] },
+  });
+  assert.equal(shape.bulletCount, 0);
+  assert.equal(shape.terse, false);
+  assert.equal(shape.compact, false);
 });

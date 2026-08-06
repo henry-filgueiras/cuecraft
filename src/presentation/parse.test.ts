@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { chooseLayout } from "../render/layout.ts";
 import { repositoryRoot } from "../tts/model.ts";
 import {
+  bodyElements,
   DEFAULT_MIN_SLIDE_MS,
   DEFAULT_POST_SAY_MS,
   DEFAULT_PRE_SAY_MS,
@@ -46,7 +47,7 @@ test("the canonical example parses", () => {
   assert.equal(first.ordinal, 1);
   assert.equal(second.ordinal, 2);
   assert.equal(first.title, "Coding agents are black boxes");
-  assert.equal(first.bullets.length, 4);
+  assert.equal(first.body.kind === "bullets" ? first.body.items.length : 0, 4);
   assert.equal(first.preSayMs, 750);
   assert.equal(first.postSayMs, 1200);
 
@@ -68,11 +69,11 @@ test("the canonical example parses", () => {
   // And it keeps exercising semantic anchors, which is the only place they are proven
   // against real content rather than a fixture.
   const anchored = presentation.slides.find((slide) =>
-    slide.bullets.some((bullet) => bullet.id !== undefined),
+    bodyElements(slide.body).some((element) => element.id !== undefined),
   );
   assert.ok(anchored !== undefined, "no slide in the canonical deck carries anchors");
-  const declared = anchored.bullets.flatMap((bullet) =>
-    bullet.id === undefined ? [] : [bullet.id],
+  const declared = bodyElements(anchored.body).flatMap((element) =>
+    element.id === undefined ? [] : [element.id],
   );
   const reached = anchored.say.flatMap((cue) =>
     cue.kind === "speech" && cue.activates !== undefined ? [cue.activates] : [],
@@ -121,12 +122,20 @@ slides:
   );
 });
 
-test("bullets are optional", () => {
+test("a slide need not have a body at all", () => {
   const presentation = parsePresentation(
     "title: A deck\nslides:\n  - slide: { title: One }\n    say: Hello.\n",
     "test.yaml",
   );
-  assert.deepEqual(presentation.slides[0]?.bullets, []);
+  assert.deepEqual(presentation.slides[0]?.body, { kind: "none" });
+
+  // An empty list is the same thing said differently, and must not reach the renderer as a
+  // body with nothing in it.
+  const empty = parsePresentation(
+    "title: A deck\nslides:\n  - slide: { title: One, bullets: [] }\n    say: Hello.\n",
+    "test.yaml",
+  );
+  assert.deepEqual(empty.slides[0]?.body, { kind: "none" });
 });
 
 test("delivery instructions are accepted but reported as inert", () => {
@@ -243,7 +252,7 @@ slides:
       bulletz: [a]
     say: Hello.
 `),
-    ['slide 1, slide: unknown field "bulletz" (allowed: title, bullets)'],
+    ['slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code)'],
   );
 
   assert.deepEqual(
@@ -412,10 +421,10 @@ slides:
 `,
     "test.yaml",
   );
-  assert.deepEqual(presentation.slides[0]?.bullets, [
-    { text: "Which tool ran", id: "tool" },
-    { text: "How long it took" },
-  ]);
+  assert.deepEqual(presentation.slides[0]?.body, {
+    kind: "bullets",
+    items: [{ text: "Which tool ran", id: "tool" }, { text: "How long it took" }],
+  });
   assert.deepEqual(presentation.slides[0]?.say, [
     { kind: "speech", text: "Which tool ran.", activates: "tool" },
   ]);
@@ -448,7 +457,7 @@ slides:
         activates: timing
 `),
     [
-      'slide 1, narration cue 1: activates "timing", which no bullet on this slide declares (declared: tool)',
+      'slide 1, narration cue 1: activates "timing", which nothing on this slide declares (declared: tool)',
     ],
   );
 
@@ -458,7 +467,7 @@ slides:
         'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        activates: nope\n',
       )[0],
     ),
-    /this slide has no bullet ids$/,
+    /this slide declares no ids$/,
   );
 });
 
@@ -476,7 +485,7 @@ slides:
           text: Second
     say: Hello.
 `),
-    ['slide 1, slide.bullets.1: duplicate id "tool"; bullet 1 already uses it'],
+    ['slide 1, slide.bullets.1: duplicate id "tool"; item 1 already uses it'],
   );
 });
 
@@ -518,7 +527,10 @@ test("identifiers are kebab-case and start with a letter", () => {
       '        - id: "semantic-context-2"\n          text: First\n    say: Hello.\n',
     "test.yaml",
   );
-  assert.equal(ok.slides[0]?.bullets[0]?.id, "semantic-context-2");
+  assert.equal(
+    bodyElements(ok.slides[0]?.body ?? { kind: "none" })[0]?.id,
+    "semantic-context-2",
+  );
 });
 
 test("a per-occurrence pronunciation replaces only that word, for synthesis only", () => {
@@ -572,3 +584,236 @@ test("unknown keys on a speech cue are rejected", () => {
     /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, pronounce\)$/,
   );
 });
+
+/**
+ * The three bodies, and the failures that would otherwise be silent.
+ *
+ * A mark that resolves to the wrong region is the failure worth guarding hardest: the video
+ * still renders, still looks deliberate, and emphasises the wrong lines while the narration
+ * says something else.
+ */
+
+const SPECIMEN_DECK = `
+title: A deck
+slides:
+  - slide:
+      title: One slide
+      code:
+        language: yaml
+        source: |
+          slide:
+            title: "A title"
+
+          say:
+            - "Some words."
+        marks:
+          - id: content
+            line: "slide:"
+          - id: narration
+            line: "say:"
+    say:
+      - speech: "What is on the slide,"
+        activates: content
+      - speech: "and what to say about it."
+        activates: narration
+`;
+
+test("a slide's content can be code, with marks narration reaches", () => {
+  const presentation = parsePresentation(SPECIMEN_DECK, "test.yaml");
+  const body = presentation.slides[0]?.body;
+  assert.equal(body?.kind, "code");
+  assert.equal(body?.kind === "code" ? body.language : undefined, "yaml");
+  assert.deepEqual(body?.kind === "code" ? body.marks : undefined, [
+    { id: "content", line: "slide:" },
+    { id: "narration", line: "say:" },
+  ]);
+  assert.equal(chooseLayout(presentation.slides[0]!), "specimen");
+
+  // Marks are anchor targets exactly as bullets are.
+  assert.deepEqual(
+    bodyElements(presentation.slides[0]!.body).map((element) => element.id),
+    ["content", "narration"],
+  );
+});
+
+test("a code block keeps its whitespace, because the whitespace is the content", () => {
+  const body = parsePresentation(SPECIMEN_DECK, "test.yaml").slides[0]?.body;
+  assert.ok(body?.kind === "code");
+  assert.equal(body.source, 'slide:\n  title: "A title"\n\nsay:\n  - "Some words."\n');
+});
+
+test("a slide's content can be steps, which are bullets making a different claim", () => {
+  const presentation = parsePresentation(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      steps:
+        - id: speech
+          text: Speech
+        - Timing
+    say:
+      - speech: "First it speaks."
+        activates: speech
+`,
+    "test.yaml",
+  );
+  assert.deepEqual(presentation.slides[0]?.body, {
+    kind: "steps",
+    items: [{ text: "Speech", id: "speech" }, { text: "Timing" }],
+  });
+  assert.equal(chooseLayout(presentation.slides[0]!), "cascade");
+});
+
+test("a slide says what its content is once, not twice", () => {
+  const error = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      bullets: [a]
+      steps: [b]
+    say: Hello.
+`,
+  );
+  assert.equal(error.length, 1);
+  assert.match(error[0] ?? "", /"bullets" and "steps"/);
+});
+
+test("a language cuecraft cannot set is refused rather than set plainly", () => {
+  assert.deepEqual(
+    problemsFrom(
+      `title: A deck
+slides:
+  - slide:
+      title: One
+      code: { language: python, source: "x = 1" }
+    say: Hello.
+`,
+    ),
+    [
+      "slide 1, slide.code.language: must be one of yaml; cuecraft bundles one grammar and would otherwise set your code unhighlighted",
+    ],
+  );
+});
+
+test("a mark that points at nothing is an error, not an unhighlighted slide", () => {
+  const problems = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        source: |
+          a: 1
+        marks:
+          - id: ghost
+            line: "b:"
+    say: Hello.
+`,
+  );
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", /"b:" does not appear/);
+});
+
+test("an ambiguous mark is an error, because it would emphasise a guess", () => {
+  const problems = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        source: |
+          a: 1
+          b: 1
+        marks:
+          - id: both
+            line: "1"
+    say: Hello.
+`,
+  );
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", /matches 2 lines/);
+});
+
+test("two marks may not claim the same identity", () => {
+  const problems = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        source: |
+          a: 1
+          b: 2
+        marks:
+          - id: same
+            line: "a:"
+          - id: same
+            line: "b:"
+    say: Hello.
+`,
+  );
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", /duplicate id "same"/);
+});
+
+test("a malformed mark is reported as a mark, not as invalid input", () => {
+  const problems = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        source: |
+          a: 1
+        marks:
+          - id: "Not Kebab"
+            line: "a:"
+          - { id: fine, line: "a:", colour: red }
+    say: Hello.
+`,
+  );
+  assert.equal(problems.length, 2);
+  assert.match(problems[0] ?? "", /id must be lower-case letters/);
+  assert.match(problems[1] ?? "", /unknown key "colour"/);
+});
+
+test("narration may not activate an identity a code block never declares", () => {
+  const problems = problemsFrom(
+    `title: A deck
+slides:
+  - slide:
+      title: One
+      code:
+        language: yaml
+        source: |
+          a: 1
+        marks:
+          - id: here
+            line: "a:"
+    say:
+      - speech: "There."
+        activates: elsewhere
+`,
+  );
+  assert.equal(problems.length, 1);
+  assert.match(
+    problems[0] ?? "",
+    /which nothing on this slide declares \(declared: here\)/,
+  );
+});
+
+function problemsFrom(source: string): readonly string[] {
+  try {
+    parsePresentation(source, "test.yaml");
+  } catch (error) {
+    assert.ok(error instanceof PresentationError);
+    return error.problems;
+  }
+  assert.fail("expected the source to be rejected");
+}

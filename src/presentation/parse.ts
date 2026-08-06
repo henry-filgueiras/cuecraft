@@ -2,6 +2,9 @@ import { parse as parseYaml, YAMLParseError } from "yaml";
 import { z } from "zod";
 
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
+import { type AuthoredMark, markProblem, specimenLines } from "./specimen.ts";
+
+export type { AuthoredMark } from "./specimen.ts";
 
 /**
  * The presentation source: YAML in, a validated authored presentation out.
@@ -63,17 +66,68 @@ export type NarrationCue =
     }
   | { readonly kind: "pause"; readonly milliseconds: number };
 
-/** A bullet, which may carry a semantic identity that narration can reach. */
-export interface AuthoredBullet {
+/** One item of a list, which may carry a semantic identity that narration can reach. */
+export interface AuthoredItem {
   readonly text: string;
   readonly id?: string;
+}
+
+/** The only language cuecraft can set as a specimen. Widening this is a decision, not a knob. */
+export const CODE_LANGUAGES = ["yaml"] as const;
+export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
+
+/**
+ * What a slide's content *is*.
+ *
+ * decision:10 chose composition from the shape of the content — how many items, how long they
+ * are. Shape turned out to be a weak proxy for meaning exactly where idea:5 predicted it would
+ * be. `bullets` and `steps` are the same data and make different claims: "these are points"
+ * against "these are stages of one transformation", and a compiler's pipeline is not an
+ * enumerated list. `code` is not points at all — its whitespace is the content.
+ *
+ * So the role is now the first input to composition, and shape decides only within a role. The
+ * union is deliberately closed and deliberately small: three bodies plus the absence of one.
+ * Every entry exists because the self-demo could not say what it meant without it, and none was
+ * added because it would be nice to have.
+ *
+ * Still nothing geometric. A body says what the content means; it never says how big, how many
+ * columns, or where.
+ */
+export type SlideBody =
+  | { readonly kind: "none" }
+  | { readonly kind: "bullets"; readonly items: readonly AuthoredItem[] }
+  | { readonly kind: "steps"; readonly items: readonly AuthoredItem[] }
+  | {
+      readonly kind: "code";
+      readonly language: CodeLanguage;
+      /** Verbatim, including indentation. See `./specimen.ts`. */
+      readonly source: string;
+      readonly marks: readonly AuthoredMark[];
+    };
+
+/**
+ * The elements of a body that narration can reach, in the order the renderer lays them out.
+ *
+ * One function rather than three branches scattered through the compiler: an anchor resolves to
+ * an index into *this* list whatever the body is, so adding a fourth role would not touch
+ * timing, validation, or the anchor representation.
+ */
+export function bodyElements(body: SlideBody): readonly { readonly id?: string }[] {
+  switch (body.kind) {
+    case "none":
+      return [];
+    case "code":
+      return body.marks;
+    default:
+      return body.items;
+  }
 }
 
 export interface AuthoredSlide {
   /** 1-based, and used in every message the author sees. */
   readonly ordinal: number;
   readonly title: string;
-  readonly bullets: readonly AuthoredBullet[];
+  readonly body: SlideBody;
   /** Ordered narration cues. A scalar `say` is shorthand for one speech cue. */
   readonly say: readonly NarrationCue[];
   readonly preSayMs: number;
@@ -112,25 +166,25 @@ export const ANCHOR_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const ANCHOR_ID_HINT =
   "lower-case letters, digits and hyphens, starting with a letter";
 
-export const BULLET_HINT = 'text, or { id: some-name, text: "..." }';
+export const ITEM_HINT = 'text, or { id: some-name, text: "..." }';
 
 /**
  * Hand-checked for the same reason cues are: a `z.union` reports its branch failures nested
  * inside one `invalid_union` issue, so a malformed identifier would surface to the author as
  * "Invalid input" with no indication of what was wrong with it.
  */
-function checkBullet(value: unknown): string | undefined {
+function checkItem(value: unknown): string | undefined {
   if (typeof value === "string") {
     return value.trim().length === 0 ? "must not be empty" : undefined;
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return `must be ${BULLET_HINT}`;
+    return `must be ${ITEM_HINT}`;
   }
 
   const record = value as Record<string, unknown>;
-  const extra = Object.keys(record).filter((key) => !BULLET_KEYS.includes(key));
+  const extra = Object.keys(record).filter((key) => !ITEM_KEYS.includes(key));
   if (extra.length > 0) {
-    return `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${BULLET_KEYS.join(", ")})`;
+    return `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${ITEM_KEYS.join(", ")})`;
   }
   if (typeof record["text"] !== "string" || record["text"].trim().length === 0) {
     return "text must not be empty";
@@ -144,25 +198,176 @@ function checkBullet(value: unknown): string | undefined {
   return undefined;
 }
 
-const BULLET_KEYS = ["text", "id"];
+const ITEM_KEYS = ["text", "id"];
 
-const bulletSchema = z.unknown().superRefine((value, context) => {
-  const problem = checkBullet(value);
+const itemSchema = z.unknown().superRefine((value, context) => {
+  const problem = checkItem(value);
   if (problem !== undefined) context.addIssue({ code: "custom", message: problem });
 });
 
-const slideSchema = z.strictObject({
-  title: nonEmptyString,
-  bullets: z.array(bulletSchema).optional(),
+const MARK_KEYS = ["id", "line"];
+
+export const MARK_HINT = '{ id: some-name, line: "the line it opens" }';
+
+/**
+ * A mark, checked for everything except whether it actually resolves.
+ *
+ * Resolution needs the source, which lives one level up, so it happens in the code block's own
+ * check. Splitting it this way keeps the two failures distinguishable in the report: "this mark
+ * is malformed" and "this mark points at nothing" are different mistakes with different fixes.
+ */
+function checkMark(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return `must be ${MARK_HINT}`;
+  }
+  const record = value as Record<string, unknown>;
+  const extra = Object.keys(record).filter((key) => !MARK_KEYS.includes(key));
+  if (extra.length > 0) {
+    return `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${MARK_KEYS.join(", ")})`;
+  }
+  const id = record["id"];
+  if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
+    return `id must be ${ANCHOR_ID_HINT}`;
+  }
+  if (typeof record["line"] !== "string" || record["line"].trim().length === 0) {
+    return "line must be a piece of the line this mark opens";
+  }
+  return undefined;
+}
+
+const markSchema = z.unknown().superRefine((value, context) => {
+  const problem = checkMark(value);
+  if (problem !== undefined) context.addIssue({ code: "custom", message: problem });
 });
 
-/** A validated bullet, in either of its two authored forms. */
-function bulletOf(value: unknown): AuthoredBullet {
+/**
+ * A code specimen: what language it is, what it says, and which parts narration can reach.
+ *
+ * `language` is checked here rather than by `z.enum` so the message can say why the list is one
+ * entry long. cuecraft bundles one grammar; a deck that asks for another would otherwise render
+ * unhighlighted and look like a styling bug rather than an unsupported language.
+ */
+const codeSchema = z
+  .strictObject({
+    language: z.unknown(),
+    source: nonEmptyString,
+    marks: z.array(markSchema).optional(),
+  })
+  .superRefine((code, context) => {
+    if (typeof code.language !== "string" || !isCodeLanguage(code.language)) {
+      context.addIssue({
+        code: "custom",
+        path: ["language"],
+        message:
+          `must be one of ${CODE_LANGUAGES.join(", ")}; cuecraft bundles one grammar and ` +
+          "would otherwise set your code unhighlighted",
+      });
+    }
+
+    const lines = specimenLines(code.source);
+    if (lines.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["source"],
+        message: "must not be blank",
+      });
+      return;
+    }
+
+    const declared = new Map<string, number>();
+    (code.marks ?? []).forEach((raw, index) => {
+      if (checkMark(raw) !== undefined) return;
+      const mark = raw as AuthoredMark;
+
+      const first = declared.get(mark.id);
+      if (first === undefined) {
+        declared.set(mark.id, index);
+      } else {
+        context.addIssue({
+          code: "custom",
+          path: ["marks", index],
+          message: `duplicate id ${JSON.stringify(mark.id)}; mark ${first + 1} already uses it`,
+        });
+      }
+
+      const problem = markProblem(lines, mark);
+      if (problem !== undefined) {
+        context.addIssue({ code: "custom", path: ["marks", index], message: problem });
+      }
+    });
+  });
+
+function isCodeLanguage(value: string): value is CodeLanguage {
+  return (CODE_LANGUAGES as readonly string[]).includes(value);
+}
+
+/**
+ * A slide carries a title and at most one body.
+ *
+ * "At most one" rather than "exactly one": a slide that is a single sentence has no body and
+ * becomes a statement, which is the composition three of the canonical deck's slides want.
+ *
+ * The three body keys are mutually exclusive because they are three answers to the same
+ * question. A slide holding both `bullets` and `steps` has not said what its content means, and
+ * guessing which one wins is the kind of silence a compiler exists to prevent.
+ */
+const slideSchema = z
+  .strictObject({
+    title: nonEmptyString,
+    bullets: z.array(itemSchema).optional(),
+    steps: z.array(itemSchema).optional(),
+    code: codeSchema.optional(),
+  })
+  .superRefine((slide, context) => {
+    const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
+    if (present.length > 1) {
+      context.addIssue({
+        code: "custom",
+        message:
+          `has ${present.map((key) => JSON.stringify(key)).join(" and ")}; a slide's content ` +
+          "is one of those, because each says something different about what it means",
+      });
+    }
+  });
+
+const BODY_KEYS = ["bullets", "steps", "code"] as const;
+
+/** A validated item, in either of its two authored forms. */
+function itemOf(value: unknown): AuthoredItem {
   if (typeof value === "string") return { text: value.trim() };
   const record = value as { text: string; id?: string };
   return record.id === undefined
     ? { text: record.text.trim() }
     : { text: record.text.trim(), id: record.id };
+}
+
+/**
+ * A validated slide's content, normalized into the closed union.
+ *
+ * An empty `bullets: []` is `none` rather than an empty list, so that "this slide has no body"
+ * has exactly one representation downstream and no archetype has to handle a body with nothing
+ * in it.
+ */
+function bodyOf(slide: {
+  bullets?: unknown[] | undefined;
+  steps?: unknown[] | undefined;
+  code?: { language: unknown; source: string; marks?: unknown[] | undefined } | undefined;
+}): SlideBody {
+  if (slide.code !== undefined) {
+    return {
+      kind: "code",
+      language: slide.code.language as CodeLanguage,
+      source: slide.code.source,
+      marks: (slide.code.marks ?? []).map((raw) => raw as AuthoredMark),
+    };
+  }
+  if (slide.steps !== undefined && slide.steps.length > 0) {
+    return { kind: "steps", items: slide.steps.map(itemOf) };
+  }
+  if (slide.bullets !== undefined && slide.bullets.length > 0) {
+    return { kind: "bullets", items: slide.bullets.map(itemOf) };
+  }
+  return { kind: "none" };
 }
 
 export const CUE_HINT =
@@ -323,21 +528,30 @@ const entrySchema = z
     post_say: durationLiteral.optional(),
   })
   .superRefine((entry, context) => {
+    // Every identity this slide declares, whichever body declared it. Duplicate marks are
+    // reported by the code block's own check, so only list duplicates are raised here.
     const declared = new Map<string, number>();
-    (entry.slide.bullets ?? []).forEach((raw, index) => {
-      if (checkBullet(raw) !== undefined) return;
-      const { id } = bulletOf(raw);
-      if (id === undefined) return;
-      const first = declared.get(id);
-      if (first === undefined) {
-        declared.set(id, index);
-      } else {
-        context.addIssue({
-          code: "custom",
-          path: ["slide", "bullets", index],
-          message: `duplicate id ${JSON.stringify(id)}; bullet ${first + 1} already uses it`,
-        });
-      }
+    for (const key of ["bullets", "steps"] as const) {
+      (entry.slide[key] ?? []).forEach((raw, index) => {
+        if (checkItem(raw) !== undefined) return;
+        const { id } = itemOf(raw);
+        if (id === undefined) return;
+        const first = declared.get(id);
+        if (first === undefined) {
+          declared.set(id, index);
+        } else {
+          context.addIssue({
+            code: "custom",
+            path: ["slide", key, index],
+            message: `duplicate id ${JSON.stringify(id)}; item ${first + 1} already uses it`,
+          });
+        }
+      });
+    }
+    (entry.slide.code?.marks ?? []).forEach((raw, index) => {
+      if (checkMark(raw) !== undefined) return;
+      const { id } = raw as AuthoredMark;
+      if (!declared.has(id)) declared.set(id, index);
     });
 
     const cues = Array.isArray(entry.say) ? entry.say : [];
@@ -351,9 +565,9 @@ const entrySchema = z
           code: "custom",
           path: ["say", index],
           message:
-            `activates ${JSON.stringify(id)}, which no bullet on this slide declares` +
+            `activates ${JSON.stringify(id)}, which nothing on this slide declares` +
             (known.length === 0
-              ? "; this slide has no bullet ids"
+              ? "; this slide declares no ids"
               : ` (declared: ${known.join(", ")})`),
         });
         return;
@@ -396,6 +610,7 @@ const ALLOWED_KEYS: Record<string, readonly string[]> = {
   defaults: Object.keys(defaultsSchema.shape),
   "slides[]": Object.keys(entrySchema.shape),
   "slides[].slide": Object.keys(slideSchema.shape),
+  "slides[].slide.code": Object.keys(codeSchema.shape),
 };
 
 /**
@@ -451,7 +666,7 @@ export function parsePresentation(text: string, source: string): Presentation {
     slides: raw.slides.map((entry, index) => ({
       ordinal: index + 1,
       title: entry.slide.title.trim(),
-      bullets: (entry.slide.bullets ?? []).map(bulletOf),
+      body: bodyOf(entry.slide),
       say: toCues(entry.say),
       preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
       postSayMs: optionalDuration(entry.post_say) ?? postSayMs,

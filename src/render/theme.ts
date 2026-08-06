@@ -13,6 +13,13 @@
 
 export const FONT_STACK = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
+/**
+ * Code is set in a monospace stack for the reason code is always set in one: the alignment is
+ * the content. Menlo is macOS's, and the fallbacks cover the platforms Remotion runs on.
+ */
+export const MONO_STACK =
+  'Menlo, "SF Mono", "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace';
+
 export const COLORS = {
   /** Deck background. Everything fades to and from this. Flat — see Frame. */
   ink: "#0A0D12",
@@ -26,11 +33,37 @@ export const COLORS = {
   dormant: "#78849B",
   /** Used sparingly: the rule, the ordinals, the cell edges, the progress bar. */
   accent: "#D9A05B",
+  /** The accent at full heat: the transient overshoot, never a resting colour. */
+  flare: "#FFE3B8",
   /** Structural lines. Visible at 1080p, invisible as decoration. */
   hairline: "rgba(255, 255, 255, 0.11)",
   /** The unfilled part of the progress rule. */
   track: "rgba(255, 255, 255, 0.07)",
 } as const;
+
+/**
+ * How a code specimen is coloured.
+ *
+ * Monochrome, plus the one accent, and that is a design decision rather than an oversight. A
+ * vendor highlighting theme puts six hues on a frame in a deck that has one accent and four
+ * greys, and the result looks like a screenshot pasted into a presentation — which is precisely
+ * the impression a specimen must not give. Structure is carried by weight and brightness here
+ * exactly as it is everywhere else.
+ *
+ * Keyed by highlight.js token class. The library tokenizes; the palette is ours (decision:16).
+ */
+export const CODE_COLORS: Record<string, { color: string; weight?: number }> = {
+  /** Mapping keys: the structure of the specimen, and the brightest thing in it. */
+  "hljs-attr": { color: "#F5F7FB", weight: 600 },
+  /** Values, which on a cuecraft specimen are mostly the author's own prose. */
+  "hljs-string": { color: "#C2CBD9" },
+  /** List dashes. Present, never read. */
+  "hljs-bullet": { color: "#6B7688" },
+  "hljs-punctuation": { color: "#6B7688" },
+  "hljs-number": { color: "#D9A05B" },
+  "hljs-literal": { color: "#D9A05B" },
+  "hljs-comment": { color: "#6B7688" },
+};
 
 /**
  * A modular type scale, in pixels at 1920x1080.
@@ -51,10 +84,12 @@ export const TYPE = {
   lead: 88,
   /** A short parallel label in the matrix field. */
   term: 66,
+  /** A stage in the cascade. */
+  stage: 76,
   /** A numbered row. */
   row: 54,
   /** An item in a stacked list. */
-  item: 46,
+  item: 54,
   /** Ordinals: 01, 02, 03. */
   ordinal: 34,
 } as const;
@@ -109,8 +144,19 @@ export const MOTION = {
   contentDelay: 9,
   /** Separation between successive content elements. */
   stagger: 5,
-  /** How long an anchored element takes to become established once narration reaches it. */
-  establish: 10,
+} as const;
+
+/** How a code specimen is set. Line height is generous: this is read from across a room. */
+export const CODE = {
+  /** Largest size a specimen is ever set at. */
+  maxSize: 44,
+  /** Below this it stops being presentation type, so the deck should not need it. */
+  minSize: 26,
+  lineHeight: 1.52,
+  /** Advance width of one monospace character, as a fraction of the font size. */
+  charWidth: 0.602,
+  /** Space to the left of the block, holding the activation mark. */
+  gutter: 34,
 } as const;
 
 /**
@@ -124,4 +170,79 @@ export function fitHeading(length: number, base: number): number {
   if (length > 58) return Math.round(base * 0.7);
   if (length > 38) return Math.round(base * 0.84);
   return base;
+}
+
+/**
+ * Average advance width of the heading face, as a fraction of the font size.
+ *
+ * Helvetica Neue Bold at display sizes, measured across the deck's own titles. Close enough to
+ * predict a line break, which is all it is for.
+ */
+const HEADING_CHAR_WIDTH = 0.5;
+
+/**
+ * How many lines a heading of this length wraps to.
+ *
+ * Only the specimen needs this, and it needs it badly: the block is sized to the space left
+ * under the title, so a title that silently wraps to a second line pushes the code off the
+ * bottom of the frame. Estimating rather than measuring keeps composition resolvable without a
+ * browser, which is the same constraint every other sizing rule here works under.
+ */
+export function headingLines(length: number, size: number, width: number): number {
+  const perLine = Math.max(1, Math.floor(width / (size * HEADING_CHAR_WIDTH)));
+  return Math.max(1, Math.ceil(length / perLine));
+}
+
+/**
+ * A matrix term, sized to how many of them share the canvas.
+ *
+ * Four terms in a 1920x1080 frame are each given a quarter of it, and 66px type floats in that
+ * much space. Six are not. Derived from the count for the same reason everything else here is
+ * derived from the content.
+ */
+export function fitTerm(count: number): number {
+  return count <= 4 ? Math.round(TYPE.term * 1.28) : TYPE.term;
+}
+
+/**
+ * The largest size at which a specimen fits both its box and its longest line.
+ *
+ * Monospace makes this arithmetic rather than measurement: every glyph is the same width, so
+ * the widest line's length is the whole constraint. Derived from the content for the same
+ * reason `fitHeading` is — an author who had to pick a font size for their code would be
+ * authoring a projection.
+ */
+export function fitSpecimen(
+  lineCount: number,
+  longestLine: number,
+  box: { width: number; height: number },
+): number {
+  const byWidth = box.width / Math.max(1, longestLine * CODE.charWidth);
+  const byHeight = box.height / Math.max(1, lineCount * CODE.lineHeight);
+  return Math.max(
+    CODE.minSize,
+    Math.min(CODE.maxSize, Math.floor(Math.min(byWidth, byHeight))),
+  );
+}
+
+/**
+ * Blend two `#rrggbb` colours.
+ *
+ * Six lines rather than a colour library, and it stays six lines: the archetypes need to move
+ * a value between two palette entries as an anchor establishes, and nothing here needs a colour
+ * space, an alpha channel, or a named-colour table.
+ */
+export function mix(from: string, to: string, amount: number): string {
+  const t = amount < 0 ? 0 : amount > 1 ? 1 : amount;
+  const a = channels(from);
+  const b = channels(to);
+  const blended = a.map((value, index) =>
+    Math.round(value + ((b[index] ?? 0) - value) * t),
+  );
+  return `#${blended.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function channels(hex: string): [number, number, number] {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
 }
