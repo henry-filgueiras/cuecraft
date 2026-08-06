@@ -44,19 +44,25 @@ export const COLORS = {
 /**
  * How a code specimen is coloured.
  *
- * Monochrome, plus the one accent, and that is a design decision rather than an oversight. A
- * vendor highlighting theme puts six hues on a frame in a deck that has one accent and four
- * greys, and the result looks like a screenshot pasted into a presentation — which is precisely
- * the impression a specimen must not give. Structure is carried by weight and brightness here
- * exactly as it is everywhere else.
+ * Two hues and the accent. A vendor highlighting theme puts six on a frame in a deck that has
+ * one accent and four greys, and the result looks like a screenshot pasted into a presentation
+ * — which is precisely the impression a specimen must not give. But the first cut of this went
+ * the whole way to monochrome, and monochrome had a specific defect: the brightest thing in a
+ * cuecraft specimen was the *keys*, and the dimmest was the strings, which are the author's own
+ * prose and the only part of the frame a viewer is actually being asked to read.
+ *
+ * So brightness now follows what matters and hue carries the structure instead. Keys are cool
+ * and mid-bright — identifiable at a glance without competing; prose is near-paper; durations
+ * and literals keep the deck's accent; dashes and punctuation stay out of the way. Three
+ * classifications a viewer can name, not a theme.
  *
  * Keyed by highlight.js token class. The library tokenizes; the palette is ours (decision:16).
  */
-export const CODE_COLORS: Record<string, { color: string; weight?: number }> = {
+export const CODE_COLORS: Record<string, CodeTokenStyle> = {
   /** Mapping keys: the structure of the specimen, and the brightest thing in it. */
-  "hljs-attr": { color: "#F5F7FB", weight: 600 },
+  "hljs-attr": { color: "#9FD8E8", fontWeight: 600 },
   /** Values, which on a cuecraft specimen are mostly the author's own prose. */
-  "hljs-string": { color: "#C2CBD9" },
+  "hljs-string": { color: "#EDF1F8" },
   /** List dashes. Present, never read. */
   "hljs-bullet": { color: "#6B7688" },
   "hljs-punctuation": { color: "#6B7688" },
@@ -64,6 +70,11 @@ export const CODE_COLORS: Record<string, { color: string; weight?: number }> = {
   "hljs-literal": { color: "#D9A05B" },
   "hljs-comment": { color: "#6B7688" },
 };
+
+export interface CodeTokenStyle {
+  readonly color: string;
+  readonly fontWeight?: number;
+}
 
 /**
  * A modular type scale, in pixels at 1920x1080.
@@ -223,6 +234,31 @@ export function fitSpecimen(
     CODE.minSize,
     Math.min(CODE.maxSize, Math.floor(Math.min(byWidth, byHeight))),
   );
+}
+
+/** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
+export const HEADING_WIDTH = 1500;
+
+/**
+ * What is left of the canvas once the heading has taken its share.
+ *
+ * The heading's *real* height — including the second line a long title takes — has to be part
+ * of the arithmetic. It was not, once, and the close slide's last line sat on the bottom margin.
+ *
+ * Here rather than in the archetype that draws it, because it is the input to every sizing
+ * decision a code block makes and those are now decided before anything is drawn: `fitSpecimen`
+ * needs it, and so does the projection search that calls `fitSpecimen` (`./projection.ts`).
+ */
+export function codeBox(title: string): { width: number; height: number } {
+  const titleSize = fitHeading(title.length, TYPE.title);
+  const titleHeight =
+    headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
+  return {
+    width: 1920 - 2 * FRAME.marginX - CODE.gutter,
+    // The 6 is the accent rule above the heading; SPACE.lg sits under it, SPACE.xl under
+    // the title.
+    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
+  };
 }
 
 /**

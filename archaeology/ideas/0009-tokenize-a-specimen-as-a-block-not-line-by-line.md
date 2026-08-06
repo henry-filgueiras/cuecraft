@@ -52,3 +52,21 @@ the self-demo's two does, and they should not: a specimen is an excerpt chosen t
 across a room, which is a strong filter against the kind of source that has block scalars in it.
 
 Until then this is a limitation with a known fix and no victim, which is the cheapest kind.
+
+**Reassessed after decision:21 (2026-08-06).** Still parked, and half the cost has been paid by
+something else.
+
+decision:21 needed the *opposite* split — one logical line's tokens cut into two rendered
+fragments — and to get it, `render/tokens.ts` now turns highlight.js's markup back into a flat
+token run with character offsets. That is sketch 2's re-balancing machinery, built for a
+different reason and already tested: `sliceTokens` cuts a run at an arbitrary offset and keeps
+every classification intact.
+
+What remains unbuilt is only the *input* end. Tokenizing the block would mean handing
+`hljs.highlight` a multi-line string and splitting the result at newlines, which the same parser
+would do without changes — a span crossing a newline arrives as one token containing `\n`, and
+splitting on it is a `split`, not a re-balance.
+
+So the estimate has dropped from "a custom emitter or a re-balancer" to "call it once and split
+the tokens", and the reason to wait is unchanged: no specimen in any deck contains a multi-line
+construct, and a presentation is a strong filter against source that does.

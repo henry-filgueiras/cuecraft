@@ -229,7 +229,7 @@ begins. It is scoped to the slide, which is what makes a selector like `say:` re
 
 Reach for it whenever the evidence is smaller than the slide holding it. Showing more source
 than the story needs is not free: type is sized to fit what you selected, so a fourteen-line
-slide sets at 30px where its four-line narration block sets at 36px
+slide sets at 30px where its five-line narration block sets at the 44px ceiling
 ([`archaeology/decisions/0020-*.md`](archaeology/decisions/)). A file that is missing, a title that matches no slide or two, and a mark that no longer
 matches a line are all compile errors naming the slide — a deck that would display stale source
 refuses to build instead. Paths are relative to the repository and may not escape it
@@ -262,6 +262,23 @@ Which lines were removed, added, or unchanged is derived, not annotated. So is t
 `change` names the changed region, is declared by the body rather than by the author, and is
 scoped to its slide like any other — spell it wrong and the error lists what the slide does
 declare ([`archaeology/decisions/0019-*.md`](archaeology/decisions/)).
+
+**Source too wide for the frame is projected, not truncated.** Selecting well removes lines; it
+cannot shorten a line, and a single long sentence of real prose will hold a whole block down.
+So a line that will not fit is broken to a measure the renderer derives from the viewport, the
+type scale and the advance width — and the continuation is marked with a `↳` in the column the
+list marker would occupy, so a projected line is never mistaken for a line of the file:
+
+```yaml
+- "They read files, search code, run tools, and decide what
+↳ to do next."
+```
+
+Nothing about this is authored: no width, no column, no manual break. Breaks land on
+whitespace only, never inside a word, and never in a line's own indentation; the text is
+complete and in order. A block whose height already binds — most of them — is left exactly as
+written, because wrapping it would only make it smaller. Nothing is ever cut to fit
+([`archaeology/decisions/0021-*.md`](archaeology/decisions/)).
 
 **Layout is not authored.** The role picks the composition; shape decides only within the list
 role, from how many items there are and how long they run:

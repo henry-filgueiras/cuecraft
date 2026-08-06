@@ -15,6 +15,11 @@
 # anywhere here: cuecraft diffs the two states, and the narration reaches the changed region by
 # an identity the compiler declared on its own.
 #
+# It is also where quoted source stops fitting the frame. Its longest line is real prose and
+# cannot be shortened, so cuecraft *projects* it: the line is broken to a measure the renderer
+# derives from the viewport and the type, and the break is marked with a glyph no source
+# contains. The text is the file's, whole and in order; only its shape is the presentation's.
+#
 # Nothing in this file says where anything goes, how big it is, or when it happens.
 
 title: "cuecraft: author relationships, derive mechanics"
@@ -86,6 +91,13 @@ slides:
   # which region of itself is the change, so it declares one, scoped to this slide like any
   # other. The author supplies the structure; the compiler supplies the endpoint; the measured
   # audio supplies the moment.
+  #
+  # One line of the earlier state is 74 characters of real prose, and cropping cannot shorten a
+  # sentence somebody wrote — so this scene set at 36px where the deck's ceiling is 44. It now
+  # sets at 44, because cuecraft breaks that one line to fit and marks the break with a glyph
+  # that is not source. Nothing here asks for that: no width, no column, no line break. The
+  # renderer knows the frame and the type, so it works out the measure the same way it works
+  # out everything else on this slide.
   - slide:
       title: "Change it, and nothing else"
       change:
@@ -103,6 +115,8 @@ slides:
 
     say:
       - "Here is the narration half of that slide, as it was written first."
+      - pause: 250ms
+      - "The last line is too long to set this large, so cuecraft breaks it, and marks the break."
       - pause: 350ms
       - speech: "One sentence was split, and the half about tools was pointed at the term for it."
         activates: change

@@ -1,5 +1,3 @@
-import hljs from "highlight.js/lib/core";
-import yaml from "highlight.js/lib/languages/yaml";
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
@@ -10,19 +8,27 @@ import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
 import { anchorState, type AnchorState } from "./anchor.ts";
 import {
+  CONTINUATION,
+  type Fragment,
+  fitProjection,
+  projectLines,
+  wrapLine,
+} from "./projection.ts";
+import { sliceTokens, tokenizeLine } from "./tokens.ts";
+import {
   CODE,
   CODE_COLORS,
   COLORS,
   FONT_STACK,
   FRAME,
+  HEADING_WIDTH,
   MONO_STACK,
   MOTION,
   SPACE,
   TYPE,
+  codeBox,
   fitHeading,
-  fitSpecimen,
   fitTerm,
-  headingLines,
   mix,
 } from "./theme.ts";
 
@@ -37,8 +43,6 @@ import {
  * What they deliberately do not have: cards, borders around content, drop shadows, gradients,
  * or icons. Structure is carried by scale, position, and hairlines.
  */
-
-hljs.registerLanguage("yaml", yaml);
 
 const ease = Easing.out(Easing.cubic);
 
@@ -164,9 +168,6 @@ function Rule({ frame, width = 88 }: { frame: number; width?: number }) {
     />
   );
 }
-
-/** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
-const HEADING_WIDTH = 1500;
 
 const heading: CSSProperties = {
   margin: 0,
@@ -512,6 +513,12 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
  * band of the specimen brightening under a tint, which is unmistakable at a glance and needs no
  * pointer, arrow or callout. Regions may overlap, and a line takes the state of the most
  * established mark covering it.
+ *
+ * What reaches the frame is a *projection* of those lines rather than the lines themselves
+ * (`./projection.ts`), and the marks did not have to learn that: a fragment carries the logical
+ * line it came from, so a region resolved against the source covers every fragment the source
+ * produced. Every specimen in this deck is height-bound and the projection leaves all of them
+ * exactly as written — the search only wraps where it buys type.
  */
 function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
@@ -523,7 +530,12 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
   const stateOf = anchorStatesFor(scene, absoluteFrame);
   const anchored = scene.anchors.length > 0;
 
-  const size = fitSpecimen(lines.length, longestLine(lines), codeBox(scene.title));
+  const fit = fitProjection(
+    lines.map((line) => [line]),
+    codeBox(scene.title),
+  );
+  const fragments = projectLines(lines, fit.columns);
+  const size = fit.size;
 
   /**
    * A line's state, combining every region that covers it.
@@ -549,7 +561,6 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 
   return (
     <>
-      <style>{tokenStyles()}</style>
       <Heading scene={scene} frame={frame} />
       <div
         style={{
@@ -568,8 +579,8 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
           ...reveal(frame, contentDelay(0)),
         }}
       >
-        {lines.map((line, index) => {
-          const state = lineState(index);
+        {fragments.map((fragment, index) => {
+          const state = lineState(fragment.source);
 
           return (
             <div
@@ -603,17 +614,13 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
                   />
                 )}
               </div>
-              <code
-                style={{
-                  whiteSpace: "pre",
-                  opacity:
-                    state === undefined
-                      ? anchored
-                        ? 0.72
-                        : 1
-                      : 0.72 + 0.28 * state.degree,
-                }}
-                dangerouslySetInnerHTML={{ __html: highlightLine(line, body.language) }}
+              <Line
+                fragment={fragment}
+                line={lines[fragment.source] ?? ""}
+                language={body.language}
+                opacity={
+                  state === undefined ? (anchored ? 0.72 : 1) : 0.72 + 0.28 * state.degree
+                }
               />
             </div>
           );
@@ -621,26 +628,6 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
       </div>
     </>
   );
-}
-
-function longestLine(lines: readonly string[]): number {
-  return lines.reduce((longest, line) => Math.max(longest, line.length), 0);
-}
-
-/**
- * What is left of the canvas once the heading has taken its share.
- *
- * The heading's *real* height — including the second line a long title takes — has to be part
- * of the arithmetic. It was not, once, and the close slide's last line sat on the bottom margin.
- */
-function codeBox(title: string): { width: number; height: number } {
-  const titleSize = fitHeading(title.length, TYPE.title);
-  const titleHeight =
-    headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
-  return {
-    width: 1920 - 2 * FRAME.marginX - CODE.gutter,
-    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
-  };
 }
 
 /**
@@ -666,6 +653,13 @@ function codeBox(title: string): { width: number; height: number } {
  * Colour stays where the rest of the deck keeps it: no red, no green, no diff gutter of `+` and
  * `-`. Removal is something leaving, addition is something arriving in the accent that means
  * "narration has been here" everywhere else in this design.
+ *
+ * This is the archetype the projection was built for, and the one where a row and a rendered
+ * line stop being the same thing. A swap row is as tall as its taller *side*, and a side is now
+ * as tall as the fragments it wrapped to — so the row holding the deck's longest line is two
+ * lines tall on one side and one on the other. The band, the gutter mark and the single derived
+ * identity cover the whole of it: one semantic endpoint, several rendered regions, and nothing
+ * upstream of here had to hear about it.
  */
 function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
@@ -682,12 +676,20 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
   // One derived element, at index 0 of `bodyElements` — so the narration that reaches "the
   // change" resolves through exactly the same machinery as a narration that reaches a bullet.
   const state = anchorStatesFor(scene, absoluteFrame)(0);
-  const size = fitSpecimen(
-    derived.rows.length,
-    derived.longestLine,
+  // Both states of a swap row are measured, because the row has to hold whichever is taller
+  // throughout the crossfade — a row that grew as the change landed would move the code beneath
+  // it, which is the one thing this composition exists to prevent.
+  const fit = fitProjection(
+    derived.rows.map((row) =>
+      row.kind === "kept"
+        ? [row.text]
+        : [row.removed, row.added].filter((text): text is string => text !== undefined),
+    ),
     codeBox(scene.title),
   );
+  const size = fit.size;
   const rowHeight = size * CODE.lineHeight;
+  const project = (text: string): readonly Fragment[] => wrapLine(text, fit.columns);
 
   // Staggered halves of one ramp. The outgoing line is fully gone by 45% of `degree`; the
   // incoming one does not begin until 40%, so they cross rather than overlap.
@@ -697,7 +699,6 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 
   return (
     <>
-      <style>{tokenStyles()}</style>
       <Heading scene={scene} frame={frame} />
       <div
         style={{
@@ -718,20 +719,25 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
             return (
               <div key={index} style={{ display: "flex", alignItems: "stretch" }}>
                 <div style={{ flex: "none", width: CODE.gutter }} />
-                <code
-                  style={{
-                    whiteSpace: "pre",
-                    // Context recedes exactly as the change lands, so the frame's focus moves
-                    // without anything having to move on it.
-                    opacity: 0.7 - 0.22 * state.degree,
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: highlightLine(row.text, body.language),
-                  }}
-                />
+                <div>
+                  {project(row.text).map((fragment, at) => (
+                    <Line
+                      key={at}
+                      fragment={fragment}
+                      line={row.text}
+                      language={body.language}
+                      // Context recedes exactly as the change lands, so the frame's focus moves
+                      // without anything having to move on it.
+                      opacity={0.7 - 0.22 * state.degree}
+                    />
+                  ))}
+                </div>
               </div>
             );
           }
+
+          const removed = row.removed === undefined ? [] : project(row.removed);
+          const added = row.added === undefined ? [] : project(row.added);
 
           return (
             <div
@@ -739,14 +745,15 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
               style={{
                 display: "flex",
                 alignItems: "stretch",
-                height: rowHeight,
+                height: Math.max(removed.length, added.length, 1) * rowHeight,
                 backgroundColor: `rgba(217, 160, 91, ${(0.035 + 0.05 * state.degree + 0.13 * state.heat).toFixed(3)})`,
               }}
             >
               <div style={{ flex: "none", width: CODE.gutter, position: "relative" }}>
                 {/* The band's own edge. Present from the first frame at low contrast, because
                     the viewer should know where to look before the sentence arrives, and in
-                    full accent once it has. */}
+                    full accent once it has. One edge for the whole row however many lines the
+                    projection gave it — the row is one change, not two. */}
                 <div
                   style={{
                     position: "absolute",
@@ -760,33 +767,43 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
                 />
               </div>
               <div style={{ position: "relative", flex: 1 }}>
-                {row.removed === undefined ? null : (
-                  <code
+                {removed.length === 0 ? null : (
+                  <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      whiteSpace: "pre",
                       opacity: leaving * 0.92,
                       transform: `translateY(${-7 * state.degree}px)`,
                     }}
-                    dangerouslySetInnerHTML={{
-                      __html: highlightLine(row.removed, body.language),
-                    }}
-                  />
+                  >
+                    {removed.map((fragment, at) => (
+                      <Line
+                        key={at}
+                        fragment={fragment}
+                        line={row.removed ?? ""}
+                        language={body.language}
+                      />
+                    ))}
+                  </div>
                 )}
-                {row.added === undefined ? null : (
-                  <code
+                {added.length === 0 ? null : (
+                  <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      whiteSpace: "pre",
                       opacity: arriving,
                       transform: `translateY(${13 * (1 - arriving)}px)`,
                     }}
-                    dangerouslySetInnerHTML={{
-                      __html: highlightLine(row.added, body.language),
-                    }}
-                  />
+                  >
+                    {added.map((fragment, at) => (
+                      <Line
+                        key={at}
+                        fragment={fragment}
+                        line={row.added ?? ""}
+                        language={body.language}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -802,36 +819,56 @@ function clamp(value: number): number {
 }
 
 /**
- * One line, tokenized.
+ * One rendered line: a projected fragment of one logical line of source.
  *
- * Line by line rather than block at once, because the archetype needs a DOM element per line to
- * hang a region's tint and mark on, and splitting highlight.js's output back apart would mean
- * re-balancing spans that cross a newline. The cost is that a construct spanning several lines
- * — a YAML block scalar, say — is tokenized as if each of its lines stood alone. A specimen is
- * an excerpt chosen to be legible from across a room, so it does not contain one; if a deck
- * ever needs one, that is the moment to reach for a block-aware emitter rather than now.
+ * The whole logical line is tokenized and the fragment's character range sliced out of it
+ * (`./tokens.ts`), so a sentence that wraps keeps the colours it had as a sentence. Tokenizing
+ * the fragment alone would classify the tail of a quoted string as three bare scalars, and the
+ * viewer would watch one string change colour halfway through — which is the specimen telling
+ * them something false about the file.
+ *
+ * A continuation carries the deck's dimmest grey and a glyph in the column the list marker
+ * occupies: `-` opens an item and `↳` continues one, so a projected line is never mistaken for
+ * a line of the file. It is the only mark in the renderer that is not source and does not come
+ * from source.
  *
  * An empty line becomes a non-breaking space so it keeps its height without a magic minimum.
  */
-function highlightLine(line: string, language: string): string {
-  if (line.trim() === "") return "&nbsp;";
-  return hljs.highlight(line, { language, ignoreIllegals: true }).value;
-}
-
-/**
- * highlight.js token classes mapped onto the deck's palette.
- *
- * A `<style>` element rather than inline styles because the tokens arrive as markup from the
- * library. This is the one place in the renderer where CSS is written as text, and it exists so
- * that the vendor's default theme — six hues, none of them ours — never reaches a frame.
- */
-function tokenStyles(): string {
-  return Object.entries(CODE_COLORS)
-    .map(([token, style]) => {
-      const weight = style.weight === undefined ? "" : `font-weight:${style.weight};`;
-      return `.${token}{color:${style.color};${weight}}`;
-    })
-    .join("");
+function Line({
+  fragment,
+  line,
+  language,
+  opacity,
+}: {
+  fragment: Fragment;
+  /** The whole logical line. Tokenized as a whole; drawn one fragment at a time. */
+  line: string;
+  language: string;
+  opacity?: number;
+}) {
+  const tokens = sliceTokens(tokenizeLine(line, language), fragment.from, fragment.to);
+  return (
+    <code
+      style={{
+        display: "block",
+        whiteSpace: "pre",
+        ...(opacity === undefined ? {} : { opacity }),
+      }}
+    >
+      {fragment.continuation ? (
+        <span style={{ color: COLORS.dim }}>
+          {`${" ".repeat(fragment.indent)}${CONTINUATION} `}
+        </span>
+      ) : null}
+      {tokens.length === 0
+        ? " "
+        : tokens.map((token, index) => (
+            <span key={index} style={CODE_COLORS[token.className ?? ""]}>
+              {token.text}
+            </span>
+          ))}
+    </code>
+  );
 }
 
 /**
