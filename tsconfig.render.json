@@ -13,5 +13,10 @@
     "erasableSyntaxOnly": false,
     "types": ["node"]
   },
-  "include": ["src/render/**/*.tsx", "src/render/**/*.ts", "src/compile/**/*.ts"]
+  "include": [
+    "src/render/**/*.tsx",
+    "src/render/**/*.ts",
+    "src/render/**/*.d.ts",
+    "src/compile/**/*.ts"
+  ]
 }

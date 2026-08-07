@@ -237,6 +237,22 @@ export function fitSpecimen(
 }
 
 /**
+ * How mathematics is set.
+ *
+ * Three numbers, and the range between the two sizes is narrow on purpose: this body exists for
+ * one-line definitions, and a range wide enough to hold a page of derivation would be a range
+ * wide enough to set one of them illegibly. `minSize` is where a formula stops being readable
+ * across a room; `maxSize` is where a short definition stops looking set and starts looking
+ * shouted.
+ */
+export const FORMULA = {
+  minSize: 46,
+  maxSize: 88,
+  /** Space between stacked lines, as a fraction of the size. Displayed maths wants air. */
+  leading: 0.75,
+} as const;
+
+/**
  * How a semantic world is set, in world units.
  *
  * A second coordinate system, and the only one in cuecraft: everything here is measured in the

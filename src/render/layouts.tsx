@@ -9,6 +9,8 @@ import {
   type AuthoredItem,
   type SlideBody,
 } from "../presentation/body.ts";
+import { formulaMeasure, setFormula } from "../presentation/formula.ts";
+import { useMathFonts } from "./mathfonts.tsx";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
@@ -46,6 +48,7 @@ import {
   CODE,
   CODE_COLORS,
   COLORS,
+  FORMULA,
   FONT_STACK,
   FRAME,
   HEADING_WIDTH,
@@ -997,6 +1000,87 @@ function Lead({ scene }: { scene: Scene }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * **formula** — the content is mathematics, so it is set as mathematics.
+ *
+ * The tenth archetype, and the plainest. There is nothing to arrange: a definition is one line
+ * whose *spacing* is part of its meaning, and every layout decision worth making — where the
+ * subscript sits, how much air goes around a binary operator, which letters are italic — belongs
+ * to the typesetter rather than to this file (`../presentation/formula.ts`). What is left here is
+ * three things: how big, where, and what activation means.
+ *
+ * **How big** is derived from the longest line, exactly as a specimen's size is derived from its
+ * widest one. An author who had to pick a point size for an equation would be authoring a
+ * projection.
+ *
+ * **Where** is centred, and it is the only archetype that centres anything. Everything else in
+ * this deck hangs off the left margin because it is *read*, left to right, and a ragged left edge
+ * is a reading obstacle. An equation is not read that way — it is looked at whole, and its own
+ * relation sign is its axis. Setting it flush left would put that axis somewhere arbitrary.
+ *
+ * **Activation** is the deck's, unchanged: a line the narration has not reached is legible and
+ * recessive, a line it reaches flares and settles. The one thing added is that the flare is a
+ * glow behind the line rather than a colour change, because recolouring mathematics fights the
+ * one distinction the typesetting is making — upright against italic — and a hash function's
+ * definitions are mostly operators.
+ */
+function Formula({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  useMathFonts();
+  const body = scene.body;
+  if (body.kind !== "formula") return null;
+
+  const stateOf = anchorStatesFor(scene, absoluteFrame);
+  const widest = Math.max(...body.lines.map((line) => formulaMeasure(line.tex)), 1);
+  // The largest size at which the longest line still clears both margins, stepped down from the
+  // deck's own scale rather than solved — three sizes is enough for a body that holds a
+  // definition, and a continuous fit would put a different size on every frame of the deck.
+  const size = Math.max(
+    FORMULA.minSize,
+    Math.min(FORMULA.maxSize, Math.floor((1920 - 2 * FRAME.marginX) / widest)),
+  );
+
+  return (
+    <>
+      <Heading scene={scene} frame={frame} />
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: size * FORMULA.leading,
+          // The heading has its own margin; this pulls the block back to the optical centre of
+          // what is left, which is where a single equation wants to sit.
+          paddingBottom: SPACE.xxl,
+        }}
+      >
+        {body.lines.map((line, index) => {
+          const state = stateOf(index);
+          return (
+            <div
+              key={line.tex}
+              style={{
+                ...reveal(frame, contentDelay(index)),
+                fontSize: size,
+                color: mix(COLORS.dormant, COLORS.paper, state.degree),
+                opacity: 0.55 + 0.45 * state.degree,
+                filter:
+                  state.heat > 0.01
+                    ? `drop-shadow(0 0 ${34 * state.heat}px ${withAlpha(COLORS.flare, 0.55 * state.heat)})`
+                    : "none",
+                transform: `translateY(${(1 - state.degree) * 5}px) scale(${1 + 0.012 * state.heat})`,
+              }}
+              dangerouslySetInnerHTML={{ __html: setFormula(line.tex) }}
+            />
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1977,6 +2061,8 @@ function Composition({
         />
       </div>
     </>
+  ) : scene.layout === "formula" ? (
+    <Formula scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "statement" ? (
     <Statement scene={scene} />
   ) : scene.layout === "matrix" ? (

@@ -5,6 +5,7 @@ import { deriveChange } from "./change.ts";
 import { collapseWhitespace, ENTER_MS, wordPattern, type NarrationCue } from "./cue.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
 import { figureProblem, type FigureKind } from "./figure.ts";
+import { FORMULA_LINE_HINT, formulaLineOf, formulaLineProblem } from "./formula.ts";
 import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
 import { type CodeLanguage, CODE_LANGUAGES, isCodeLanguage } from "./language.ts";
 import {
@@ -608,6 +609,7 @@ function buildSlideSchema(resolution: Resolution) {
       change: z.unknown().optional(),
       world: z.unknown().optional(),
       figure: z.unknown().optional(),
+      formula: z.unknown().optional(),
     })
     .superRefine((slide, context) => {
       const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
@@ -643,6 +645,15 @@ function buildSlideSchema(resolution: Resolution) {
         const problem = figureProblem(slide.figure);
         if (problem !== undefined) {
           context.addIssue({ code: "custom", path: ["figure"], message: problem });
+        }
+      }
+      if (slide.formula !== undefined) {
+        for (const issue of formulaProblems(slide.formula)) {
+          context.addIssue({
+            code: "custom",
+            path: ["formula", ...issue.path],
+            message: issue.message,
+          });
         }
       }
       if (slide.world !== undefined) {
@@ -687,7 +698,55 @@ function interiors(
   ];
 }
 
-const BODY_KEYS = ["bullets", "steps", "code", "change", "world", "figure"] as const;
+const BODY_KEYS = [
+  "bullets",
+  "steps",
+  "code",
+  "change",
+  "world",
+  "figure",
+  "formula",
+] as const;
+
+/**
+ * Every line of a formula, checked for shape and for whether it will actually set.
+ *
+ * A duplicate id is raised here rather than beside the bullets, because a formula is the only
+ * body whose elements are neither prose nor derived — and the check has to live wherever the
+ * lines are, which for an interior is nowhere near the slide.
+ */
+function formulaProblems(
+  value: unknown,
+): readonly { path: readonly (string | number)[]; message: string }[] {
+  if (!Array.isArray(value)) {
+    return [{ path: [], message: `must be a list of ${FORMULA_LINE_HINT}` }];
+  }
+  if (value.length === 0) {
+    return [{ path: [], message: "must have at least one line" }];
+  }
+
+  const problems: { path: readonly (string | number)[]; message: string }[] = [];
+  const declared = new Map<string, number>();
+  value.forEach((raw: unknown, index: number) => {
+    const problem = formulaLineProblem(raw);
+    if (problem !== undefined) {
+      problems.push({ path: [index], message: problem });
+      return;
+    }
+    const { id } = formulaLineOf(raw);
+    if (id === undefined) return;
+    const first = declared.get(id);
+    if (first === undefined) {
+      declared.set(id, index);
+    } else {
+      problems.push({
+        path: [index],
+        message: `duplicate id ${JSON.stringify(id)}; line ${first + 1} already uses it`,
+      });
+    }
+  });
+  return problems;
+}
 
 /**
  * What an entity's interior may be: any slide body except another world.
@@ -776,6 +835,11 @@ function resolveInterior(
     }
 
     const issues: WorldIssue[] = [];
+    if (record["formula"] !== undefined) {
+      for (const issue of formulaProblems(record["formula"])) {
+        issues.push({ path: ["formula", ...issue.path], message: issue.message });
+      }
+    }
     if (record["figure"] !== undefined) {
       const problem = figureProblem(record["figure"]);
       if (problem !== undefined) issues.push({ path: ["figure"], message: problem });
@@ -992,12 +1056,19 @@ function bodyOf(
     change?: unknown;
     world?: unknown;
     figure?: unknown;
+    formula?: unknown;
   },
   resolution: Resolution,
 ): SlideBody {
   const read = resolution.read;
   if (slide.figure !== undefined) {
     return { kind: "figure", figure: slide.figure as FigureKind };
+  }
+  if (slide.formula !== undefined) {
+    return {
+      kind: "formula",
+      lines: (slide.formula as unknown[]).map(formulaLineOf),
+    };
   }
   if (slide.world !== undefined) {
     const { world } = resolveWorld(slide.world, ...interiors(resolution));

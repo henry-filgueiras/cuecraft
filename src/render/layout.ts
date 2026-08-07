@@ -35,7 +35,8 @@ export type LayoutArchetype =
   | "specimen"
   | "revision"
   | "atlas"
-  | "figure";
+  | "figure"
+  | "formula";
 
 export interface SlideContent {
   readonly title: string;
@@ -95,6 +96,8 @@ export function analyzeContent(content: SlideContent): ContentShape {
  * - **atlas** — a semantic world. The only composition that is larger than the frame: the world
  *   is laid out once in its own coordinates and a derived camera travels through it as the
  *   narration does. Nothing else here has a camera, and nothing else needs one.
+ * - **formula** — mathematics. Set by KaTeX at a size derived from the longest line, because a
+ *   definition is not points and not source: it is one line whose spacing carries its meaning.
  * - **figure** — the compilation's own facts. One archetype rather than one per kind, because
  *   `timing` and `anchors` are two shapes of the same role — "show what the compiler worked out"
  *   — and the role picks the composition while the shape decides within it, which is the rule
@@ -113,6 +116,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "figure") return "figure";
+  if (content.body.kind === "formula") return "formula";
   if (content.body.kind === "code") return "specimen";
   if (content.body.kind === "change") return "revision";
   if (content.body.kind === "world") return "atlas";
