@@ -2,7 +2,7 @@
 id: ide_01KZCBH8SYEHS33HPNSQXNZXBT
 sequence: 12
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-06
 ---
 
@@ -47,6 +47,27 @@ timing exists, so `duration` is unknowable at the moment the words are made. The
 visual only, and narration has to be written around it — "this is how long it took" rather than
 "this took eighty-four seconds". That constraint is not a wart; it is the compilation order
 showing through, and it should be documented rather than engineered around.
+
+## Outcome
+
+Adopted by decision:27, in a shape this sketch did not propose and would not have reached.
+
+The sketch asked for a **scalar** — one measured number, with an authored caption, as a slide. What
+was built is a **kind**: the author names which sort of compiler truth to show, and the renderer
+decides which facts are relevant, how many, in what order and how they are set. That difference is
+not cosmetic. `of: duration` is a field path, and a format that can name one field will be asked to
+name a second; a closed set of two nouns is a vocabulary that has to be argued into growing.
+
+The other thing the sketch got wrong was where it belongs. A figure as a *slide* is a statistic. A
+figure as the **inside of a concept** (decision:25) is that concept explained at a deeper scale —
+which is why `examples/observatory.yaml` enters `Derived timing` and finds the measured boundaries
+of the narration currently being spoken, rather than putting a number on a card.
+
+The caution in this sketch's own Boundaries section — that a number about the deck must not become
+a number *in* the deck — is what decision:27's third acyclicity argument formalizes: there is no
+binding syntax in `say:`, so a derived value can never be spoken.
+
+What remains parked is the scalar. Nothing has yet wanted one.
 
 ## Evidence
 

@@ -1,0 +1,106 @@
+# cuecraft, watching itself being compiled.
+#
+#   cuecraft render examples/observatory.yaml -o out/observatory.mp4
+#
+# Every other cuecraft specimen shows you something the author wrote. This one shows you what the
+# *compiler* worked out — about the very video you are watching. Two of the concepts in this world
+# have insides, and what is inside them is not a diagram of the pipeline. It is the pipeline's own
+# output for this file:
+#
+#   figure: timing    the measured length of every sentence in this narration, on one rail,
+#                     with a marker showing where in it you currently are
+#   figure: anchors   every relationship this deck's narration resolved, and the frame each one
+#                     became true — including the one that opened the room you are standing in
+#
+# The numbers on screen are the numbers that put them there.
+#
+# `figure:` is the whole of the new vocabulary: a kind, from a closed set of two. There is no
+# field path, no expression, no format, no filter. The author says which sort of truth to show,
+# and the renderer decides which facts are relevant, how many, in what order, and how they are
+# set. Nothing here can read a derived value, which is what makes it impossible to write a
+# presentation whose narration changes the measurements it is describing (decision:27).
+#
+# See decision:22 (the world and its camera), decision:24 (when the camera declines to move),
+# decision:25 (concepts with insides), decision:27 (compilation facts), and dragon:10.
+
+title: "cuecraft: the numbers on screen are the numbers that put them there"
+
+slides:
+  - slide:
+      title: "A presentation that reads its own compiler"
+
+      world:
+        entities:
+          intent: What you meant
+          narration: Spoken here
+
+          timing:
+            label: Derived timing
+            detail:
+              figure: timing
+
+          anchors:
+            label: Semantic anchors
+            detail:
+              figure: anchors
+
+          composition: Chosen composition
+          state: Presentation state
+          renderer: Every frame drawn
+          video: This video
+
+        relations:
+          - intent -> narration
+          - intent -> composition
+          - intent -> anchors
+          - narration -> timing
+          - timing -> anchors
+          - anchors -> state
+          - composition -> state
+          - state -> renderer
+          - renderer -> video
+
+    pre_say: 2400ms
+    post_say: 2600ms
+
+    say:
+      - "Everything you are looking at was compiled from about a hundred lines of plain text."
+      - pause: 500ms
+
+      - speech: "It starts with intent. What a slide means, and what to say about it."
+        activates: intent
+      - speech: "The words are spoken on this machine, and the audio that comes back is real."
+        activates: narration
+
+      # Reaching a concept that has an inside is how you get taken into it. Nothing here asks.
+      - speech: "Which is the moment the presentation stops guessing."
+        activates: timing
+      - "This is the narration you are listening to right now, measured."
+      - "Every span is a sentence that was actually synthesized, and every width is how long it really took."
+      - "The marker is not a clock. It is this frame, against those boundaries."
+      - pause: 400ms
+
+      # Reaching something outside is how you leave. This one is on the other branch of the world
+      # entirely, so the walk back across it is the beat between the two rooms.
+      - speech: "Out here, meanwhile, the content has been picking its own composition."
+        activates: composition
+
+      - speech: "Because the author never writes a time. They write which sentence is about which thing."
+        activates: anchors
+      - "On the left, what somebody typed. On the right, the frame cuecraft worked out it becomes true on."
+      - "And the row that is lit is the one that brought you into this room."
+      - pause: 500ms
+
+      - speech: "All of it collapses into one answer. What is on screen, and when."
+        activates: state
+      - speech: "A browser draws every frame of that,"
+        activates: renderer
+      - speech: "and this is the file that came out."
+        activates: video
+      - pause: 800ms
+
+      # Neither of these reaches anything, and both come after every cue that does — so this is
+      # where cuecraft stops looking at concepts and shows the machine they were part of.
+      - "No coordinates. No keyframes. No timeline."
+      - pause: 400ms
+      - "You describe the world. Everything else is a consequence."
