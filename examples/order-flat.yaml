@@ -1,0 +1,137 @@
+# Anatomy of an online order — the control.
+#
+#   cuecraft render examples/order-flat.yaml -o out/order-flat.mp4
+#
+# The same three worlds and substantially the same sentences as examples/order/order.yaml, told
+# as three ordinary slides instead of one descent. Nothing here is nested, nothing is entered,
+# and the camera never leaves the world it is in.
+#
+# It exists to make the claim falsifiable. "Semantic zoom explains better than sequence" is easy
+# to believe while watching an expensive-looking transition, and the only way to find out is to
+# watch the cheap version say the same thing. Where the two differ is in what the *cuts* cost:
+# here, each slide has to re-establish where it is and then hand back, so three sentences of the
+# nested version's narration become six of this one's — and the viewer still has to hold the
+# relationship between the three pictures in their head, because the frame never shows it.
+#
+# Whatever the comparison decides, it is written into sprint:6 rather than into this comment.
+
+title: "Anatomy of an online order"
+
+defaults:
+  pre_say: 700ms
+  post_say: 2.4s
+  voice: af_heart
+
+slides:
+  - slide:
+      title: "Anatomy of an online order"
+
+      world:
+        entities:
+          buy: You press Buy
+          paying: Paying
+          packing: Packing and posting
+          arrives: It turns up
+
+        relations:
+          - buy -> paying
+          - paying -> packing
+          - packing -> arrives
+
+    say:
+      - speech: >
+          Buying something online costs you about two seconds of attention.
+        activates: buy
+
+      - speech: >
+          You press one button, and a few days later a box turns up on your doorstep.
+
+      - speech: >
+          Almost everything that actually happens, happens in the middle — in the step
+          we just call paying.
+        activates: paying
+
+      - speech: >
+          Once the money has been promised, the shop can safely pack your order and post it.
+        activates: packing
+
+      - speech: >
+          And a few days after that, the box turns up.
+        activates: arrives
+
+      - speech: >
+          But paying is not one thing. Here is what is inside it.
+
+  - slide:
+      title: "Paying"
+
+      world:
+        entities:
+          asks: The shop asks
+          check: The check
+          answer: Yes or no
+          held: Money set aside
+
+        relations:
+          - asks -> check
+          - check -> answer
+          - answer -> held
+
+    say:
+      - speech: >
+          Paying starts with a question.
+        activates: asks
+
+      - speech: >
+          The shop asks your bank whether this particular purchase can go ahead.
+
+      - speech: >
+          But the bank does not answer straight away. First it runs a check.
+        activates: check
+
+      - speech: >
+          The check comes back, and the bank gives its answer.
+        activates: answer
+
+      - speech: >
+          If the answer is yes, the money is set aside. Not taken — promised.
+        activates: held
+
+      - speech: >
+          And that promise is the thing the shop was waiting for. Now, that check.
+
+  - slide:
+      title: "The check"
+
+      world:
+        entities:
+          known: What is already known
+          weigh: Weighing it up
+          allowed: Allowed
+
+        relations:
+          - known -> weigh
+          - weigh -> allowed
+
+    say:
+      - speech: >
+          The bank starts with what it already knows about you.
+        activates: known
+
+      - speech: >
+          Where you usually shop. What you usually spend. Whether any of this looks like you.
+
+      - speech: >
+          It weighs all of that against how much is being asked for, right now.
+        activates: weigh
+
+      - speech: >
+          Almost every time, nothing about it is unusual, and the purchase is allowed.
+        activates: allowed
+
+      - speech: >
+          The whole judgement takes less time than it took to say this sentence. All of it
+          happened while your screen was still saying please wait.
+
+      - speech: >
+          One button. Four steps. Three of them you were never meant to notice.

@@ -1,0 +1,62 @@
+# Inside `paying` — a child module, entered from examples/order/order.yaml.
+#
+# A module is one body and its own narration, and that is the whole of the format. There is no
+# title (the entity that names it supplies one, so the plate and the heading cannot disagree), no
+# `slides`, and no `defaults` — voice, timing and theme are the root presentation's, inherited
+# whole, because a module that could set its own would be a second deck wearing an entity's name.
+#
+# This one is a world, which an inline `detail:` may not be. The thing that makes the difference
+# is the file: a file has a canonical path, so an inclusion chain can be checked for cycles; it
+# has a boundary, so `check` in here cannot collide with a `check` anywhere else; and it has room
+# for a `say`, so going inside it is a call rather than a camera move.
+#
+# The narration below proves the resumption that matters: it says something *before* it enters
+# the check, and something *after* the check returns. Neither is arranged anywhere. The cues are
+# simply on either side of the `enter:`.
+
+world:
+  entities:
+    asks: The shop asks
+
+    # One level deeper. The same two words, in another file.
+    check:
+      label: The check
+      child: ./check.yaml
+
+    answer: Yes or no
+    held: Money set aside
+
+  relations:
+    - asks -> check
+    - check -> answer
+    - answer -> held
+
+say:
+  - speech: >
+      Paying starts with a question.
+    activates: asks
+
+  - speech: >
+      The shop asks your bank whether this particular purchase can go ahead.
+
+  # Said in here, before the descent. Half of what this specimen is for.
+  - speech: >
+      But the bank does not answer straight away. First it runs a check.
+    activates: check
+
+  - speech: >
+      That check is the interesting part, so we are going to go and look at it.
+
+  - enter: check
+
+  # ...and the other half. The narration comes back to exactly where it was.
+  - speech: >
+      The check comes back, and the bank gives its answer.
+    activates: answer
+
+  - speech: >
+      If the answer is yes, the money is set aside. Not taken — promised.
+    activates: held
+
+  - speech: >
+      And that promise is the thing the shop was waiting for.

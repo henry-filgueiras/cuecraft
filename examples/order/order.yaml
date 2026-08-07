@@ -1,0 +1,95 @@
+# Anatomy of an online order — three scales, one explanation.
+#
+#   cuecraft render examples/order/order.yaml -o out/order.mp4
+#
+# This deck is one slide. It runs for about a minute and a half, it visits three worlds, and it
+# never cuts: the camera descends into a concept, explains what is in there, descends again, and
+# then unwinds through the same two scopes to finish the sentence it started.
+#
+# What makes that possible is one word in an entity and one word in the narration:
+#
+#   paying:
+#     label: Paying
+#     child: ./paying.yaml      <- an interior that arrived in its own file, with its own `say`
+#
+#   say:
+#     - enter: paying           <- go in. the module's narration takes over from here
+#
+# There is no `exit`. The child's own cue list running out is the return — the same rule every
+# function obeys — which is what makes this work on worlds that loop, fork, or have no last node.
+#
+# Nothing below names a zoom, a scale, a transition, a duration, or a camera. `enter:` says
+# something is about to be explained from the inside; everything else is derived.
+#
+# See decision:31 (child modules and the call stack), decision:25 (interiors, which this narrows),
+# decision:22 (worlds and the camera), and examples/order-flat.yaml for the same content told as
+# three ordinary slides — which is the comparison that decides whether any of this was worth it.
+
+title: "Anatomy of an online order"
+
+defaults:
+  pre_say: 700ms
+  post_say: 3.2s
+  voice: af_heart
+
+slides:
+  - slide:
+      title: "Anatomy of an online order"
+
+      world:
+        entities:
+          buy: You press Buy
+
+          # The one entity that says something for itself. Its label is what the world calls it
+          # and what its own world is titled — the same string at two scales, because it is the
+          # same thing.
+          paying:
+            label: Paying
+            child: ./paying.yaml
+
+          packing: Packing and posting
+          arrives: It turns up
+
+        relations:
+          - buy -> paying
+          - paying -> packing
+          - packing -> arrives
+
+    say:
+      - speech: >
+          Buying something online costs you about two seconds of attention.
+        activates: buy
+
+      - speech: >
+          You press one button, and a few days later a box turns up on your doorstep.
+
+      - speech: >
+          Almost everything that actually happens, happens in the middle — in the step
+          we just call paying.
+        activates: paying
+
+      - speech: >
+          And paying is not one thing. It is a small world of its own, so let us go and
+          stand in it.
+
+      # The descent. From here until the module's narration runs out, this slide says nothing.
+      - enter: paying
+
+      # ...and here is where it resumes. Everything above happened while the page you were
+      # looking at said "please wait".
+      - speech: >
+          All of that took about a second, and it happened while your screen was still
+          saying please wait.
+
+      - speech: >
+          Once the money has been promised, the shop can safely pack your order and post it.
+        activates: packing
+
+      - speech: >
+          And a few days after that, the box turns up.
+        activates: arrives
+
+      # A closing remark that reaches nothing, which is how the camera is asked to pull back
+      # and show the whole thing at once (decision:22).
+      - speech: >
+          One button. Four steps. Three of them you were never meant to notice.

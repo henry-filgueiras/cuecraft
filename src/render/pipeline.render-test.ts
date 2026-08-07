@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
+import { narrativeStack, stackProblem } from "../compile/timeline.ts";
 import { renderPresentationFile } from "../pipeline.ts";
 import { describeMissingArtifacts } from "../tts/kokoro.ts";
 import { repositoryRoot } from "../tts/model.ts";
@@ -54,7 +55,80 @@ slides:
     say: And this is the second.
 `;
 
+/**
+ * The same slice, descending.
+ *
+ * A root world with a child module and a grandchild module, narrated so that both resumptions
+ * happen: something is said in the child before it enters the grandchild, and something after
+ * it returns. Small enough to synthesize in a few seconds, and it exercises everything the
+ * pure tests cannot — that Remotion can actually draw a world inside a world inside a world.
+ */
+const NESTED_ROOT = `
+title: "Nested render test"
+
+defaults:
+  pre_say: 400ms
+  post_say: 900ms
+
+slides:
+  - slide:
+      title: "Outside"
+      world:
+        entities:
+          before: Before
+          middle:
+            label: The middle
+            child: ./nested-child.yaml
+          after: After
+        relations:
+          - before -> middle
+          - middle -> after
+    say:
+      - speech: "This happens first."
+        activates: before
+      - enter: middle
+      - speech: "And this happens last."
+        activates: after
+`;
+
+const NESTED_CHILD = `
+world:
+  entities:
+    one: Step one
+    two:
+      label: Step two
+      child: ./nested-grandchild.yaml
+    three: Step three
+  relations:
+    - one -> two
+    - two -> three
+say:
+  - speech: "Inside, there are three steps."
+    activates: one
+  - speech: "The second one has an inside of its own."
+    activates: two
+  - enter: two
+  - speech: "And then the third step."
+    activates: three
+`;
+
+const NESTED_GRANDCHILD = `
+world:
+  entities:
+    deep: Deep inside
+    out: On the way out
+  relations:
+    - deep -> out
+say:
+  - speech: "This is as deep as it goes."
+    activates: deep
+  - speech: "And now back up."
+    activates: out
+`;
+
 let workspace: string;
+/** A second workspace *inside* the checkout: a module is contained by it, like a quoted file. */
+let nested: string;
 
 before(async () => {
   const problem = describeMissingArtifacts();
@@ -62,9 +136,14 @@ before(async () => {
     throw new Error(`${problem}\n\nThis test requires the local model.`);
   }
   workspace = await mkdtemp(join(tmpdir(), "cuecraft-render-"));
+  nested = await mkdtemp(join(repositoryRoot(), ".cuecraft", "render-nested-"));
 });
 
-after(() => rm(workspace, { recursive: true, force: true }));
+after(() =>
+  Promise.all(
+    [workspace, nested].map((path) => rm(path, { recursive: true, force: true })),
+  ),
+);
 
 interface Probe {
   format: { duration: string; format_name: string };
@@ -166,6 +245,61 @@ test(
     );
     assert.equal(wav.subarray(0, 4).toString("ascii"), "RIFF");
     assert.ok(summary.workspace.startsWith(join(repositoryRoot(), ".cuecraft")));
+
+    await rm(summary.workspace, { recursive: true, force: true });
+  },
+);
+
+test(
+  "a deck that descends two levels renders as one continuous video",
+  { timeout: 900_000 },
+  async () => {
+    const input = join(nested, "root.yaml");
+    const output = join(nested, "nested.mp4");
+    await writeFile(input, NESTED_ROOT, "utf8");
+    await writeFile(join(nested, "nested-child.yaml"), NESTED_CHILD, "utf8");
+    await writeFile(join(nested, "nested-grandchild.yaml"), NESTED_GRANDCHILD, "utf8");
+
+    const summary = await renderPresentationFile(input, output);
+
+    // One scene, whatever the depth. That is the claim: a descent is not a cut.
+    assert.equal(summary.timeline.scenes.length, 1);
+    const [scene] = summary.timeline.scenes;
+    assert.ok(scene !== undefined);
+    assert.equal(scene.layout, "atlas");
+
+    // The compiled stack descends two levels and unwinds through the same scopes.
+    assert.equal(stackProblem(scene), undefined);
+    assert.deepEqual(
+      narrativeStack(scene)
+        .filter((event) => event.kind !== "narrate")
+        .map((event) => `${event.kind} ${event.into}`),
+      [
+        "enter root/middle",
+        "enter root/middle/two",
+        "exit root/middle/two",
+        "exit root/middle",
+      ],
+    );
+
+    // Nothing overlaps, and the child really did speak between its own two thresholds.
+    let cursor = scene.narrationFrom;
+    for (const event of narrativeStack(scene)) {
+      assert.ok(event.frame >= cursor, `${event.kind} at ${event.frame} begins early`);
+      cursor = event.frame + event.durationInFrames;
+    }
+
+    const written = await stat(output);
+    assert.ok(written.size > 10_000, `the MP4 is only ${written.size} bytes`);
+
+    const probed = await probe(output);
+    const video = probed.streams.find((stream) => stream.codec_type === "video");
+    const audio = probed.streams.find((stream) => stream.codec_type === "audio");
+    assert.ok(video !== undefined && audio !== undefined);
+    assert.equal(video.width, 1920);
+
+    const expectedSeconds = summary.timeline.totalFrames / summary.timeline.fps;
+    assert.ok(Math.abs(Number(probed.format.duration) - expectedSeconds) < 0.15);
 
     await rm(summary.workspace, { recursive: true, force: true });
   },

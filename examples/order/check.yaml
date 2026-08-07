@@ -1,0 +1,41 @@
+# Inside `check` — a grandchild module, entered from examples/order/paying.yaml.
+#
+# Two levels below the slide, and this file has no idea of that. It names its own entities
+# locally, narrates itself, and is resolved relative to the file that declared it — so the whole
+# of `examples/order/` could be moved somewhere else without a line of it changing.
+#
+# It is also the deepest cuecraft will currently go. The implementation recurses and would
+# happily keep going; the limit is a claim about what has actually been watched, not about what
+# the compiler can do, and it moves when an artifact moves it.
+#
+# This module enters nothing, so its narration simply ends — and its ending is what returns the
+# camera to `paying`.
+
+world:
+  entities:
+    known: What is already known
+    weigh: Weighing it up
+    allowed: Allowed
+
+  relations:
+    - known -> weigh
+    - weigh -> allowed
+
+say:
+  - speech: >
+      The bank starts with what it already knows about you.
+    activates: known
+
+  - speech: >
+      Where you usually shop. What you usually spend. Whether any of this looks like you.
+
+  - speech: >
+      It weighs all of that against how much is being asked for, right now.
+    activates: weigh
+
+  - speech: >
+      Almost every time, nothing about it is unusual, and the purchase is allowed.
+    activates: allowed
+
+  - speech: >
+      The whole judgement takes less time than it took to say this sentence.
