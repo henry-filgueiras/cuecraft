@@ -1,6 +1,7 @@
 import { bodyElements, type SlideBody } from "../presentation/body.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
 import type { CompiledPresentation } from "./compile.ts";
+import { freezeFacts, type CompilationFacts } from "./facts.ts";
 
 /**
  * The rendering boundary: the only place in cuecraft where a duration becomes frames.
@@ -96,6 +97,13 @@ export interface Timeline {
   readonly height: number;
   readonly totalFrames: number;
   readonly scenes: readonly Scene[];
+  /**
+   * What the compilation derived, frozen, for a presentation that wants to show it.
+   *
+   * Computed last, from scenes that are already final, and read-only from here on — see
+   * `./facts.ts` for why that ordering is the whole of the acyclicity argument.
+   */
+  readonly facts: CompilationFacts;
 }
 
 export interface TimelineOptions {
@@ -193,5 +201,15 @@ export function buildTimeline(
     return scene;
   });
 
-  return { title: compiled.title, fps, width, height, totalFrames: from, scenes };
+  // The last statement, deliberately: everything above is settled, and nothing below may write
+  // to what it produced. This is the freeze boundary (`./facts.ts`).
+  return {
+    title: compiled.title,
+    fps,
+    width,
+    height,
+    totalFrames: from,
+    scenes,
+    facts: freezeFacts(compiled, scenes, fps, from),
+  };
 }

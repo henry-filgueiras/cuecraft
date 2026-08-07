@@ -1,3 +1,4 @@
+import type { FigureKind } from "./figure.ts";
 import type { CodeLanguage } from "./language.ts";
 import type { AuthoredMark } from "./specimen.ts";
 import type { AuthoredEntity, AuthoredRelation } from "./world.ts";
@@ -52,6 +53,14 @@ export type SlideBody =
       readonly after: string;
     }
   | {
+      /**
+       * Content the compiler supplies. It carries no text and no elements, which is exactly what
+       * keeps it out of its own derivation — see `../compile/facts.ts`.
+       */
+      readonly kind: "figure";
+      readonly figure: FigureKind;
+    }
+  | {
       readonly kind: "world";
       /** What exists. Ordered as authored, which is the order narration reaches them in. */
       readonly entities: readonly AuthoredEntity[];
@@ -92,6 +101,10 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       return body.marks;
     case "change":
       return [{ id: CHANGE_ELEMENT_ID }];
+    case "figure":
+      // Nothing. A figure's content is derived from the timing that would have to be derived
+      // from it, so it declares no endpoint narration could reach and adds nothing to measure.
+      return [];
     case "world":
       return [...body.entities, ...body.entities.flatMap(interiorElements)];
     default:
@@ -120,7 +133,12 @@ export function interiorRange(
   let offset = entities.length;
   for (const entity of entities) {
     const count = interiorElements(entity).length;
-    if (entity.id === id) return count === 0 ? undefined : { offset, count };
+    // Absent when the entity has no inside — not when the inside has nothing narration can
+    // reach. A figure's content is supplied by the compiler and declares no endpoints, and it is
+    // still very much an inside.
+    if (entity.id === id) {
+      return entity.detail === undefined ? undefined : { offset, count };
+    }
     offset += count;
   }
   return undefined;

@@ -12,7 +12,7 @@
  * character counts can tell them apart. So the role is consulted first, and shape now decides
  * only *within* the list role.
  *
- * Eight, and eight is still a ceiling rather than a starting point. Every archetype here exists
+ * Nine, and nine is still a ceiling rather than a starting point. Every archetype here exists
  * because a real slide looked wrong without it, and the rule that selects it is a comparison
  * against a number, not a solver. If selection ever needs a scoring function, the right move is
  * to delete an archetype rather than add a heuristic.
@@ -34,7 +34,8 @@ export type LayoutArchetype =
   | "cascade"
   | "specimen"
   | "revision"
-  | "atlas";
+  | "atlas"
+  | "figure";
 
 export interface SlideContent {
   readonly title: string;
@@ -94,6 +95,10 @@ export function analyzeContent(content: SlideContent): ContentShape {
  * - **atlas** — a semantic world. The only composition that is larger than the frame: the world
  *   is laid out once in its own coordinates and a derived camera travels through it as the
  *   narration does. Nothing else here has a camera, and nothing else needs one.
+ * - **figure** — the compilation's own facts. One archetype rather than one per kind, because
+ *   `timing` and `anchors` are two shapes of the same role — "show what the compiler worked out"
+ *   — and the role picks the composition while the shape decides within it, which is the rule
+ *   decision:15 already settled.
  * - **cascade** — stages of a transformation. They descend and step right along a single
  *   traced line, so the frame reads as something being carried forward rather than listed.
  *
@@ -107,6 +112,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   on the right.
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
+  if (content.body.kind === "figure") return "figure";
   if (content.body.kind === "code") return "specimen";
   if (content.body.kind === "change") return "revision";
   if (content.body.kind === "world") return "atlas";

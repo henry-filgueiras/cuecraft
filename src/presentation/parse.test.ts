@@ -262,7 +262,7 @@ slides:
     say: Hello.
 `),
     [
-      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world)',
+      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world, figure)',
     ],
   );
 
@@ -1334,4 +1334,66 @@ test("a specimen inside an entity is quoted through the same reader as one on a 
   const detail = world.entities.find((entity) => entity.id === "anchors")?.detail;
   assert.ok(detail?.kind === "code");
   assert.match(detail.source, /activates: tools/);
+});
+
+const OBSERVATORY = `
+title: A deck
+slides:
+  - slide:
+      title: A world
+      world:
+        entities:
+          intent: What you meant
+          timing:
+            label: Derived timing
+            detail:
+              figure: timing
+          video: This video
+        relations:
+          - intent -> timing
+          - timing -> video
+    say:
+      - speech: It starts here.
+        activates: intent
+      - speech: And it is measured.
+        activates: timing
+      - speech: And out it comes.
+        activates: video
+`;
+
+test("an entity's inside may be the compilation's own facts", () => {
+  const presentation = parsePresentation(OBSERVATORY, "test.yaml");
+  const body = presentation.slides[0]?.body;
+  assert.ok(body?.kind === "world");
+  const timing = body.entities.find((entity) => entity.id === "timing");
+  assert.deepEqual(timing?.detail, { kind: "figure", figure: "timing" });
+
+  // A figure reaches nothing, so the only identities on this slide are its entities.
+  assert.deepEqual(
+    bodyElements(body).map((element) => element.id),
+    ["intent", "timing", "video"],
+  );
+});
+
+test("a figure names a kind from a closed set, and mistyping one says what the set is", () => {
+  const reported = problems(OBSERVATORY.replace("figure: timing", "figure: timings"));
+  assert.match(reported[0] ?? "", /unknown figure "timings"/);
+  assert.match(reported[0] ?? "", /one of timing, anchors/);
+});
+
+test("a figure is a body in its own right, not only an interior", () => {
+  const asSlide = parsePresentation(
+    "title: A deck\nslides:\n  - slide:\n      title: Timing\n      figure: anchors\n    say: Here it is.\n",
+    "test.yaml",
+  );
+  assert.deepEqual(asSlide.slides[0]?.body, { kind: "figure", figure: "anchors" });
+  assert.equal(chooseLayout(asSlide.slides[0]!), "figure");
+});
+
+test("a figure cannot name anything the compiler did not offer", () => {
+  // No path syntax, no expression, no field. The only thing an author may say is which kind.
+  const reported = problems(
+    "title: A deck\nslides:\n  - slide:\n      title: T\n      figure:\n        clip: 3\n    say: Hi.\n",
+  );
+  assert.match(reported[0] ?? "", /must be one of timing, anchors/);
 });

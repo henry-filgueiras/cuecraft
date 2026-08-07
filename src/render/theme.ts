@@ -305,6 +305,52 @@ export function flowColor(depth: number): string {
   return t < 0.5 ? mix(cool, middle, t * 2) : mix(middle, warm, (t - 0.5) * 2);
 }
 
+/**
+ * How the compilation's own facts are set.
+ *
+ * Two colours carry the whole argument and neither is decorative: **authored** is the cool of a
+ * specimen's keys, used for everything a person typed, and **derived** is the deck accent, used
+ * for everything the compiler worked out. Put a sentence in one and its resolved time in the
+ * other, side by side, and the thesis needs no caption.
+ *
+ * Time gets a third identity — a mint that appears nowhere else — because measured duration is
+ * neither of those two things. It is not an intention and it is not a consequence; it is a
+ * physical fact about a sound file, and it earns its own colour by being the only one.
+ *
+ * Numbers are set large and in the mono face. These are the only graphics in cuecraft where a
+ * number is the subject rather than an annotation, and a measured value set at caption size reads
+ * as debugging output no matter how true it is.
+ */
+export const FIGURE = {
+  /** What a person typed. */
+  authored: "#8FD4EA",
+  /** What the compiler worked out. */
+  derived: "#E9A85E",
+  /** Measured time, which is neither. */
+  time: "#5FD9BC",
+  timeLit: "#8BF0D8",
+
+  /** The temporal rail, its anchor ticks, and the scale under it. */
+  rail: 16,
+  tick: 22,
+  railBlock: 118,
+  scale: 24,
+
+  /** A measured duration, at the size a headline is set. */
+  measure: 116,
+  /** A resolved time in a row of them. */
+  resolved: 56,
+  /** An identity somebody typed twice. */
+  identity: 38,
+  /** A sentence, quoted back. */
+  quote: 34,
+  /** The small caps that name a column. */
+  label: 22,
+
+  /** How many resolved relationships are worth showing at once. */
+  rows: 5,
+} as const;
+
 /** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
 export const HEADING_WIDTH = 1500;
 

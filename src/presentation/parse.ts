@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { deriveChange } from "./change.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
+import { figureProblem, type FigureKind } from "./figure.ts";
 import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
 import { type CodeLanguage, CODE_LANGUAGES, isCodeLanguage } from "./language.ts";
 import {
@@ -592,6 +593,7 @@ function buildSlideSchema(read: RepositoryReader) {
       code: z.unknown().optional(),
       change: z.unknown().optional(),
       world: z.unknown().optional(),
+      figure: z.unknown().optional(),
     })
     .superRefine((slide, context) => {
       const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
@@ -623,6 +625,12 @@ function buildSlideSchema(read: RepositoryReader) {
           });
         }
       }
+      if (slide.figure !== undefined) {
+        const problem = figureProblem(slide.figure);
+        if (problem !== undefined) {
+          context.addIssue({ code: "custom", path: ["figure"], message: problem });
+        }
+      }
       if (slide.world !== undefined) {
         for (const issue of resolveWorld(slide.world, detailResolver(read)).issues) {
           context.addIssue({
@@ -635,7 +643,7 @@ function buildSlideSchema(read: RepositoryReader) {
     });
 }
 
-const BODY_KEYS = ["bullets", "steps", "code", "change", "world"] as const;
+const BODY_KEYS = ["bullets", "steps", "code", "change", "world", "figure"] as const;
 
 /**
  * What an entity's interior may be: any slide body except another world.
@@ -703,6 +711,10 @@ function detailResolver(read: RepositoryReader): DetailResolver {
     }
 
     const issues: WorldIssue[] = [];
+    if (record["figure"] !== undefined) {
+      const problem = figureProblem(record["figure"]);
+      if (problem !== undefined) issues.push({ path: ["figure"], message: problem });
+    }
     if (record["code"] !== undefined) {
       for (const issue of resolveCode(record["code"], read).issues) {
         issues.push({ path: ["code", ...issue.path], message: issue.message });
@@ -759,9 +771,13 @@ function bodyOf(
     code?: unknown;
     change?: unknown;
     world?: unknown;
+    figure?: unknown;
   },
   read: RepositoryReader,
 ): SlideBody {
+  if (slide.figure !== undefined) {
+    return { kind: "figure", figure: slide.figure as FigureKind };
+  }
   if (slide.world !== undefined) {
     const { world } = resolveWorld(slide.world, detailResolver(read));
     if (world === undefined)

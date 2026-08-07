@@ -31,6 +31,13 @@ const PLACEHOLDER: Timeline = {
   height: DEFAULT_HEIGHT,
   totalFrames: DEFAULT_FPS,
   scenes: [],
+  facts: {
+    fps: DEFAULT_FPS,
+    totalFrames: DEFAULT_FPS,
+    totalSeconds: 1,
+    clips: [],
+    anchors: [],
+  },
 };
 
 function Root() {

@@ -606,7 +606,13 @@ export interface CameraKey {
 export interface CameraEvent {
   readonly frame: number;
   readonly id: string;
-  /** Set when this event reaches an element *inside* an entity, and names that entity. */
+  /**
+   * The entity this event happens inside, if any.
+   *
+   * Set both when the event reaches an element within an interior and when it reaches an entity
+   * that *has* one — because "the narration turned to this concept, and this concept has an
+   * inside" is the same request as "the narration turned to something in there".
+   */
   readonly inside?: string;
 }
 
@@ -780,9 +786,10 @@ export function portalAt(pass: PortalPass, frame: number): number {
  * - **A move must be worth making** (`shotFor`). An event whose target is already well framed
  *   produces no key at all, and the camera simply does not move. This is the only place in
  *   cuecraft where the right answer to "what should happen now" is "nothing".
- * - **An entity may be entered.** An event that reaches inside one opens a portal, and the first
- *   event afterwards that does not closes it. Entering and leaving are exempt from the hold
- *   policy, because they are not framing decisions — the scale transition *is* the content.
+ * - **An entity may be entered.** An event that reaches *into* one — or that reaches the entity
+ *   itself, when it has an inside — opens a portal, and the first event afterwards that does not
+ *   closes it. The approach obeys the hold policy like any other shot; the expansion that follows
+ *   does not, because a scale transition is not a framing decision, it is the content.
  */
 export interface CameraPlan {
   readonly track: readonly CameraKey[];
@@ -855,15 +862,34 @@ export function cameraPlan(
       if (open === undefined) {
         const node = layout.byId.get(event.inside);
         if (node !== undefined) {
+          // Approach, then open. The camera frames the concept where it lives in the world first,
+          // and only then does it expand — so the viewer sees the thing they are about to be
+          // inside of, in its own place, whether the camera was next to it or across the world.
+          // A shot that already frames it well approaches in no time at all, which is the hold
+          // policy paying for itself in a place it was not designed for.
+          const before = current;
+          const approach = shotFor(before, node.rect, layout.bounds, aspect);
+          let openAt = frame;
+          if (approach.kind !== "hold") {
+            const travel = paceOf(
+              before,
+              approach.view,
+              CAMERA.minTravel,
+              CAMERA.maxTravel,
+            );
+            push(frame, approach.view, travel);
+            openAt = frame + travel;
+          }
+
           const chamber = chamberFor(node, aspect);
           const view: Viewport = {
             cx: chamber.x + chamber.width / 2,
             cy: chamber.y + chamber.height / 2,
             width: chamber.width * (1 + 2 * CAMERA.chamberPad),
           };
-          push(frame, view, CAMERA.enterTravel);
-          open = { id: event.inside, chamber, enterFrame: frame };
-          shots.push({ frame, id: event.inside, kind: "enter", view });
+          push(openAt, view, CAMERA.enterTravel);
+          open = { id: event.inside, chamber, enterFrame: openAt };
+          shots.push({ frame: openAt, id: event.inside, kind: "enter", view });
         }
       }
       // Everything said inside an entity is framed by the chamber, so no further shot is

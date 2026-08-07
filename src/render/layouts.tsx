@@ -24,6 +24,7 @@ import {
   projectLines,
   wrapLine,
 } from "./projection.ts";
+import { Figure } from "./figures.tsx";
 import { chooseLayout } from "./layout.ts";
 import { sliceTokens, tokenizeLine } from "./tokens.ts";
 import {
@@ -1037,15 +1038,23 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
     // publishes, so the renderer and the compiler agree by construction rather than by
     // convention. An anchor past the last entity is inside whichever interior contains it.
     const inside = interiorOwners(world.entities);
+    const openable = new Set(
+      world.entities.filter((entity) => entity.detail !== undefined).map((e) => e.id),
+    );
     return cameraPlan(
       layout,
-      scene.anchors.map((anchor) => ({
-        frame: anchor.frame,
-        id: anchor.id,
-        ...(inside.get(anchor.elementIndex) === undefined
-          ? {}
-          : { inside: inside.get(anchor.elementIndex) as string }),
-      })),
+      scene.anchors.map((anchor) => {
+        // Either the narration reached something in there, or it reached the concept itself and
+        // the concept has an inside. Both are the same request.
+        const owner =
+          inside.get(anchor.elementIndex) ??
+          (openable.has(anchor.id) ? anchor.id : undefined);
+        return {
+          frame: anchor.frame,
+          id: anchor.id,
+          ...(owner === undefined ? {} : { inside: owner }),
+        };
+      }),
       { from: scene.from, until: revealFrom(scene) },
     );
   }, [layout, world, scene]);
@@ -1197,7 +1206,7 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
             marginTop: SPACE.md,
             fontSize: TYPE.row,
             lineHeight: 1.08,
-            maxWidth: 900,
+            maxWidth: 1220,
             textShadow: `0 2px 34px ${withAlpha("#05070B", 0.9)}`,
           }}
         >
@@ -1218,7 +1227,7 @@ function interiorOwners(entities: readonly AuthoredEntity[]): Map<number, string
   const owners = new Map<number, string>();
   for (const entity of entities) {
     const range = interiorRange(entities, entity.id);
-    if (range === undefined) continue;
+    if (range === undefined || range.count === 0) continue;
     for (let index = 0; index < range.count; index += 1) {
       owners.set(range.offset + index, entity.id);
     }
@@ -1818,8 +1827,21 @@ export function Slide({
  * composition layer rather than resembling it.
  */
 function Composition({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  // Unconditionally, at the top: one branch below needs the sequence-local frame, and a hook
+  // called inside a conditional is a hook called sometimes.
+  const frame = useCurrentFrame();
   return scene.layout === "atlas" ? (
     <Atlas scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "figure" ? (
+    <>
+      <Heading scene={scene} frame={frame} />
+      <div style={{ flex: 1, display: "flex", marginTop: SPACE.xl }}>
+        <Figure
+          kind={scene.body.kind === "figure" ? scene.body.figure : "timing"}
+          absoluteFrame={absoluteFrame}
+        />
+      </div>
+    </>
   ) : scene.layout === "statement" ? (
     <Statement scene={scene} />
   ) : scene.layout === "matrix" ? (

@@ -415,7 +415,10 @@ test("a cue reaching inside an entity opens it, and the next one outside closes 
   const pass = excursion.portals[0];
   assert.ok(pass !== undefined);
   assert.equal(pass.id, "speech");
-  assert.equal(pass.enterFrame, 200, "opens on the first cue that reaches inside");
+  // It opens once the camera has arrived at the concept, not the instant the word lands: the
+  // approach is a shot like any other and the expansion follows it.
+  assert.ok(pass.enterFrame >= 200, "opens no earlier than the cue that reaches inside");
+  assert.ok(pass.enterFrame < 260, "and before the next thing said in there");
   assert.equal(pass.exitFrame, 340, "closes on the first cue that reaches outside");
   assert.deepEqual(
     excursion.shots.map((shot) => shot.kind),
