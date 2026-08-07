@@ -22,6 +22,7 @@ beside it, by `cuecraft render`, with nothing hand-placed and nothing edited aft
 ### 1. Observatory — a presentation that reads its own compiler
 
 <!-- VIDEO: observatory -->
+
 https://github.com/user-attachments/assets/4f8e0c9b-57ce-401f-a55f-428eaa08acfc
 
 **Source: [`examples/observatory.yaml`](examples/observatory.yaml)** — 106 lines, for 1:17 of video.
@@ -40,6 +41,7 @@ impossible to write narration that changes the measurements it is describing.
 ### 2. Cathedral v2 — a world you walk through, and go inside
 
 <!-- VIDEO: cathedral-v2 -->
+
 https://github.com/user-attachments/assets/15e55c51-b323-46d1-9bb1-ff533292bc73
 
 **Source: [`examples/cathedral-v2.yaml`](examples/cathedral-v2.yaml)** — 132 lines, for 1:09 of video.
@@ -60,6 +62,7 @@ the author says is that this concept has an inside.
 ### 3. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
+
 https://github.com/user-attachments/assets/fa61b810-6b5c-45ba-bfcd-ea5e2a3c83a3
 
 **Source: [`examples/cuecraft.yaml`](examples/cuecraft.yaml)** — 212 lines, for 1:45 of video.

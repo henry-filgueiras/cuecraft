@@ -37,6 +37,11 @@ closed with `scarp close dragon:N --resolved-by decision:M`, not silently delete
 
 Run `scarp doctor` before considering any meaningful unit of work complete.
 
+`runme/` is the one exception, and it is narrow: procedures a **human** has to carry out by hand
+because no command can, such as attaching the showpiece videos through GitHub's web editor. It
+holds steps, not knowledge — no rationale, no architecture, no plans. Anything explaining _why_ is
+a scarp artifact.
+
 ## Preserve the source/projection distinction
 
 This is the central idea of the project, and it is easy to erode:
