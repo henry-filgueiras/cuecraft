@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
+import type { AuthoredSlide, Presentation, Scope } from "../presentation/parse.ts";
 import { spokenText } from "../presentation/parse.ts";
 
 /**
@@ -35,6 +35,31 @@ export interface SpeechClip {
   readonly leadingSilenceSeconds: number;
   /** The semantic identity this clip reaches, if the authored cue named one. */
   readonly activates?: string;
+  /** The same identity as a structural address, which is what resolution uses. */
+  readonly address?: Scope;
+  /** Which narration this clip belongs to. `root` on every deck that never descends. */
+  readonly scope: Scope;
+}
+
+/**
+ * A scope transition on the narration track.
+ *
+ * Kept beside the clips rather than folded into them because it is the same kind of thing: a
+ * measured position on one serial track. Entry and exit are silences with a *cause* — the reason
+ * the parent stops talking is that something else is about to — and giving them a position here
+ * is what makes "the parent must not continue underneath the child" a fact about the timeline
+ * rather than a hope about the renderer.
+ */
+export interface NarrationCall {
+  readonly kind: "enter" | "exit";
+  /** The scope making the call, or being returned to. */
+  readonly scope: Scope;
+  /** The scope being entered, or left. */
+  readonly into: Scope;
+  /** The entity, named locally in `scope`. */
+  readonly target: string;
+  readonly offsetSeconds: number;
+  readonly durationSeconds: number;
 }
 
 /**
@@ -46,6 +71,8 @@ export interface SpeechClip {
  */
 export interface Narration {
   readonly clips: readonly SpeechClip[];
+  /** Every descent and return, in order. Empty on every deck that never descends. */
+  readonly calls: readonly NarrationCall[];
   /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
   readonly voice: string;
@@ -125,12 +152,30 @@ export async function compilePresentation(
   const slides: CompiledSlide[] = [];
   for (const slide of presentation.slides) {
     const clips: SpeechClip[] = [];
+    const calls: NarrationCall[] = [];
     let offsetSeconds = 0;
     let voice = presentation.voice ?? "";
     let speed = presentation.speed;
 
     for (const cue of slide.say) {
       if (cue.kind === "pause") {
+        offsetSeconds += cue.milliseconds / 1000;
+        continue;
+      }
+
+      // A descent occupies the track exactly as a pause does, and that is the point rather than
+      // an economy: the silence the camera moves through is *on the same clock* as everything
+      // else, so nothing has to be arranged afterwards for the parent to stop talking while the
+      // child speaks. Serial, by construction.
+      if (cue.kind === "enter" || cue.kind === "exit") {
+        calls.push({
+          kind: cue.kind,
+          scope: cue.scope,
+          into: cue.into,
+          target: cue.target,
+          offsetSeconds,
+          durationSeconds: cue.milliseconds / 1000,
+        });
         offsetSeconds += cue.milliseconds / 1000;
         continue;
       }
@@ -155,7 +200,9 @@ export async function compilePresentation(
         offsetSeconds,
         durationSeconds: spoken.durationSeconds,
         leadingSilenceSeconds: spoken.leadingSilenceSeconds,
+        scope: cue.scope,
         ...(cue.activates === undefined ? {} : { activates: cue.activates }),
+        ...(cue.address === undefined ? {} : { address: cue.address }),
       });
       offsetSeconds += spoken.durationSeconds;
     }
@@ -164,6 +211,7 @@ export async function compilePresentation(
     // get it, and `post_say` is a deck-wide default rather than a per-slide instrument.
     const narration: Narration = {
       clips,
+      calls,
       durationSeconds: offsetSeconds,
       voice,
       speed,

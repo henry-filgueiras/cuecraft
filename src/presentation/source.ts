@@ -106,6 +106,29 @@ export function resolveRepositoryPath(root: string, file: string): string {
   return resolved;
 }
 
+/**
+ * Where a path sits inside the checkout, for the parser to resolve modules against.
+ *
+ * `cuecraft render examples/order/order.yaml` and `cuecraft render /abs/examples/order/order.yaml`
+ * are the same compilation, and a `child: ./payment.yaml` inside it means the same thing either
+ * way — so the one thing the parser needs is the document's position in the repository, not the
+ * string the shell happened to supply.
+ *
+ * Total rather than throwing, and this is deliberate: a presentation *outside* the checkout is
+ * perfectly legal to parse — only quoting and descent are contained — so a path this cannot place
+ * is returned as it stands, and the reader refuses it later with a message about the file rather
+ * than about the arithmetic.
+ */
+export function repositoryRelative(
+  path: string,
+  root: string = repositoryRoot(),
+): string {
+  const realRoot = realOrSelf(root);
+  const within = relative(realRoot, realOrSelf(resolve(path)));
+  if (within === "" || within === ".." || within.startsWith(`..${sep}`)) return path;
+  return within.split(sep).join("/");
+}
+
 /** `realpathSync` on a path that may not exist yet — the containment check still has to run. */
 function realOrSelf(path: string): string {
   try {

@@ -2,20 +2,36 @@ import { parse as parseYaml, YAMLParseError } from "yaml";
 import { z } from "zod";
 
 import { deriveChange } from "./change.ts";
+import { collapseWhitespace, ENTER_MS, wordPattern, type NarrationCue } from "./cue.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
 import { figureProblem, type FigureKind } from "./figure.ts";
 import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
 import { type CodeLanguage, CODE_LANGUAGES, isCodeLanguage } from "./language.ts";
 import {
+  checkInclusion,
+  ModuleError,
+  readModuleDocument,
+  resolveModuleSpec,
+} from "./module.ts";
+import { bindNarration, modulesOf } from "./nest.ts";
+import { childScope, ROOT_SCOPE, type Scope } from "./scope.ts";
+import {
   languageOf,
   onceReader,
   quoteSlide,
   repositoryReader,
+  repositoryRelative,
   SourceError,
   type RepositoryReader,
 } from "./source.ts";
 import { type AuthoredMark, markProblem, specimenLines } from "./specimen.ts";
-import { type DetailResolver, resolveWorld, type WorldIssue } from "./world.ts";
+import {
+  type ChildResolver,
+  type DetailResolver,
+  type EntityModule,
+  resolveWorld,
+  type WorldIssue,
+} from "./world.ts";
 
 import {
   bodyElements,
@@ -23,14 +39,22 @@ import {
   type AuthoredItem,
   type SlideBody,
 } from "./body.ts";
-export type { AuthoredEntity, AuthoredRelation, AuthoredWorld } from "./world.ts";
+export type {
+  AuthoredEntity,
+  AuthoredRelation,
+  AuthoredWorld,
+  EntityModule,
+} from "./world.ts";
 export type { AuthoredMark } from "./specimen.ts";
 export {
+  bodyAddresses,
   bodyElements,
   CHANGE_ELEMENT_ID,
   type AuthoredItem,
   type SlideBody,
 } from "./body.ts";
+export { ENTER_MS, EXIT_MS, spokenText, type NarrationCue } from "./cue.ts";
+export { MAX_MODULE_DEPTH, ROOT_SCOPE, type Scope } from "./scope.ts";
 export { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
 
 /**
@@ -66,43 +90,32 @@ export const DEFAULT_POST_SAY_MS = 900;
 export const DEFAULT_MIN_SLIDE_MS = 3000;
 export const DEFAULT_SPEED = 1;
 
-/**
- * One step in a slide's narration.
- *
- * `say` used to be a single opaque string, which meant every phrase boundary and every silence
- * was Kokoro's guess. A cue list makes both authorable without inventing markup: there is no
- * inline syntax, nothing embedded in the prose, and exactly two things a cue can be. Emphasis,
- * intonation and rate are deliberately absent because Kokoro cannot honour them (dragon:3), and
- * a control that does nothing is worse than no control.
- */
-export type NarrationCue =
-  | {
-      readonly kind: "speech";
-      readonly text: string;
-      /**
-       * The semantic identity this cue reaches, if any. Not a time and not an animation:
-       * the author states that this moment in the narration and some element on the slide
-       * are the same idea, and the compiler works out when that happens (decision:14).
-       */
-      readonly activates?: string;
-      /**
-       * Per-occurrence spelling substitutions applied before synthesis only. See
-       * decision:12 — this repairs one word in one cue, and is not a dictionary.
-       */
-      readonly pronounce?: ReadonlyMap<string, string>;
-    }
-  | { readonly kind: "pause"; readonly milliseconds: number };
-
 export interface AuthoredSlide {
   /** 1-based, and used in every message the author sees. */
   readonly ordinal: number;
   readonly title: string;
   readonly body: SlideBody;
-  /** Ordered narration cues. A scalar `say` is shorthand for one speech cue. */
+  /**
+   * Ordered narration cues, flattened. A scalar `say` is shorthand for one speech cue.
+   *
+   * "Flattened" is the whole of what a child module costs downstream: a slide that descends has
+   * its callees' cues spliced in where the calls were made, bracketed by the `enter` and `exit`
+   * that occupy the descent, and everything after this point sees one serial list exactly as it
+   * always did (`./nest.ts`).
+   */
   readonly say: readonly NarrationCue[];
   readonly preSayMs: number;
   readonly postSayMs: number;
   readonly minSlideMs: number;
+  /**
+   * Every file this slide was compiled from besides the presentation itself, canonical and in
+   * inclusion order.
+   *
+   * A module is a *source* dependency, not an invisible input: a deck that descends is not
+   * reproducible from its own file, and anything that ever caches, watches, or freezes a
+   * compilation needs to be told what it actually read (decision:3).
+   */
+  readonly modules: readonly string[];
 }
 
 export interface Presentation {
@@ -584,7 +597,8 @@ function resolveChangeBody(
  * means *reading the repository* — a specimen may quote a file rather than carry a copy of one
  * — and the reader is supplied per parse rather than baked into a module-level schema.
  */
-function buildSlideSchema(read: RepositoryReader) {
+function buildSlideSchema(resolution: Resolution) {
+  const read = resolution.read;
   return z
     .strictObject({
       title: nonEmptyString,
@@ -632,7 +646,7 @@ function buildSlideSchema(read: RepositoryReader) {
         }
       }
       if (slide.world !== undefined) {
-        for (const issue of resolveWorld(slide.world, detailResolver(read)).issues) {
+        for (const issue of resolveWorld(slide.world, ...interiors(resolution)).issues) {
           context.addIssue({
             code: "custom",
             path: ["world", ...issue.path],
@@ -641,6 +655,36 @@ function buildSlideSchema(read: RepositoryReader) {
         }
       }
     });
+}
+
+/**
+ * What a body is being resolved *from*.
+ *
+ * Three facts that used to be one — the reader — and had to grow the moment an interior could
+ * arrive in its own file. `chain` is every file currently open, outermost first, beginning with
+ * the presentation itself: a `child:` is resolved relative to its last entry, a repeat anywhere
+ * in it is a cycle, and its length is the depth. `scope` is where the identities being resolved
+ * live, which is what keeps two modules from colliding on a name they both chose innocently.
+ */
+interface Resolution {
+  readonly read: RepositoryReader;
+  readonly chain: readonly string[];
+  readonly scope: Scope;
+}
+
+/**
+ * The two ways into an entity, as `resolveWorld` wants them.
+ *
+ * A tuple rather than two calls at every site, because they are never useful apart: a world that
+ * could resolve one spelling of an interior and not the other would accept half a format.
+ */
+function interiors(
+  resolution: Resolution,
+): [DetailResolver, { child: ChildResolver; scope: Scope }] {
+  return [
+    detailResolver(resolution),
+    { child: childResolver(resolution), scope: resolution.scope },
+  ];
 }
 
 const BODY_KEYS = ["bullets", "steps", "code", "change", "world", "figure"] as const;
@@ -653,7 +697,7 @@ const BODY_KEYS = ["bullets", "steps", "code", "change", "world", "figure"] as c
  * to the format and no new machinery underneath it. Nesting is refused here rather than by the
  * type system, because the error an author needs is a sentence, not a missing overload.
  */
-function detailResolver(read: RepositoryReader): DetailResolver {
+function detailResolver(resolution: Resolution): DetailResolver {
   return (value: unknown) => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return {
@@ -669,12 +713,33 @@ function detailResolver(read: RepositoryReader): DetailResolver {
           {
             path: ["world"],
             message:
-              "a world cannot contain a world; an entity's interior is ordinary slide content",
+              "a world written here cannot contain a world; an inline interior is ordinary " +
+              "slide content, narrated by the narration around it. A world that wants to " +
+              "contain a world puts it in its own file and names it with `child:`, because " +
+              "what makes that safe is the file, not the nesting",
           },
         ],
       };
     }
 
+    return resolveInterior(record, resolution);
+  };
+}
+
+/**
+ * A body inside an entity, whichever spelling brought it.
+ *
+ * One function rather than two because the *content* rules are identical — one body key, from
+ * the same closed set, validated by the same checks. The only thing the two spellings disagree
+ * about is whether `world` is in the set, and that disagreement is settled by the callers above
+ * before this is reached.
+ */
+function resolveInterior(
+  record: Record<string, unknown>,
+  resolution: Resolution,
+): { body: SlideBody | undefined; issues: readonly WorldIssue[] } {
+  {
+    const read = resolution.read;
     const present = BODY_KEYS.filter((key) => record[key] !== undefined);
     if (present.length === 0) {
       return {
@@ -738,11 +803,166 @@ function detailResolver(read: RepositoryReader): DetailResolver {
       });
     }
     if (issues.length > 0) return { body: undefined, issues };
-    return { body: bodyOf(record as Parameters<typeof bodyOf>[0], read), issues: [] };
-  };
+    return {
+      body: bodyOf(record as Parameters<typeof bodyOf>[0], resolution),
+      issues: [],
+    };
+  }
 }
 
 const DETAIL_HINT = BODY_KEYS.filter((key) => key !== "world").join(", ");
+
+/**
+ * `child: ./payment.yaml` — a file becomes an interior and a narration.
+ *
+ * The order below is the whole of the safety argument, and every step of it fails loudly:
+ *
+ *     resolve      relative to the file that declared it, refusing anything outside the checkout
+ *     check        against the inclusion chain, for a cycle, and against the depth limit
+ *     read         through the same injected reader every quoted specimen uses
+ *     shape        one body and a `say`, and emphatically not a presentation
+ *     resolve      the body, in the child's scope, with the chain one longer
+ *     bind         its narration against its own body, splicing any descent of its own
+ *
+ * The last two are the recursion, and they are the only recursion: a grandchild is resolved by
+ * this same function with a chain one longer, so nothing here counts levels or special-cases a
+ * depth. `checkInclusion` is what stops it, in one place, with the chain in the message.
+ *
+ * A module is resolved **eagerly, at parse time**, exactly as a quoted specimen is (idea:10), and
+ * for the same reason: a file that has moved, a cycle somebody introduced by accident, and a
+ * module that stopped parsing are all failures an author should hear about before a single second
+ * of audio is synthesized.
+ */
+function childResolver(resolution: Resolution): ChildResolver {
+  return (spec: unknown, within: Scope, id: string) => {
+    const nothing = { body: undefined, module: undefined };
+    if (typeof spec !== "string") {
+      return {
+        ...nothing,
+        issues: [
+          {
+            path: [],
+            message: "must be a path to a .yaml module, relative to this file",
+          },
+        ],
+      };
+    }
+
+    const from = resolution.chain.at(-1) ?? "";
+    let path: string;
+    try {
+      path = resolveModuleSpec(from, spec);
+      checkInclusion(resolution.chain, path);
+    } catch (error) {
+      if (error instanceof ModuleError) {
+        return { ...nothing, issues: [{ path: [], message: error.message }] };
+      }
+      throw error;
+    }
+
+    let text: string;
+    try {
+      text = resolution.read(path);
+    } catch (error) {
+      if (error instanceof SourceError) {
+        return { ...nothing, issues: [{ path: [], message: error.message }] };
+      }
+      throw error;
+    }
+
+    let document: unknown;
+    try {
+      document = parseYaml(text);
+    } catch (error) {
+      if (error instanceof YAMLParseError) {
+        return {
+          ...nothing,
+          issues: [
+            {
+              path: [],
+              message: `module ${JSON.stringify(path)} is not valid YAML: ${error.message}`,
+            },
+          ],
+        };
+      }
+      throw error;
+    }
+
+    let shape: ReturnType<typeof readModuleDocument>;
+    try {
+      shape = readModuleDocument(document, path, BODY_KEYS);
+    } catch (error) {
+      if (error instanceof ModuleError) {
+        return { ...nothing, issues: [{ path: [], message: error.message }] };
+      }
+      throw error;
+    }
+
+    const scope = childScope(within, id);
+    const inside: Resolution = {
+      read: resolution.read,
+      chain: [...resolution.chain, path],
+      scope,
+    };
+
+    const resolved =
+      shape.key === "world"
+        ? worldInterior(shape.body, inside)
+        : resolveInterior({ [shape.key]: shape.body }, inside);
+    const issues: WorldIssue[] = resolved.issues.map((issue) => ({
+      path: issue.path,
+      message: `module ${JSON.stringify(path)}: ${issue.message}`,
+    }));
+
+    const sayProblems = cueListProblems(shape.say);
+    for (const problem of sayProblems) {
+      issues.push({
+        path: ["say", ...problem.path],
+        message: `module ${JSON.stringify(path)}: ${problem.message}`,
+      });
+    }
+
+    if (resolved.body === undefined || sayProblems.length > 0 || issues.length > 0) {
+      return { ...nothing, issues };
+    }
+
+    const bound = bindNarration(resolved.body, toCues(shape.say, scope), scope);
+    for (const issue of bound.issues) {
+      issues.push({
+        path: ["say", ...issue.path],
+        message: `module ${JSON.stringify(path)}: ${issue.message}`,
+      });
+    }
+    if (issues.length > 0) return { ...nothing, issues };
+
+    return {
+      body: resolved.body,
+      module: { path, scope, say: bound.cues },
+      issues: [],
+    };
+  };
+}
+
+/** A module whose body is a world. The one interior an inline `detail` may not be. */
+function worldInterior(
+  value: unknown,
+  resolution: Resolution,
+): { body: SlideBody | undefined; issues: readonly WorldIssue[] } {
+  const { world, issues } = resolveWorld(value, ...interiors(resolution));
+  if (world === undefined) {
+    return {
+      body: undefined,
+      issues: issues.map((issue) => ({
+        path: ["world", ...issue.path],
+        message: issue.message,
+      })),
+    };
+  }
+  return {
+    body: { kind: "world", entities: world.entities, relations: world.relations },
+    issues: [],
+  };
+}
 
 /** A validated item, in either of its two authored forms. */
 function itemOf(value: unknown): AuthoredItem {
@@ -773,13 +993,14 @@ function bodyOf(
     world?: unknown;
     figure?: unknown;
   },
-  read: RepositoryReader,
+  resolution: Resolution,
 ): SlideBody {
+  const read = resolution.read;
   if (slide.figure !== undefined) {
     return { kind: "figure", figure: slide.figure as FigureKind };
   }
   if (slide.world !== undefined) {
-    const { world } = resolveWorld(slide.world, detailResolver(read));
+    const { world } = resolveWorld(slide.world, ...interiors(resolution));
     if (world === undefined)
       throw new Error("world passed validation but did not resolve");
     return { kind: "world", entities: world.entities, relations: world.relations };
@@ -806,7 +1027,8 @@ function bodyOf(
 }
 
 export const CUE_HINT =
-  'narration text, { speech: "..." }, or a pause such as { pause: "400ms" }';
+  'narration text, { speech: "..." }, a pause such as { pause: "400ms" }, ' +
+  "or { enter: <entity> } to go inside one";
 
 /**
  * Why this is one `unknown` with a hand-written check rather than a `z.union`.
@@ -838,6 +1060,21 @@ function checkCue(value: unknown): string | undefined {
     }
     if (parseDurationMs(raw) <= 0) {
       return "pause must be longer than zero";
+    }
+    return undefined;
+  }
+
+  // The one word this round added to the narration language, and it is a verb rather than a
+  // noun on purpose: `enter:` is something the narration *does*, at the moment it does it. There
+  // is deliberately no `exit:`, because the child's own cue list running out is the return —
+  // see `./nest.ts` for why completion is the unwind rule rather than graph terminality.
+  if (keys.includes("enter")) {
+    if (keys.length !== 1) {
+      return "an enter cue takes no other keys; what it says is said by the module it enters";
+    }
+    const target = record["enter"];
+    if (typeof target !== "string" || !ANCHOR_ID.test(target)) {
+      return `enter must name an entity, and an entity's identity is ${ANCHOR_ID_HINT}`;
     }
     return undefined;
   }
@@ -889,37 +1126,30 @@ function checkPronounce(value: unknown, speech: string): string | undefined {
   return undefined;
 }
 
-/** Whole-word, case-insensitive. Substring replacement would corrupt neighbouring words. */
-function wordPattern(word: string): RegExp {
-  return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
-}
+/**
+ * Whether a `say` is a narration, checked without a schema around it.
+ *
+ * Its own function because a module carries a `say` too, and a module is not validated by zod —
+ * it arrives as a file the parser opened rather than as a branch of the document schema. Two
+ * copies of "what a cue list has to be" would be two things to keep in step, and the one that
+ * drifted would be the one nobody was looking at.
+ */
+function cueListProblems(
+  value: unknown,
+): readonly { path: readonly (string | number)[]; message: string }[] {
+  const problems: { path: readonly (string | number)[]; message: string }[] = [];
 
-const saySchema = z.unknown().superRefine((value, context) => {
-  // `z.unknown()` accepts a missing key, so absence has to be caught here rather than by
-  // the schema. A slide with no narration has no duration, so it is never valid.
   if (value === undefined || value === null) {
-    context.addIssue({ code: "custom", message: "is required" });
-    return;
+    return [{ path: [], message: "is required" }];
   }
-
   if (typeof value === "string") {
-    if (value.trim().length === 0) {
-      context.addIssue({ code: "custom", message: "must not be empty" });
-    }
-    return;
+    return value.trim().length === 0 ? [{ path: [], message: "must not be empty" }] : [];
   }
-
   if (!Array.isArray(value)) {
-    context.addIssue({
-      code: "custom",
-      message: `must be ${CUE_HINT}, or a list of those`,
-    });
-    return;
+    return [{ path: [], message: `must be ${CUE_HINT}, or a list of those` }];
   }
-
   if (value.length === 0) {
-    context.addIssue({ code: "custom", message: "must list at least one narration cue" });
-    return;
+    return [{ path: [], message: "must list at least one narration cue" }];
   }
 
   let spoken = 0;
@@ -930,21 +1160,39 @@ const saySchema = z.unknown().superRefine((value, context) => {
     if (typeof cue === "string" || isSpeechCue(cue)) spoken += 1;
 
     const problem = checkCue(cue);
-    if (problem !== undefined) {
-      context.addIssue({ code: "custom", message: problem, path: [index] });
-    }
+    if (problem !== undefined) problems.push({ path: [index], message: problem });
   });
 
-  if (spoken === 0) {
+  // A descent counts as saying something: a slide whose narration is one `enter:` says nothing
+  // itself and everything through what it entered, which is a legitimate — if unusual — thing to
+  // write, and refusing it would be refusing delegation.
+  if (spoken === 0 && !value.some(isEnterCue)) {
+    problems.push({
+      path: [],
+      message: "must contain something to say, not only pauses",
+    });
+  }
+  return problems;
+}
+
+const saySchema = z.unknown().superRefine((value, context) => {
+  // `z.unknown()` accepts a missing key, so absence has to be caught here rather than by
+  // the schema. A slide with no narration has no duration, so it is never valid.
+  for (const problem of cueListProblems(value)) {
     context.addIssue({
       code: "custom",
-      message: "must contain something to say, not only pauses",
+      message: problem.message,
+      path: [...problem.path],
     });
   }
 });
 
 function isSpeechCue(cue: unknown): cue is { speech: string; activates?: string } {
   return typeof cue === "object" && cue !== null && "speech" in cue;
+}
+
+function isEnterCue(cue: unknown): cue is { enter: string } {
+  return typeof cue === "object" && cue !== null && "enter" in cue;
 }
 
 /**
@@ -954,11 +1202,17 @@ function isSpeechCue(cue: unknown): cue is { speech: string; activates?: string 
  * A dangling reference is the failure that matters. Silently rendering a slide whose
  * narration was supposed to build it, without building it, is exactly the "silent
  * synchronization loss" a compiler exists to prevent.
+ *
+ * The check itself moved to `./nest.ts` once a slide could hold more than one narration. What
+ * used to be "every id this slide declares" is now "every address this *scope* may reach", and a
+ * module's narration is checked against its own body by the same function at the point the module
+ * is opened — so a bad `activates:` three files down is reported with the same words as one on
+ * the slide, and neither can reach across the boundary between them.
  */
-function buildEntrySchema(read: RepositoryReader) {
+function buildEntrySchema(resolution: Resolution) {
   return z
     .strictObject({
-      slide: buildSlideSchema(read),
+      slide: buildSlideSchema(resolution),
       say: saySchema,
       pre_say: durationLiteral.optional(),
       post_say: durationLiteral.optional(),
@@ -984,64 +1238,35 @@ function buildEntrySchema(read: RepositoryReader) {
           }
         });
       }
-      const marks = (entry.slide.code as { marks?: unknown } | undefined)?.marks;
-      (Array.isArray(marks) ? marks : []).forEach((raw: unknown, index: number) => {
-        if (checkMark(raw) !== undefined) return;
-        const { id } = raw as AuthoredMark;
-        if (!declared.has(id)) declared.set(id, index);
-      });
-      // A world's identities are its entity keys, and unlike a bullet's `id` they are not
-      // optional — `resolveWorld` has already rejected any that are misspelled or duplicated,
-      // so anything that survived it can be declared here as it stands.
-      if (entry.slide.world !== undefined) {
-        const { world } = resolveWorld(entry.slide.world, detailResolver(read));
-        // Entities first, then what is inside them — the same order `bodyElements` publishes, so
-        // the "declared:" list an author is shown reads in the order the compiler resolves.
-        for (const entity of world?.entities ?? []) {
-          if (!declared.has(entity.id)) declared.set(entity.id, 0);
-        }
-        for (const entity of world?.entities ?? []) {
-          if (entity.detail === undefined) continue;
-          for (const element of bodyElements(entity.detail)) {
-            if (element.id !== undefined && !declared.has(element.id)) {
-              declared.set(element.id, 0);
-            }
-          }
-        }
-      }
-      // The one identity nobody typed. A change knows which region of itself is the change, so
-      // it declares that region and narration reaches it by name like any other element — the
-      // author supplies the semantic structure and the compiler supplies the endpoint.
-      if (entry.slide.change !== undefined) declared.set(CHANGE_ELEMENT_ID, 0);
 
-      const cues = Array.isArray(entry.say) ? entry.say : [];
-      const reached = new Set<string>();
-      cues.forEach((cue, index) => {
-        if (!isSpeechCue(cue) || cue.activates === undefined) return;
-        const id = cue.activates;
-        if (!declared.has(id)) {
-          const known = [...declared.keys()];
-          context.addIssue({
-            code: "custom",
-            path: ["say", index],
-            message:
-              `activates ${JSON.stringify(id)}, which nothing on this slide declares` +
-              (known.length === 0
-                ? "; this slide declares no ids"
-                : ` (declared: ${known.join(", ")})`),
-          });
-          return;
-        }
-        if (reached.has(id)) {
-          context.addIssue({
-            code: "custom",
-            path: ["say", index],
-            message: `activates ${JSON.stringify(id)}, which an earlier cue already reaches`,
-          });
-        }
-        reached.add(id);
-      });
+      // Both ends of the relationship, once the body has actually resolved. When it has not,
+      // whatever went wrong with it has already been reported against the body itself, and a
+      // second complaint about the narration that pointed at it would be noise.
+      const body = resolvedBody(entry.slide, resolution);
+      if (body === undefined) return;
+      if (cueListProblems(entry.say).length > 0) return;
+
+      for (const issue of bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE)
+        .issues) {
+        context.addIssue({
+          code: "custom",
+          path: ["say", ...issue.path],
+          message: issue.message,
+        });
+      }
     });
+}
+
+/** The slide's body if it resolved, and nothing if it did not. Never throws. */
+function resolvedBody(
+  slide: Parameters<typeof bodyOf>[0],
+  resolution: Resolution,
+): SlideBody | undefined {
+  try {
+    return bodyOf(slide, resolution);
+  } catch {
+    return undefined;
+  }
 }
 
 const defaultsSchema = z.strictObject({
@@ -1062,8 +1287,8 @@ const defaultsSchema = z.strictObject({
  * a file*, and the thing that does the reading is an argument — which is what keeps every test
  * in this repository free of the disk.
  */
-function buildDocumentSchema(read: RepositoryReader) {
-  const entrySchema = buildEntrySchema(read);
+function buildDocumentSchema(resolution: Resolution) {
+  const entrySchema = buildEntrySchema(resolution);
   const documentSchema = z.strictObject({
     title: nonEmptyString,
     defaults: defaultsSchema.optional(),
@@ -1091,6 +1316,15 @@ export interface ParseOptions {
    * (`./source.ts`); tests pass a map so that parsing stays deterministic and offline.
    */
   readonly read?: RepositoryReader;
+  /**
+   * Where this document sits in the repository, for resolving `child:` against.
+   *
+   * A module is named relative to the file that declares it, which means the parser has to know
+   * which file it is reading — and `source` is a label for error messages that may be a path
+   * relative to anywhere the CLI happened to be run from. Defaulted from it, overridable by
+   * callers that already know, and irrelevant to every deck that never descends.
+   */
+  readonly origin?: string;
 }
 
 /**
@@ -1109,7 +1343,12 @@ export function parsePresentation(
   options: ParseOptions = {},
 ): Presentation {
   const read = onceReader(options.read ?? repositoryReader());
-  const { documentSchema, allowedKeys } = buildDocumentSchema(read);
+  const resolution: Resolution = {
+    read,
+    chain: [options.origin ?? repositoryRelative(source)],
+    scope: ROOT_SCOPE,
+  };
+  const { documentSchema, allowedKeys } = buildDocumentSchema(resolution);
 
   let document: unknown;
   try {
@@ -1154,15 +1393,22 @@ export function parsePresentation(
     voice: defaults.voice?.trim(),
     speed: defaults.speed ?? DEFAULT_SPEED,
     warnings,
-    slides: raw.slides.map((entry, index) => ({
-      ordinal: index + 1,
-      title: entry.slide.title.trim(),
-      body: bodyOf(entry.slide, read),
-      say: toCues(entry.say),
-      preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
-      postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
-      minSlideMs,
-    })),
+    slides: raw.slides.map((entry, index) => {
+      const body = bodyOf(entry.slide, resolution);
+      return {
+        ordinal: index + 1,
+        title: entry.slide.title.trim(),
+        body,
+        // Flattened here rather than downstream, so that everything after this point sees one
+        // ordered list of cues and knows nothing about modules. Validation already ran the same
+        // walk and reported anything wrong with it, so this one cannot fail.
+        say: bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE).cues,
+        preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
+        postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
+        minSlideMs,
+        modules: modulesOf(body),
+      };
+    }),
   };
 }
 
@@ -1177,22 +1423,34 @@ function optionalDuration(value: string | undefined): number | undefined {
  * grammar existed working unchanged. Nothing here can fail: `saySchema` already rejected
  * everything this would have to complain about.
  */
-function toCues(value: unknown): readonly NarrationCue[] {
+function toCues(value: unknown, scope: Scope): readonly NarrationCue[] {
   if (typeof value === "string") {
-    return [{ kind: "speech", text: collapseWhitespace(value) }];
+    return [{ kind: "speech", scope, text: collapseWhitespace(value) }];
   }
   return (value as unknown[]).map((cue): NarrationCue => {
     if (typeof cue === "string") {
-      return { kind: "speech", text: collapseWhitespace(cue) };
+      return { kind: "speech", scope, text: collapseWhitespace(cue) };
     }
     const record = cue as Record<string, unknown>;
     if (typeof record["pause"] === "string") {
-      return { kind: "pause", milliseconds: parseDurationMs(record["pause"]) };
+      return { kind: "pause", scope, milliseconds: parseDurationMs(record["pause"]) };
+    }
+    if (typeof record["enter"] === "string") {
+      // The scope it opens is filled in by `bindNarration`, which is the only thing that knows
+      // whether the entity named here actually has a module behind it.
+      return {
+        kind: "enter",
+        scope,
+        milliseconds: ENTER_MS,
+        target: record["enter"],
+        into: childScope(scope, record["enter"]),
+      };
     }
 
     const pronounce = record["pronounce"] as Record<string, string> | undefined;
     return {
       kind: "speech",
+      scope,
       text: collapseWhitespace(record["speech"] as string),
       ...(record["activates"] === undefined
         ? {}
@@ -1202,33 +1460,6 @@ function toCues(value: unknown): readonly NarrationCue[] {
         : { pronounce: new Map(Object.entries(pronounce)) }),
     };
   });
-}
-
-/**
- * The text actually handed to the synthesizer.
- *
- * Whole-word and case-insensitive, applied only to this cue. The authored text is left
- * alone so that what the source says and what gets spoken stay separately inspectable —
- * a caption or a frozen asset wants the former (decision:12).
- */
-export function spokenText(cue: NarrationCue): string {
-  if (cue.kind !== "speech" || cue.pronounce === undefined) {
-    return cue.kind === "speech" ? cue.text : "";
-  }
-  let text = cue.text;
-  for (const [word, spelling] of cue.pronounce) {
-    text = text.replace(wordPattern(word), spelling);
-  }
-  return text;
-}
-
-/**
- * Block scalars carry the author's line breaks, which are a reading convenience rather
- * than an instruction — a newline is not a pause. Authors who want one now write one
- * (dragon:3).
- */
-function collapseWhitespace(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
 }
 
 function describeIssue(

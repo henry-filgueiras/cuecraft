@@ -1,5 +1,6 @@
 import type { FigureKind } from "./figure.ts";
 import type { CodeLanguage } from "./language.ts";
+import { childScope, type Scope } from "./scope.ts";
 import type { AuthoredMark } from "./specimen.ts";
 import type { AuthoredEntity, AuthoredRelation } from "./world.ts";
 export type { AuthoredEntity, AuthoredRelation } from "./world.ts";
@@ -146,4 +147,70 @@ export function interiorRange(
 
 function interiorElements(entity: AuthoredEntity): readonly { readonly id?: string }[] {
   return entity.detail === undefined ? [] : bodyElements(entity.detail);
+}
+
+/**
+ * The same walk as `bodyElements`, naming what it visits.
+ *
+ * An index into a flat list is a fine thing for a compiler to resolve against and a useless thing
+ * to put in a diagnostic, and it stopped being sufficient the moment two scopes could both
+ * contain something called `check`. So this publishes, for each element in `bodyElements` order,
+ * the two facts that resolution and validation actually need:
+ *
+ *     address    where the element sits, as a structural path (`./scope.ts`)
+ *     scope      which narration is entitled to reach it
+ *
+ * The second is the whole of the distinction this round turns on, and it is one line below.
+ * An **inline `detail`** is addressed under its entity and reachable from the *enclosing*
+ * narration: that is decision:25 exactly as it shipped, where an author writes a sentence about
+ * something inside a concept and the portal opens. A **child module** is addressed under its
+ * entity and reachable only from *its own* narration, because it brought some — its scope is a
+ * different scope, and a cue outside it may not reach in.
+ *
+ * Here rather than beside the parser for the same reason `interiorRange` is here: it is the same
+ * ordering rule, and an ordering rule that lives in two places is one edit from living in two
+ * different places.
+ */
+export interface ElementAddress {
+  /** Absent on an element that declares no identity, which is most bullets in most decks. */
+  readonly address: Scope | undefined;
+  readonly scope: Scope;
+}
+
+export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAddress[] {
+  const named = (id: string | undefined): ElementAddress => ({
+    address: id === undefined ? undefined : childScope(scope, id),
+    scope,
+  });
+
+  switch (body.kind) {
+    case "none":
+    case "figure":
+      return [];
+    case "code":
+      return body.marks.map((mark) => named(mark.id));
+    case "change":
+      return [named(CHANGE_ELEMENT_ID)];
+    case "world":
+      return [
+        ...body.entities.map((entity) => named(entity.id)),
+        ...body.entities.flatMap((entity) => interiorAddresses(entity, scope)),
+      ];
+    default:
+      return body.items.map((item) => named(item.id));
+  }
+}
+
+function interiorAddresses(
+  entity: AuthoredEntity,
+  scope: Scope,
+): readonly ElementAddress[] {
+  if (entity.detail === undefined) return [];
+  const inside = childScope(scope, entity.id);
+  const addresses = bodyAddresses(entity.detail, inside);
+  // A module's elements keep their addresses and lose their reachability: they belong to the
+  // module's own narration, and the enclosing `say` may not speak to them.
+  return entity.module === undefined
+    ? addresses.map((entry) => ({ address: entry.address, scope }))
+    : addresses;
 }

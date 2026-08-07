@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { SlideBody } from "../presentation/parse.ts";
+import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
 import { anchorAt, around, clipAt } from "./facts.ts";
 import type { CompiledPresentation, CompiledSlide, SpeechClip } from "./compile.ts";
 import { buildTimeline, DEFAULT_FPS } from "./timeline.ts";
@@ -24,6 +25,7 @@ function clip(index: number, seconds: number, text: string): SpeechClip {
     offsetSeconds: 0,
     durationSeconds: seconds,
     leadingSilenceSeconds: 0.3,
+    scope: ROOT_SCOPE,
   };
 }
 
@@ -41,19 +43,22 @@ function deck(
     };
     offset += durations[index] as number;
     const reached = activates[index];
-    return reached === undefined ? made : { ...made, activates: reached };
+    return reached === undefined
+      ? made
+      : { ...made, activates: reached, address: childScope(ROOT_SCOPE, reached) };
   });
 
   const slide: CompiledSlide = {
     ordinal: 1,
     title: "A slide",
     body,
-    say: words.map((text) => ({ kind: "speech", text }) as const),
+    say: words.map((text) => ({ kind: "speech", scope: ROOT_SCOPE, text }) as const),
     preSayMs: 500,
     postSayMs: 900,
     minSlideMs: 3000,
+    modules: [],
     sceneMs: 0,
-    narration: { clips, durationSeconds: offset, voice: "af_heart", speed: 1 },
+    narration: { clips, calls: [], durationSeconds: offset, voice: "af_heart", speed: 1 },
   };
   return { title: "A deck", slides: [slide], publicDir: "/tmp/public" };
 }

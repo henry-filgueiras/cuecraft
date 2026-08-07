@@ -309,7 +309,7 @@ test("a scalar say is shorthand for one speech cue", () => {
   );
   // Line breaks are a reading convenience, not an instruction: a newline is not a pause.
   assert.deepEqual(presentation.slides[0]?.say, [
-    { kind: "speech", text: "Two lines of prose." },
+    { kind: "speech", scope: "root", text: "Two lines of prose." },
   ]);
 });
 
@@ -329,11 +329,11 @@ slides:
     "test.yaml",
   );
   assert.deepEqual(presentation.slides[0]?.say, [
-    { kind: "speech", text: "First phrase." },
-    { kind: "pause", milliseconds: 400 },
-    { kind: "speech", text: "Second phrase." },
-    { kind: "pause", milliseconds: 1500 },
-    { kind: "speech", text: "Third." },
+    { kind: "speech", scope: "root", text: "First phrase." },
+    { kind: "pause", scope: "root", milliseconds: 400 },
+    { kind: "speech", scope: "root", text: "Second phrase." },
+    { kind: "pause", scope: "root", milliseconds: 1500 },
+    { kind: "speech", scope: "root", text: "Third." },
   ]);
 });
 
@@ -437,7 +437,13 @@ slides:
     items: [{ text: "Which tool ran", id: "tool" }, { text: "How long it took" }],
   });
   assert.deepEqual(presentation.slides[0]?.say, [
-    { kind: "speech", text: "Which tool ran.", activates: "tool" },
+    {
+      kind: "speech",
+      scope: "root",
+      text: "Which tool ran.",
+      activates: "tool",
+      address: "root/tool",
+    },
   ]);
 });
 
@@ -1314,7 +1320,7 @@ test("an interior may not contain another world", () => {
     "              world:\n                entities:\n                  a: A\n                  b: B\n                relations:\n                  - a -> b",
   );
   const reported = problems(nested);
-  assert.match(reported[0] ?? "", /a world cannot contain a world/);
+  assert.match(reported[0] ?? "", /a world written here cannot contain a world/);
 });
 
 test("an identity inside an entity is scoped to the slide like every other one", () => {

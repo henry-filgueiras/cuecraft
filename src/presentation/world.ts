@@ -1,5 +1,7 @@
 import type { SlideBody } from "./body.ts";
+import type { NarrationCue } from "./cue.ts";
 import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
+import { ROOT_SCOPE, type Scope } from "./scope.ts";
 
 /**
  * A semantic world: things that exist, and how they relate.
@@ -44,14 +46,43 @@ import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
  * to live inside the fifth body would have been building a presentation format inside a
  * presentation format.
  *
- * It cannot contain a world. One level, deliberately: the point of the experiment is whether a
- * concept can have an interior at all, and unbounded nesting answers a different question badly.
+ * An inline `detail` cannot contain a world, and that has not changed. `child` is the exception,
+ * and it is an exception rather than a relaxation: what it names is a *file*, and a file is what
+ * turns nesting into a module — it has a canonical identity, so an inclusion chain can be checked
+ * for cycles; it has a boundary, so its identities cannot collide with anything above it; and it
+ * has room for a `say`, so the descent into it is a call rather than a camera move. Written
+ * inline, none of those three would be true, which is why the two spellings mean different
+ * things and only one of them may be a world.
+ *
+ *     detail:  <slide content>          narrated by the slide that contains it
+ *     child:   ./payment.yaml           narrates itself, and may be a world
  */
 export interface AuthoredEntity {
   readonly id: string;
   readonly text: string;
-  /** What is inside. Absent on most entities, and absent is the interesting default. */
+  /**
+   * What is inside. Absent on most entities, and absent is the interesting default.
+   *
+   * Set by either spelling, so that everything downstream — `bodyElements`, `interiorRange`,
+   * `chooseLayout`, the composition switch — sees one kind of interior and no branch.
+   */
   readonly detail?: SlideBody;
+  /** Set only when the interior arrived in its own file, and carrying what came with it. */
+  readonly module?: EntityModule;
+}
+
+/** The provenance and the narration of a file-backed interior. */
+export interface EntityModule {
+  /** Repository-relative and canonical: the identity an inclusion chain is compared on. */
+  readonly path: string;
+  /** The scope its narration runs in. */
+  readonly scope: Scope;
+  /**
+   * Its narration, already flattened: the module's own cues, plus the whole of any descent it
+   * makes, in order. What it does *not* carry is the `enter` and `exit` around itself — those
+   * belong to the narration that called it.
+   */
+  readonly say: readonly NarrationCue[];
 }
 
 /** One directed relation. `from` feeds `to`; both name declared entities. */
@@ -66,12 +97,13 @@ export interface AuthoredWorld {
 }
 
 export const WORLD_KEYS = ["entities", "relations"] as const;
-export const ENTITY_KEYS = ["label", "detail"] as const;
+export const ENTITY_KEYS = ["label", "detail", "child"] as const;
 
 export const ENTITIES_HINT =
   "a mapping of identity to label, like `source: What you write`";
 export const ENTITY_HINT =
-  'a label, or { label: "...", detail: <slide content> } for one worth entering';
+  'a label, { label: "...", detail: <slide content> }, or ' +
+  '{ label: "...", child: ./module.yaml } for one that narrates itself';
 export const RELATION_HINT = '"from -> to", naming two declared entities';
 
 /** A world needs enough of itself to be a world. One entity with no relations is a bullet. */
@@ -107,6 +139,31 @@ export interface DetailResolver {
 }
 
 /**
+ * How `child: ./thing.yaml` becomes an interior and a narration.
+ *
+ * Supplied rather than done here for the same reason, and one more: resolving a module means
+ * *parsing a presentation body*, which is the parser's whole job and would be a circular
+ * dependency written the other way round.
+ */
+export interface ChildResolver {
+  (
+    spec: unknown,
+    within: Scope,
+    id: string,
+  ): {
+    readonly body: SlideBody | undefined;
+    readonly module: EntityModule | undefined;
+    readonly issues: readonly WorldIssue[];
+  };
+}
+
+export interface WorldOptions {
+  readonly child?: ChildResolver;
+  /** Which scope this world's own identities live in. */
+  readonly scope?: Scope;
+}
+
+/**
  * Validate an authored world, and normalize it.
  *
  * Hand-checked rather than expressed as a `z.union`, for the reason every other body in this
@@ -127,6 +184,7 @@ export interface DetailResolver {
 export function resolveWorld(
   value: unknown,
   resolveDetail: DetailResolver = noInteriors,
+  options: WorldOptions = {},
 ): ResolvedWorld {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {
@@ -152,7 +210,13 @@ export function resolveWorld(
   }
 
   const issues: WorldIssue[] = [];
-  const entities = readEntities(record["entities"], resolveDetail, issues);
+  const entities = readEntities(
+    record["entities"],
+    resolveDetail,
+    options.child ?? noModules,
+    options.scope ?? ROOT_SCOPE,
+    issues,
+  );
   const relations = readRelations(record["relations"], entities, issues);
   if (issues.length > 0) return { world: undefined, issues };
 
@@ -168,9 +232,17 @@ const noInteriors: DetailResolver = () => ({
   issues: [{ path: [], message: "an interior needs the parser to resolve it" }],
 });
 
+const noModules: ChildResolver = () => ({
+  body: undefined,
+  module: undefined,
+  issues: [{ path: [], message: "a child module needs the parser to resolve it" }],
+});
+
 function readEntities(
   value: unknown,
   resolveDetail: DetailResolver,
+  resolveChild: ChildResolver,
+  scope: Scope,
   issues: WorldIssue[],
 ): AuthoredEntity[] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -198,7 +270,7 @@ function readEntities(
       continue;
     }
 
-    const entity = readInterior(id, written, resolveDetail, issues);
+    const entity = readInterior(id, written, resolveDetail, resolveChild, scope, issues);
     if (entity !== undefined) entities.push(entity);
   }
 
@@ -215,6 +287,8 @@ function readInterior(
   id: string,
   written: unknown,
   resolveDetail: DetailResolver,
+  resolveChild: ChildResolver,
+  scope: Scope,
   issues: WorldIssue[],
 ): AuthoredEntity | undefined {
   if (typeof written !== "object" || written === null || Array.isArray(written)) {
@@ -239,14 +313,37 @@ function readInterior(
     issues.push({ path: ["entities", id], message: "label must not be empty" });
     return undefined;
   }
-  if (record["detail"] === undefined) {
+  const inline = record["detail"] !== undefined;
+  const filed = record["child"] !== undefined;
+  if (inline && filed) {
+    issues.push({
+      path: ["entities", id],
+      message:
+        'has both "detail" and "child"; an entity has one inside, either written here or in ' +
+        "its own file — and only the second one narrates itself",
+    });
+    return undefined;
+  }
+  if (!inline && !filed) {
     // The long form with nothing in it is the short form with extra typing, and saying so is
     // kinder than silently accepting two spellings of the same entity.
     issues.push({
       path: ["entities", id],
-      message: "has no detail; an entity that is only a label is written as one",
+      message: "has no detail or child; an entity that is only a label is written as one",
     });
     return undefined;
+  }
+
+  if (filed) {
+    const resolved = resolveChild(record["child"], scope, id);
+    for (const issue of resolved.issues) {
+      issues.push({
+        path: ["entities", id, "child", ...issue.path],
+        message: issue.message,
+      });
+    }
+    if (resolved.body === undefined || resolved.module === undefined) return undefined;
+    return { id, text: label.trim(), detail: resolved.body, module: resolved.module };
   }
 
   const resolved = resolveDetail(record["detail"]);

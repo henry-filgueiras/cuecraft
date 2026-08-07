@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { CompiledPresentation, CompiledSlide, SpeechClip } from "./compile.ts";
+import type {
+  CompiledPresentation,
+  CompiledSlide,
+  NarrationCall,
+  SpeechClip,
+} from "./compile.ts";
 import type { SlideBody } from "../presentation/parse.ts";
+import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
@@ -37,6 +43,9 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   change?: readonly [string, string];
   /** Per speech cue; an empty string means this cue reaches nothing. */
   activates?: readonly string[];
+  /** Scope transitions, already measured, for the tests that assert on the call stack. */
+  calls?: readonly NarrationCall[];
+  modules?: readonly string[];
 };
 
 /**
@@ -57,7 +66,13 @@ function slide(overrides: SlideOverrides): CompiledSlide {
       offsetSeconds: offset,
       durationSeconds: duration,
       leadingSilenceSeconds: overrides.leadingSilence ?? 0,
-      ...(overrides.activates?.[index] ? { activates: overrides.activates[index] } : {}),
+      scope: ROOT_SCOPE,
+      ...(overrides.activates?.[index]
+        ? {
+            activates: overrides.activates[index] as string,
+            address: childScope(ROOT_SCOPE, overrides.activates[index] as string),
+          }
+        : {}),
     };
   });
 
@@ -65,13 +80,15 @@ function slide(overrides: SlideOverrides): CompiledSlide {
     ordinal: overrides.ordinal,
     title: overrides.title ?? `Slide ${overrides.ordinal}`,
     body: bodyOf(overrides),
-    say: overrides.say ?? [{ kind: "speech", text: "Words." }],
+    say: overrides.say ?? [{ kind: "speech", scope: ROOT_SCOPE, text: "Words." }],
     preSayMs: overrides.preSayMs ?? 750,
     postSayMs: overrides.postSayMs ?? 1200,
     minSlideMs: overrides.minSlideMs ?? 3000,
+    modules: overrides.modules ?? [],
     sceneMs: overrides.sceneMs ?? 0,
     narration: {
       clips,
+      calls: overrides.calls ?? [],
       durationSeconds: overrides.narrationSeconds ?? running,
       voice: "af_heart",
       speed: 1,
@@ -214,8 +231,13 @@ test("clips are placed at their measured offsets, in whole frames", () => {
   assert.ok(scene !== undefined);
   assert.equal(scene.narrationFrom, 23); // 750ms
   assert.deepEqual(scene.clips, [
-    { src: "narration/slide-01-01.wav", from: 23, durationInFrames: 60 },
-    { src: "narration/slide-01-02.wav", from: 23 + 75, durationInFrames: 60 },
+    { src: "narration/slide-01-01.wav", from: 23, durationInFrames: 60, scope: "root" },
+    {
+      src: "narration/slide-01-02.wav",
+      from: 23 + 75,
+      durationInFrames: 60,
+      scope: "root",
+    },
   ]);
   assert.equal(scene.narrationDurationInFrames, 135); // 4.5s
 });
@@ -315,8 +337,8 @@ test("an anchor activates when its clip's sound starts, not when the clip does",
   // pre_say 500ms -> frame 15. Clip one starts there; its sound starts 0.3s (9 frames)
   // later. Clip two starts at 15 + 60 = 75, sound at 84.
   assert.deepEqual(scene.anchors, [
-    { id: "one", elementIndex: 0, clipIndex: 0, frame: 24 },
-    { id: "two", elementIndex: 1, clipIndex: 1, frame: 84 },
+    { id: "one", address: "root/one", elementIndex: 0, clipIndex: 0, frame: 24 },
+    { id: "two", address: "root/two", elementIndex: 1, clipIndex: 1, frame: 84 },
   ]);
 });
 
@@ -425,6 +447,7 @@ test("narration reaches a region the compiler derived, not one the author named"
     // Element 0 is the only element a change has, and it is not in the source anywhere.
     {
       id: "change",
+      address: "root/change",
       elementIndex: 0,
       clipIndex: 1,
       frame: 90 + framesFor(0.2, DEFAULT_FPS),

@@ -205,7 +205,7 @@ test("an entity may not carry keys that are not a label or an inside", () => {
   };
   assert.match(
     resolveWorld(broken, asBullets).issues[0]?.message ?? "",
-    /unknown key "size" \(allowed: label, detail\)/,
+    /unknown key "size" \(allowed: label, detail, child\)/,
   );
 });
 

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
+import { narrativeStack, stackProblem, type Timeline } from "./compile/timeline.ts";
 import { formatTimecode } from "./presentation/duration.ts";
 import { PresentationError } from "./presentation/parse.ts";
 import { renderPresentationFile, StageError } from "./pipeline.ts";
@@ -168,7 +169,8 @@ async function runRender(
         `  layouts ${layouts}\n` +
         `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
-        `  narration kept in ${summary.workspace}\n`,
+        `  narration kept in ${summary.workspace}\n` +
+        describeDescent(timeline),
     );
     return 0;
   } catch (error) {
@@ -182,6 +184,52 @@ async function runRender(
     }
     throw error;
   }
+}
+
+/**
+ * The call stack a deck descended through, if it descended at all.
+ *
+ * Printed rather than only tested, because a compiled timeline that "visibly and testably
+ * descends" should not need a test runner to be visible. It is also the fastest way to see that
+ * a child's narration really did land between its own two thresholds — the indentation is the
+ * stack, and the timecodes are the proof that nothing overlaps.
+ *
+ * Silent on every deck that never descends, which is all of them so far.
+ */
+function describeDescent(timeline: Timeline): string {
+  const lines: string[] = [];
+  for (const scene of timeline.scenes) {
+    if (scene.calls.length === 0) continue;
+    const problem = stackProblem(scene);
+    lines.push(
+      `  slide ${scene.ordinal} descends` +
+        (problem === undefined ? "" : ` (${problem})`),
+    );
+
+    let depth = 0;
+    let spoken = 0;
+    const flush = (): void => {
+      if (spoken === 0) return;
+      lines.push(`  ${"  ".repeat(depth + 1)}${spoken} cue${spoken === 1 ? "" : "s"}`);
+      spoken = 0;
+    };
+    for (const event of narrativeStack(scene)) {
+      const at = formatTimecode((event.frame / timeline.fps) * 1000);
+      if (event.kind === "narrate") {
+        spoken += 1;
+        continue;
+      }
+      flush();
+      if (event.kind === "exit") depth -= 1;
+      lines.push(
+        `  ${"  ".repeat(depth + 1)}${event.kind === "enter" ? "→" : "←"} ` +
+          `${event.kind === "enter" ? event.into : event.scope} at ${at}`,
+      );
+      if (event.kind === "enter") depth += 1;
+    }
+    flush();
+  }
+  return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }
 
 function parseSpeed(raw: string): number {
