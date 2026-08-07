@@ -2,13 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  bodyBox,
+  codeBox,
   CODE,
   COLORS,
+  FIGURE,
   fitHeading,
+  fitQuote,
   fitSpecimen,
   fitTerm,
   headingLines,
   mix,
+  quoteHeight,
+  quoteLines,
   TYPE,
 } from "./theme.ts";
 
@@ -88,6 +94,65 @@ test("headings step down as they lengthen, and never up", () => {
     assert.ok(size <= previous, `heading grew at length ${length}`);
     previous = size;
   }
+});
+
+/* ------------------------------------------------- a spoken sentence, set whole */
+
+/** The measure the anchors figure sets a row's sentence to, at 1920x1080. */
+const ROW_MEASURE = bodyBox("Semantic anchors").width - 590;
+
+test("a specimen's box is the body's, less the gutter it keeps for its marks", () => {
+  const title = "Author relationships. Derive mechanics.";
+  assert.equal(codeBox(title).width, bodyBox(title).width - CODE.gutter);
+  assert.equal(codeBox(title).height, bodyBox(title).height);
+});
+
+test("a sentence too long for its measure takes another line, never fewer words", () => {
+  const width = 1000;
+  assert.equal(quoteLines(40, width, FIGURE.quote), 1);
+  // Twice the characters at the same size is twice the lines, not the same line truncated.
+  assert.ok(quoteLines(200, width, FIGURE.quote) > quoteLines(100, width, FIGURE.quote));
+  // And a narrower column costs lines rather than words.
+  assert.ok(quoteLines(100, 400, FIGURE.quote) > quoteLines(100, 1200, FIGURE.quote));
+});
+
+test("the type steps down before the lines do, and stops at the readable floor", () => {
+  assert.equal(fitQuote(["short one"], ROW_MEASURE).size, FIGURE.quote);
+
+  // Every sentence the observatory's narration puts on screen fits in the preferred number of
+  // lines at full size — which is the measurement that says the ellipsis was never necessary.
+  const observatory = [
+    "“Because the author never writes a time. They write which sentence is about which thing.”",
+    "“On the left, what somebody typed. On the right, the frame cuecraft worked out it becomes true on.”",
+    "“Every span is a sentence that was actually synthesized, and every width is how long it really took.”",
+  ];
+  const fitted = fitQuote(observatory, ROW_MEASURE);
+  assert.ok(fitted.size >= FIGURE.quoteMin);
+  assert.equal(fitted.lines, FIGURE.quoteLines);
+
+  // A sentence nothing can fit in two lines is set at the floor and given the lines it needs,
+  // because unreadably small is another way of throwing the words away.
+  const enormous = fitQuote(["x".repeat(4000)], ROW_MEASURE);
+  assert.equal(enormous.size, FIGURE.quoteMin);
+  assert.ok(enormous.lines > FIGURE.quoteLines);
+});
+
+test("a fitted quote always has room for every line it was measured at", () => {
+  for (const length of [10, 60, 120, 400]) {
+    const fitted = fitQuote(["x".repeat(length)], ROW_MEASURE);
+    assert.ok(quoteLines(length, ROW_MEASURE, fitted.size) <= fitted.lines);
+    assert.ok(quoteHeight(fitted.size, fitted.lines) >= fitted.size * fitted.lines);
+  }
+});
+
+test("the anchors figure has room for a neighbourhood of whole sentences", () => {
+  const box = bodyBox("Semantic anchors");
+  const fitted = fitQuote(["x".repeat(90)], ROW_MEASURE);
+  const rowHeight = quoteHeight(fitted.size, fitted.lines) + 48;
+  const budget = box.height - 96 - 44 - 40;
+  const rows = Math.floor(budget / rowHeight);
+  assert.ok(rows >= FIGURE.minRows, `only ${rows} rows fit under the heading`);
+  assert.ok(rows <= FIGURE.rows);
 });
 
 test("a matrix of four terms is set larger than a matrix of six", () => {

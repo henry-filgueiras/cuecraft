@@ -1838,6 +1838,7 @@ function Composition({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: nu
       <div style={{ flex: 1, display: "flex", marginTop: SPACE.xl }}>
         <Figure
           kind={scene.body.kind === "figure" ? scene.body.figure : "timing"}
+          title={scene.title}
           absoluteFrame={absoluteFrame}
         />
       </div>

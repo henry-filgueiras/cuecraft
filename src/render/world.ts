@@ -494,6 +494,32 @@ export const CAMERA = {
    * them where they have returned to. Six tenths of a second is enough to land it.
    */
   returnHold: 20,
+
+  /* ---- landing on a subject, before something that is not a framing decision ---- */
+
+  /**
+   * A beat between arriving on a subject and the operation that consumes it.
+   *
+   * Two moments in a traversal are not followed by another shot: going *inside* a concept, and
+   * pulling back off the last one. Running either straight out of the approach reads as one
+   * continuous gesture — "scale this rectangle from wherever it happens to be" — rather than as
+   * two things, and the composition the approach just found is never actually seen. Four tenths
+   * of a second is the shortest hold that registers as a hold.
+   */
+  settle: 12,
+  /**
+   * How far off centre a subject may already sit and still count as composed, as a fraction of
+   * the frame, and how far off the scale may be, as a fraction of the composed width.
+   *
+   * This is the hold policy again, at a tighter tolerance and against a different question.
+   * `shotFor` asks "can the viewer see it?", which is the right question for a shot that is about
+   * to be replaced by another shot. A composed arrival asks "is this the shot?", because what
+   * follows it is a scale transition or a reveal, and both of those are read against the frame's
+   * centre. So the test is proximity to the canonical framing rather than mere containment —
+   * still a reason to move rather than an obligation, just a stricter one.
+   */
+  composedOffset: 0.05,
+  composedScale: 0.15,
 } as const;
 
 /**
@@ -617,7 +643,7 @@ export interface CameraEvent {
 }
 
 /** What the camera decided to do about one narration event, and why it is describable. */
-export type ShotKind = "hold" | "pan" | "recompose" | "enter" | "exit";
+export type ShotKind = "hold" | "pan" | "recompose" | "enter" | "exit" | "arrive";
 
 export interface CameraShot {
   readonly frame: number;
@@ -681,6 +707,42 @@ export function shotFor(
   };
 }
 
+/**
+ * The shot a subject gets when what happens next is not another shot.
+ *
+ * `shotFor` decides between three ways of *continuing* a traversal, and its preference for doing
+ * nothing is what makes the camera calm. But twice in a scene the thing after the shot is not a
+ * framing decision at all — the camera goes inside the subject, or it pulls back off it — and
+ * both of those are read against the centre of the frame. A subject sitting a quarter of the
+ * frame off to one side is perfectly visible and completely wrong for either: the expansion
+ * becomes "this rectangle grows from over there" instead of "this concept opens", and the pull
+ * back leaves from a destination that never landed.
+ *
+ * So this asks the stricter question — *is this the composition?* rather than *can it be seen?* —
+ * and answers it the same way, with a hold when the answer is already yes. Off-centre and
+ * off-scale are compared separately because they fail differently: a subject at the right size in
+ * the wrong place needs the camera to look elsewhere, and one in the right place at the wrong
+ * size needs it to move closer.
+ *
+ * decision:29 has the measurements that motivated it, both taken off the observatory's own frames.
+ */
+export function composedShot(
+  current: Viewport,
+  subject: Rect,
+  world: Rect,
+  aspect: number = 16 / 9,
+): { readonly view: Viewport; readonly kind: "hold" | "arrive" } {
+  const composed = fitTo(subject, world, { aspect, widest: CAMERA.widest });
+  const offset = Math.max(
+    Math.abs(current.cx - composed.cx) / current.width,
+    Math.abs(current.cy - composed.cy) / (current.width / aspect),
+  );
+  const scale = Math.abs(current.width - composed.width) / composed.width;
+  return offset <= CAMERA.composedOffset && scale <= CAMERA.composedScale
+    ? { view: current, kind: "hold" }
+    : { view: composed, kind: "arrive" };
+}
+
 /** The rectangle a viewport covers. */
 export function viewRect(view: Viewport, aspect: number = 16 / 9): Rect {
   const height = view.width / aspect;
@@ -722,16 +784,31 @@ function slideInto(centre: number, low: number, extent: number, frame: number): 
 /**
  * The rectangle an entity opens into.
  *
- * Sixteen by nine, centred on the plate's own centre, and that centring is the load-bearing part:
- * the camera also centres on the plate, so through the whole expansion the plate's middle sits at
- * exactly the same place on screen. The thing does not travel and then become something else; it
- * stays where it is and opens.
+ * Sixteen by nine, centred by default on the plate's own centre, and that centring is the
+ * load-bearing part: the camera also centres on the plate, so through the whole expansion the
+ * plate's middle sits at exactly the same place on screen. The thing does not travel and then
+ * become something else; it stays where it is and opens.
+ *
+ * `about` is where the camera will actually be standing when it opens, and it exists for the one
+ * case where that is not the plate's centre. A plate at the very edge of the world cannot be
+ * centred — `fitTo` clamps the shot so half the frame is not void — so the entry framing settles a
+ * little to one side of it. Centring the chamber on the plate anyway would make the camera pan
+ * that distance *during* the expansion, and a pan compounded with a scale is exactly what makes
+ * one edge of the plate reach the frame edge long before another. Centring it on the shot instead
+ * leaves the camera perfectly still: the expansion becomes a pure change of scale, and the plate
+ * slides to the middle as it grows, which is the node becoming the viewport rather than a
+ * rectangle being enlarged. When the entry shot *is* centred on the plate — which is the ordinary
+ * case, and now the case at every portal in both specimens — the two are the same rectangle.
  *
  * Not clamped to the world. A chamber is allowed to extend past the edge of the world, because by
  * the time it has, the world is no longer what is being looked at.
  */
-export function chamberFor(node: WorldNode, aspect: number = 16 / 9): Rect {
-  const centre = centreOf(node.rect);
+export function chamberFor(
+  node: WorldNode,
+  aspect: number = 16 / 9,
+  about?: Point,
+): Rect {
+  const centre = about ?? centreOf(node.rect);
   const width = CAMERA.chamberWidth;
   const height = width / aspect;
   return { x: centre.x - width / 2, y: centre.y - height / 2, width, height };
@@ -788,8 +865,20 @@ export function portalAt(pass: PortalPass, frame: number): number {
  *   cuecraft where the right answer to "what should happen now" is "nothing".
  * - **An entity may be entered.** An event that reaches *into* one — or that reaches the entity
  *   itself, when it has an inside — opens a portal, and the first event afterwards that does not
- *   closes it. The approach obeys the hold policy like any other shot; the expansion that follows
+ *   closes it. The approach obeys a hold policy like any other shot; the expansion that follows
  *   does not, because a scale transition is not a framing decision, it is the content.
+ *
+ * Twice, though, the thing after a shot is not another shot, and those two get a composed arrival
+ * instead of an adequate one (`composedShot`), plus a beat to land in:
+ *
+ *     entering a concept    frame the subject, settle, expand into the interior
+ *     reaching the end      frame the subject, settle, pull back to the whole world
+ *
+ * Both are still derived from what the narration reached and from the shape of the graph — the
+ * second fires on out-degree zero with nothing said afterwards, which is the world's product and
+ * the reveal, neither of them named anywhere. Neither adds a move the camera would not otherwise
+ * have made; they change *where* a move it was already making ends up, and how long the frame is
+ * allowed to hold before the next thing happens to it (decision:29).
  */
 export interface CameraPlan {
   readonly track: readonly CameraKey[];
@@ -808,9 +897,9 @@ export function cameraPlan(
   const ordered = [...events].sort((a, b) => a.frame - b.frame);
 
   const established = new Set<string>();
-  // A stop may name its own duration. Only the two that are not framing decisions do: going
-  // inside something and coming back out are thresholds, not traversals, so they are not paced
-  // by a distance they do not cover.
+  // A stop may name its own duration. Two kinds do: going inside something and coming back out
+  // are thresholds, not traversals, so they are not paced by a distance they do not cover — and
+  // an approach names its own because the frame *after* it depends on when it lands.
   const stops: { frame: number; view: Viewport; travel?: number }[] = [
     { frame: span.from, view: whole },
   ];
@@ -818,6 +907,8 @@ export function cameraPlan(
   const portals: PortalPass[] = [];
   let current = whole;
   let open: { id: string; chamber: Rect; enterFrame: number } | undefined;
+  /** The earliest the reveal may begin, once something has landed that it must not cut off. */
+  let landed = span.from;
 
   const push = (frame: number, view: Viewport, travel?: number): void => {
     stops.push({
@@ -828,7 +919,7 @@ export function cameraPlan(
     current = view;
   };
 
-  for (const event of ordered) {
+  for (const [index, event] of ordered.entries()) {
     let frame = Math.max(event.frame, span.from);
 
     // Leaving comes first: an event outside the open entity closes it before it is framed.
@@ -862,13 +953,18 @@ export function cameraPlan(
       if (open === undefined) {
         const node = layout.byId.get(event.inside);
         if (node !== undefined) {
-          // Approach, then open. The camera frames the concept where it lives in the world first,
-          // and only then does it expand — so the viewer sees the thing they are about to be
-          // inside of, in its own place, whether the camera was next to it or across the world.
-          // A shot that already frames it well approaches in no time at all, which is the hold
-          // policy paying for itself in a place it was not designed for.
+          // Compose, settle, then open. The camera frames the concept where it lives in the world
+          // first, holds there long enough for that framing to be seen, and only then expands —
+          // so the viewer watches a subject they have already been shown become the frame,
+          // whether the camera was next to it or across the world.
+          //
+          // Composed rather than merely adequate (`composedShot` rather than `shotFor`), because
+          // the expansion is about to make the plate's own outline into the edge of the picture,
+          // and it can only read that way if the plate is where the picture's centre is. A shot
+          // that already sits there approaches in no time at all, which is the hold policy paying
+          // for itself in a place it was not designed for.
           const before = current;
-          const approach = shotFor(before, node.rect, layout.bounds, aspect);
+          const approach = composedShot(before, node.rect, layout.bounds, aspect);
           let openAt = frame;
           if (approach.kind !== "hold") {
             const travel = paceOf(
@@ -878,10 +974,10 @@ export function cameraPlan(
               CAMERA.maxTravel,
             );
             push(frame, approach.view, travel);
-            openAt = frame + travel;
+            openAt = frame + travel + CAMERA.settle;
           }
 
-          const chamber = chamberFor(node, aspect);
+          const chamber = chamberFor(node, aspect, { x: current.cx, y: current.cy });
           const view: Viewport = {
             cx: chamber.x + chamber.width / 2,
             cy: chamber.y + chamber.height / 2,
@@ -898,8 +994,35 @@ export function cameraPlan(
       continue;
     }
 
-    const bounds = targetBounds(layout, event.id, established);
     established.add(event.id);
+
+    // Arriving at the end of the world, with nothing after it but the pull back.
+    //
+    // The last thing a traversal reaches, when no relation leaves it, is the world's product —
+    // and out-degree zero is a fact about the graph rather than anything an author wrote down, so
+    // the rule needs no name, no label and no key. What makes it a special shot is not that the
+    // entity is important; it is that the *next* operation is the reveal, which is read from the
+    // centre of the frame outwards. A destination clinging to a corner has nowhere to be pulled
+    // back from, and the reveal that follows reads as the camera giving up rather than as an
+    // answer. So the subject is composed and given a beat to land in before the world opens up.
+    //
+    // The subject alone, without the established context `targetBounds` would gather: this is a
+    // full stop, and a full stop is not shared.
+    const node = layout.byId.get(event.id);
+    if (index === ordered.length - 1 && node?.terminal === true) {
+      const arrival = composedShot(current, node.rect, layout.bounds, aspect);
+      shots.push({ frame, id: event.id, kind: arrival.kind, view: arrival.view });
+      if (arrival.kind === "hold") {
+        landed = Math.max(landed, frame + CAMERA.settle);
+      } else {
+        const travel = paceOf(current, arrival.view, CAMERA.minTravel, CAMERA.maxTravel);
+        push(frame, arrival.view, travel);
+        landed = Math.max(landed, frame + travel + CAMERA.settle);
+      }
+      continue;
+    }
+
+    const bounds = targetBounds(layout, event.id, established);
     const shot = shotFor(current, bounds, layout.bounds, aspect);
     shots.push({ frame, id: event.id, kind: shot.kind, view: shot.view });
     if (shot.kind !== "hold") push(frame, shot.view);
@@ -917,7 +1040,11 @@ export function cameraPlan(
     });
   }
 
-  stops.push({ frame: Math.max(span.until, span.from), view: whole });
+  // The reveal begins when the narration stops naming things, and not before the last thing it
+  // named has arrived. `landed` is a floor rather than a schedule: on a deck whose closing lines
+  // leave any room at all it changes nothing, and on one that does not it buys the arrival its
+  // beat out of the pull back rather than out of the shot before it.
+  stops.push({ frame: Math.max(span.until, span.from, landed), view: whole });
 
   const track: CameraKey[] = stops.map((stop, index) => {
     if (index === 0) return { frame: stop.frame, view: stop.view, travel: 1 };

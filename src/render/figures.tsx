@@ -12,13 +12,18 @@ import {
 import type { FigureKind } from "../presentation/figure.ts";
 import { anchorState, WORLD_TIMING } from "./anchor.ts";
 import {
+  CODE,
   COLORS,
   FIGURE,
   MONO_STACK,
   MOTION,
+  QUOTE_LEADING,
   SPACE,
   TYPE,
+  bodyBox,
+  fitQuote,
   mix,
+  quoteHeight,
   withAlpha,
 } from "./theme.ts";
 
@@ -57,17 +62,20 @@ export function useFacts(): CompilationFacts | undefined {
 
 export function Figure({
   kind,
+  title,
   absoluteFrame,
 }: {
   kind: FigureKind;
+  /** The heading above the figure — which is how much canvas is left under it. */
+  title: string;
   absoluteFrame: number;
 }) {
   const facts = useFacts();
   if (facts === undefined || facts.clips.length === 0) return null;
   return kind === "timing" ? (
-    <Chronicle facts={facts} absoluteFrame={absoluteFrame} />
+    <Chronicle facts={facts} title={title} absoluteFrame={absoluteFrame} />
   ) : (
-    <Resolution facts={facts} absoluteFrame={absoluteFrame} />
+    <Resolution facts={facts} title={title} absoluteFrame={absoluteFrame} />
   );
 }
 
@@ -81,10 +89,9 @@ function timecode(value: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-/** A sentence, at caption length. Formatting is the renderer's; the words are the author's. */
-function shorten(text: string, measure: number): string {
-  const clean = text.trim();
-  return clean.length <= measure ? clean : `${clean.slice(0, measure - 1).trimEnd()}…`;
+/** A sentence, quoted. Formatting is the renderer's; the words are the author's, all of them. */
+function quoted(text: string): string {
+  return `“${text.trim()}”`;
 }
 
 /**
@@ -101,14 +108,29 @@ function shorten(text: string, measure: number): string {
  */
 function Chronicle({
   facts,
+  title,
   absoluteFrame,
 }: {
   facts: CompilationFacts;
+  title: string;
   absoluteFrame: number;
 }) {
   const frame = useCurrentFrame();
   const current = clipAt(facts, absoluteFrame);
   const at = (value: number) => (value / facts.totalFrames) * 100;
+
+  // The measured duration takes a fixed column — the widest one any clip will need — so the
+  // sentence beside it starts in the same place all the way through, and so the width left for
+  // the sentence is known before anything is drawn.
+  const measureWidth = Math.ceil(
+    Math.max(...facts.clips.map((clip) => seconds(clip.seconds).length)) *
+      FIGURE.measure *
+      CODE.charWidth,
+  );
+  const quote = fitQuote(
+    facts.clips.map((clip) => quoted(clip.text)),
+    bodyBox(title).width - measureWidth - SPACE.xl,
+  );
 
   const drawn = interpolate(frame, [0, MOTION.rise * 2], [0, 1], {
     extrapolateLeft: "clamp",
@@ -234,13 +256,36 @@ function Chronicle({
         </div>
       </div>
 
-      {current !== undefined ? <CurrentClip clip={current} arrived={arrived} /> : null}
+      {current !== undefined ? (
+        <CurrentClip
+          clip={current}
+          arrived={arrived}
+          measureWidth={measureWidth}
+          quote={quote}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** The sentence being heard, and its real length, at the size a headline is set. */
-function CurrentClip({ clip, arrived }: { clip: ClipFact; arrived: number }) {
+/**
+ * The sentence being heard, and its real length, at the size a headline is set.
+ *
+ * The block is given the height of the longest sentence in the deck rather than of this one, so
+ * the rail above it does not shift up and down as the narration moves from a short cue to a long
+ * one. The sentence itself is whole, always (`fitQuote`).
+ */
+function CurrentClip({
+  clip,
+  arrived,
+  measureWidth,
+  quote,
+}: {
+  clip: ClipFact;
+  arrived: number;
+  measureWidth: number;
+  quote: { readonly size: number; readonly lines: number };
+}) {
   return (
     <div
       style={{
@@ -253,6 +298,7 @@ function CurrentClip({ clip, arrived }: { clip: ClipFact; arrived: number }) {
     >
       <div
         style={{
+          width: measureWidth,
           fontFamily: MONO_STACK,
           fontSize: FIGURE.measure,
           fontWeight: 600,
@@ -278,12 +324,13 @@ function CurrentClip({ clip, arrived }: { clip: ClipFact; arrived: number }) {
         <div
           style={{
             marginTop: SPACE.sm,
-            fontSize: FIGURE.quote,
-            lineHeight: 1.28,
+            height: quoteHeight(quote.size, quote.lines),
+            fontSize: quote.size,
+            lineHeight: QUOTE_LEADING,
             color: COLORS.muted,
           }}
         >
-          “{shorten(clip.text, 78)}”
+          {quoted(clip.text)}
         </div>
       </div>
     </div>
@@ -297,14 +344,22 @@ function CurrentClip({ clip, arrived }: { clip: ClipFact; arrived: number }) {
  * somebody typed: a sentence, and the name of what it is about. On the right, a number nobody
  * typed and nobody could have. The row that is currently true is lit.
  *
- * Five rows, not all of them, chosen around the moment — the projection decision. The full list
+ * A few rows, not all of them, chosen around the moment — the projection decision. The full list
  * is available and putting it on screen would be a worse presentation of the same truth.
+ *
+ * *How many* rows is derived rather than fixed, because the sentences are set whole and a row
+ * that has to hold a whole sentence is as tall as that sentence needs. `FIGURE.rows` is the most
+ * worth showing and `FIGURE.minRows` the fewest that still read as a neighbourhood; between them
+ * the answer is however many fit under the heading. Selecting fewer relationships is a projection
+ * cost; dropping half a sentence is a lie about what was said.
  */
 function Resolution({
   facts,
+  title,
   absoluteFrame,
 }: {
   facts: CompilationFacts;
+  title: string;
   absoluteFrame: number;
 }) {
   const frame = useCurrentFrame();
@@ -312,7 +367,18 @@ function Resolution({
   const index = facts.anchors.findIndex(
     (anchor) => anchor.frame === current?.frame && anchor.id === current?.id,
   );
-  const window = around(facts.anchors, Math.max(index, 0), FIGURE.rows);
+
+  const quote = fitQuote(
+    facts.anchors.map((anchor) => quoted(anchor.text)),
+    rowQuoteWidth(bodyBox(title).width),
+  );
+  const rowHeight = quoteHeight(quote.size, quote.lines) + 2 * SPACE.md;
+  const budget = bodyBox(title).height - SPACE.xxl - LEGEND_HEIGHT - SPACE.lg;
+  const rows = Math.max(
+    FIGURE.minRows,
+    Math.min(FIGURE.rows, Math.floor(budget / rowHeight)),
+  );
+  const window = around(facts.anchors, Math.max(index, 0), rows);
 
   return (
     <div
@@ -335,12 +401,30 @@ function Resolution({
             frame={frame}
             delay={MOTION.contentDelay + row * MOTION.stagger * 1.6}
             absoluteFrame={absoluteFrame}
+            height={rowHeight}
+            quote={quote}
           />
         ))}
       </div>
     </div>
   );
 }
+
+/**
+ * The measure a row's sentence is set to.
+ *
+ * The row bleeds one gutter to the left of the column so its lit background reads as a band
+ * rather than as a box, and the two derived columns on the right are fixed — so the sentence gets
+ * what is left, and it is known without measuring anything.
+ */
+function rowQuoteWidth(width: number): number {
+  return width - SPACE.lg - 2 * SPACE.lg - ROW_IDENTITY - ROW_RESOLVED;
+}
+
+const ROW_IDENTITY = 260;
+const ROW_RESOLVED = 210;
+/** The two small-caps column names, their rule, and the space above it. */
+const LEGEND_HEIGHT = Math.ceil(FIGURE.label * 1.2) + SPACE.sm + 1;
 
 function Row({
   anchor,
@@ -349,6 +433,8 @@ function Row({
   frame,
   delay,
   absoluteFrame,
+  height,
+  quote,
 }: {
   anchor: AnchorFact;
   live: boolean;
@@ -356,6 +442,9 @@ function Row({
   frame: number;
   delay: number;
   absoluteFrame: number;
+  /** Uniform across the window, so a one-line sentence does not shorten its own row. */
+  height: number;
+  quote: { readonly size: number; readonly lines: number };
 }) {
   const arriving = interpolate(frame, [delay, delay + MOTION.rise], [0, 1], {
     extrapolateLeft: "clamp",
@@ -376,7 +465,8 @@ function Row({
         display: "flex",
         alignItems: "center",
         gap: SPACE.lg,
-        padding: `${SPACE.md}px ${SPACE.lg}px`,
+        height,
+        padding: `0 ${SPACE.lg}px`,
         marginLeft: -SPACE.lg,
         borderRadius: 8,
         opacity: presence,
@@ -392,16 +482,16 @@ function Row({
       <div
         style={{
           flex: 1,
-          fontSize: FIGURE.quote,
-          lineHeight: 1.24,
+          fontSize: quote.size,
+          lineHeight: QUOTE_LEADING,
           color: live ? COLORS.paper : COLORS.muted,
         }}
       >
-        “{shorten(anchor.text, 54)}”
+        {quoted(anchor.text)}
       </div>
       <div
         style={{
-          width: 260,
+          width: ROW_IDENTITY,
           fontFamily: MONO_STACK,
           fontSize: FIGURE.identity,
           color: FIGURE.authored,
@@ -412,7 +502,7 @@ function Row({
       </div>
       <div
         style={{
-          width: 210,
+          width: ROW_RESOLVED,
           textAlign: "right",
           fontFamily: MONO_STACK,
           fontSize: FIGURE.resolved,

@@ -7,6 +7,7 @@ import {
   cameraPlan,
   cameraTrack,
   chamberFor,
+  composedShot,
   fitTo,
   layoutWorld,
   marginOf,
@@ -496,6 +497,100 @@ test("coming out lands on the entity that was entered, before going anywhere els
   const after = excursion.track.find((key) => key.frame > exit.frame);
   assert.ok(after !== undefined);
   assert.equal(after.frame, exit.frame + CAMERA.exitTravel + CAMERA.returnHold);
+});
+
+/* --------------------------------------------- landing before something that is not a shot */
+
+test("a composed arrival wants the subject in the middle, not merely on screen", () => {
+  const subject = rectOf(laid, "state");
+  const composed = fitTo(subject, laid.bounds, { widest: CAMERA.widest });
+  assert.equal(composedShot(composed, subject, laid.bounds).kind, "hold");
+
+  // A shot that keeps the subject comfortably inside the frame — one `shotFor` is happy to hold
+  // — is not the shot to expand or to pull back from.
+  const drifted = { ...composed, cx: composed.cx + composed.width * 0.12 };
+  assert.equal(shotFor(drifted, subject, laid.bounds).kind, "hold");
+  const arrival = composedShot(drifted, subject, laid.bounds);
+  assert.equal(arrival.kind, "arrive");
+  assert.deepEqual(arrival.view, composed);
+});
+
+test("the portal opens on a composed shot of the plate, after a beat on it", () => {
+  // The camera starts on the whole world, so the concept it is about to enter is across the map.
+  const pass = excursion.portals[0];
+  assert.ok(pass !== undefined);
+  const node = laid.byId.get("speech");
+  assert.ok(node !== undefined);
+
+  const at = cameraAt(excursion.track, pass.enterFrame);
+  const centre = {
+    x: node.rect.x + node.rect.width / 2,
+    y: node.rect.y + node.rect.height / 2,
+  };
+  assert.ok(
+    Math.abs(centre.x - at.cx) / at.width <= CAMERA.composedOffset,
+    "the plate is centred horizontally when the expansion begins",
+  );
+  assert.ok(
+    Math.abs(centre.y - at.cy) / (at.width / (16 / 9)) <= CAMERA.composedOffset,
+    "and vertically",
+  );
+
+  // And it was standing there before it started: the approach lands, then the frame holds.
+  const approach = excursion.track.filter((key) => key.frame < pass.enterFrame).at(-1);
+  assert.ok(approach !== undefined);
+  assert.equal(pass.enterFrame - (approach.frame + approach.travel), CAMERA.settle);
+});
+
+test("the chamber opens about the shot, so the camera only changes scale", () => {
+  const pass = excursion.portals[0];
+  assert.ok(pass !== undefined);
+  const at = cameraAt(excursion.track, pass.enterFrame);
+  assert.ok(Math.abs(pass.chamber.x + pass.chamber.width / 2 - at.cx) < 0.5);
+  assert.ok(Math.abs(pass.chamber.y + pass.chamber.height / 2 - at.cy) < 0.5);
+});
+
+test("the last entity nothing leaves is composed, and the reveal waits for it to land", () => {
+  const arriving = cameraPlan(
+    laid,
+    [
+      { frame: 100, id: "state" },
+      { frame: 200, id: "remotion" },
+      { frame: 240, id: "video" },
+    ],
+    { from: 0, until: 250 },
+  );
+
+  const last = arriving.shots.at(-1);
+  assert.ok(last !== undefined);
+  assert.equal(last.id, "video");
+  assert.equal(last.kind, "arrive", "the world's product gets a shot of its own");
+  assert.deepEqual(
+    last.view,
+    fitTo(rectOf(laid, "video"), laid.bounds, { widest: CAMERA.widest }),
+  );
+
+  // The reveal was due at 250, which is before the arrival has even finished moving.
+  const reveal = arriving.track.at(-1);
+  const arrival = arriving.track.at(-2);
+  assert.ok(reveal !== undefined && arrival !== undefined);
+  assert.equal(reveal.frame, arrival.frame + arrival.travel + CAMERA.settle);
+  assert.ok(reveal.frame > 250, "and it waited rather than cutting the arrival off");
+});
+
+test("a terminal entity reached mid-traversal is framed like anything else", () => {
+  // The rule is about what comes *next*, not about which entity it is: reaching the product and
+  // then carrying on talking about something else is an ordinary shot.
+  const passing = cameraPlan(
+    laid,
+    [
+      { frame: 100, id: "video" },
+      { frame: 200, id: "source" },
+    ],
+    { from: 0, until: 400 },
+  );
+  assert.ok(passing.shots.every((shot) => shot.kind !== "arrive"));
+  assert.equal(passing.track.at(-1)?.frame, 400, "and the reveal is not delayed");
 });
 
 test("a world with no interiors plans exactly as it did before they existed", () => {

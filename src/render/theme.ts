@@ -342,14 +342,84 @@ export const FIGURE = {
   resolved: 56,
   /** An identity somebody typed twice. */
   identity: 38,
-  /** A sentence, quoted back. */
+  /** A sentence, quoted back — and the smallest it may be set at before it stops being read. */
   quote: 34,
+  quoteMin: 24,
+  /**
+   * Lines a quoted sentence is set to before the type steps down instead.
+   *
+   * Two, because a caption-like line of narration wants to be read in one movement of the eye and
+   * three lines of 34px prose in a figure is a paragraph. It is a *preference*, not a limit: if a
+   * sentence will not fit in two lines even at `quoteMin`, it takes the lines it needs. Nothing
+   * here may drop a word (decision:28).
+   */
+  quoteLines: 2,
   /** The small caps that name a column. */
   label: 22,
 
-  /** How many resolved relationships are worth showing at once. */
+  /** The most resolved relationships worth showing at once, if that many will fit whole. */
   rows: 5,
+  /** ...and the fewest worth calling a neighbourhood. */
+  minRows: 3,
 } as const;
+
+/**
+ * Average advance width of the body face, as a fraction of the font size.
+ *
+ * Same estimate as `HEADING_CHAR_WIDTH` and for the same reason — composition has to resolve
+ * without a browser — but measured at text sizes rather than display sizes, where the mix of
+ * characters in ordinary prose runs slightly wider relative to the em.
+ */
+export const BODY_CHAR_WIDTH = 0.52;
+
+/** Leading a quoted sentence is set on, and the height a block of `lines` of it occupies. */
+export const QUOTE_LEADING = 1.26;
+
+export function quoteHeight(size: number, lines: number): number {
+  return Math.ceil(size * QUOTE_LEADING * lines);
+}
+
+export function quoteLines(length: number, width: number, size: number): number {
+  const perLine = Math.max(1, Math.floor(width / (size * BODY_CHAR_WIDTH)));
+  return Math.max(1, Math.ceil(length / perLine));
+}
+
+/**
+ * How a quoted sentence is set, so that all of it is on the frame.
+ *
+ * The two figures are the only place in cuecraft where narration appears *as text while it is
+ * being spoken*, which makes it behave like a caption whether or not it was meant to: a viewer
+ * who starts reading along expects to finish the sentence. The first cut cut it off with an
+ * ellipsis at a fixed character count, and the ellipsis was permanent — the words behind it were
+ * not reachable later, at any point, in any state. That is the one thing a caption may not do
+ * (decision:28).
+ *
+ * So the sentence is never shortened. It wraps to `FIGURE.quoteLines`, and when it will not fit
+ * in that many lines the *type* steps down rather than the words dropping off — the same move
+ * `fitHeading` makes for a long title, for the same reason. Below `FIGURE.quoteMin` it stops
+ * stepping down and takes the lines it needs instead, because unreadably small is another way of
+ * discarding an utterance.
+ *
+ * Fitted across every sentence that will appear rather than one at a time, so the size is a
+ * property of the figure and not of whichever cue happens to be lit. Type that changed size every
+ * time the narration moved on would be the most distracting thing on the frame.
+ *
+ * Honest elision remains available for *evidence*: a quoted region of a source file is a
+ * different kind of text, and idea:14 parks marking an omission in one. It is not available for
+ * an utterance.
+ */
+export function fitQuote(
+  displayed: readonly string[],
+  width: number,
+): { readonly size: number; readonly lines: number } {
+  const longest = Math.max(1, ...displayed.map((text) => text.length));
+  for (let size = FIGURE.quote; size >= FIGURE.quoteMin; size -= 2) {
+    if (quoteLines(longest, width, size) <= FIGURE.quoteLines) {
+      return { size, lines: FIGURE.quoteLines };
+    }
+  }
+  return { size: FIGURE.quoteMin, lines: quoteLines(longest, width, FIGURE.quoteMin) };
+}
 
 /** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
 export const HEADING_WIDTH = 1500;
@@ -361,19 +431,26 @@ export const HEADING_WIDTH = 1500;
  * of the arithmetic. It was not, once, and the close slide's last line sat on the bottom margin.
  *
  * Here rather than in the archetype that draws it, because it is the input to every sizing
- * decision a code block makes and those are now decided before anything is drawn: `fitSpecimen`
- * needs it, and so does the projection search that calls `fitSpecimen` (`./projection.ts`).
+ * decision made before anything is drawn: `fitSpecimen` needs it, so does the projection search
+ * that calls `fitSpecimen` (`./projection.ts`), and so does a figure deciding how many rows of
+ * complete sentences it has room for (`./figures.tsx`).
  */
-export function codeBox(title: string): { width: number; height: number } {
+export function bodyBox(title: string): { width: number; height: number } {
   const titleSize = fitHeading(title.length, TYPE.title);
   const titleHeight =
     headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
   return {
-    width: 1920 - 2 * FRAME.marginX - CODE.gutter,
+    width: 1920 - 2 * FRAME.marginX,
     // The 6 is the accent rule above the heading; SPACE.lg sits under it, SPACE.xl under
     // the title.
     height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
   };
+}
+
+/** The same box, less the gutter a specimen keeps for its activation marks. */
+export function codeBox(title: string): { width: number; height: number } {
+  const box = bodyBox(title);
+  return { width: box.width - CODE.gutter, height: box.height };
 }
 
 /**
