@@ -2,8 +2,9 @@
 id: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 sequence: 6
 kind: sprint
-status: active
+status: closed
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Nested worlds as a narrative call stack
