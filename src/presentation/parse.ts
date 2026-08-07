@@ -15,6 +15,13 @@ import {
   resolveModuleSpec,
 } from "./module.ts";
 import { bindNarration, modulesOf } from "./nest.ts";
+import {
+  MAX_SERIES_TOTAL,
+  SERIES_GROUP_HINT,
+  seriesGroupOf,
+  seriesGroupProblem,
+  seriesTotal,
+} from "./series.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "./scope.ts";
 import {
   languageOf,
@@ -610,6 +617,7 @@ function buildSlideSchema(resolution: Resolution) {
       world: z.unknown().optional(),
       figure: z.unknown().optional(),
       formula: z.unknown().optional(),
+      series: z.unknown().optional(),
     })
     .superRefine((slide, context) => {
       const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
@@ -652,6 +660,15 @@ function buildSlideSchema(resolution: Resolution) {
           context.addIssue({
             code: "custom",
             path: ["formula", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
+      if (slide.series !== undefined) {
+        for (const issue of seriesProblems(slide.series)) {
+          context.addIssue({
+            code: "custom",
+            path: ["series", ...issue.path],
             message: issue.message,
           });
         }
@@ -706,7 +723,57 @@ const BODY_KEYS = [
   "world",
   "figure",
   "formula",
+  "series",
 ] as const;
+
+/**
+ * Every group of a series, and the one thing only the whole list knows.
+ *
+ * The total is checked here rather than in `./series.ts` because a group is valid on its own
+ * terms and a *series* can still be too big — three groups of two hundred is three legal groups
+ * and a field nobody can count.
+ */
+function seriesProblems(
+  value: unknown,
+): readonly { path: readonly (string | number)[]; message: string }[] {
+  if (!Array.isArray(value)) {
+    return [{ path: [], message: `must be a list of ${SERIES_GROUP_HINT}` }];
+  }
+  if (value.length === 0) {
+    return [{ path: [], message: "must have at least one group" }];
+  }
+
+  const problems: { path: readonly (string | number)[]; message: string }[] = [];
+  const declared = new Map<string, number>();
+  value.forEach((raw: unknown, index: number) => {
+    const problem = seriesGroupProblem(raw);
+    if (problem !== undefined) {
+      problems.push({ path: [index], message: problem });
+      return;
+    }
+    const { id } = seriesGroupOf(raw);
+    if (id === undefined) return;
+    const first = declared.get(id);
+    if (first === undefined) {
+      declared.set(id, index);
+    } else {
+      problems.push({
+        path: [index],
+        message: `duplicate id ${JSON.stringify(id)}; group ${first + 1} already uses it`,
+      });
+    }
+  });
+  if (problems.length > 0) return problems;
+
+  const total = seriesTotal(value.map(seriesGroupOf));
+  if (total > MAX_SERIES_TOTAL) {
+    problems.push({
+      path: [],
+      message: `has ${total} members in total, and cuecraft draws at most ${MAX_SERIES_TOTAL}`,
+    });
+  }
+  return problems;
+}
 
 /**
  * Every line of a formula, checked for shape and for whether it will actually set.
@@ -835,6 +902,11 @@ function resolveInterior(
     }
 
     const issues: WorldIssue[] = [];
+    if (record["series"] !== undefined) {
+      for (const issue of seriesProblems(record["series"])) {
+        issues.push({ path: ["series", ...issue.path], message: issue.message });
+      }
+    }
     if (record["formula"] !== undefined) {
       for (const issue of formulaProblems(record["formula"])) {
         issues.push({ path: ["formula", ...issue.path], message: issue.message });
@@ -1057,6 +1129,7 @@ function bodyOf(
     world?: unknown;
     figure?: unknown;
     formula?: unknown;
+    series?: unknown;
   },
   resolution: Resolution,
 ): SlideBody {
@@ -1068,6 +1141,12 @@ function bodyOf(
     return {
       kind: "formula",
       lines: (slide.formula as unknown[]).map(formulaLineOf),
+    };
+  }
+  if (slide.series !== undefined) {
+    return {
+      kind: "series",
+      groups: (slide.series as unknown[]).map(seriesGroupOf),
     };
   }
   if (slide.world !== undefined) {
@@ -1158,11 +1237,21 @@ function checkCue(value: unknown): string | undefined {
     if (typeof record["speech"] !== "string" || record["speech"].trim().length === 0) {
       return "speech must not be empty";
     }
-    if (record["activates"] !== undefined) {
-      const id = record["activates"];
+    for (const key of ["activates", "fills"] as const) {
+      if (record[key] === undefined) continue;
+      const id = record[key];
       if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
-        return `activates must be ${ANCHOR_ID_HINT}`;
+        return `${key} must be ${ANCHOR_ID_HINT}`;
       }
+    }
+    // Two different claims about one moment: that the narration *reached* something, and that
+    // something *accumulated across* it. A cue that made both would leave the compiler to guess
+    // which relationship the sentence was actually about.
+    if (record["activates"] !== undefined && record["fills"] !== undefined) {
+      return (
+        "has both activates and fills; a cue reaches something at a moment or fills " +
+        "something across itself, and those are different sentences"
+      );
     }
     if (record["pronounce"] !== undefined) {
       return checkPronounce(record["pronounce"], record["speech"]);
@@ -1173,7 +1262,7 @@ function checkCue(value: unknown): string | undefined {
   return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
 }
 
-const SPEECH_CUE_KEYS = ["speech", "activates", "pronounce"];
+const SPEECH_CUE_KEYS = ["speech", "activates", "fills", "pronounce"];
 
 /**
  * A `pronounce` entry only means anything if the word it names is actually in this cue, so
@@ -1526,6 +1615,7 @@ function toCues(value: unknown, scope: Scope): readonly NarrationCue[] {
       ...(record["activates"] === undefined
         ? {}
         : { activates: record["activates"] as string }),
+      ...(record["fills"] === undefined ? {} : { fills: record["fills"] as string }),
       ...(pronounce === undefined
         ? {}
         : { pronounce: new Map(Object.entries(pronounce)) }),

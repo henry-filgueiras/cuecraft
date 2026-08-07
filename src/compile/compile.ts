@@ -37,6 +37,9 @@ export interface SpeechClip {
   readonly activates?: string;
   /** The same identity as a structural address, which is what resolution uses. */
   readonly address?: Scope;
+  /** A population group that accumulates across this clip, as a structural address. */
+  readonly fills?: string;
+  readonly fillsAddress?: Scope;
   /** Which narration this clip belongs to. `root` on every deck that never descends. */
   readonly scope: Scope;
 }
@@ -203,6 +206,8 @@ export async function compilePresentation(
         scope: cue.scope,
         ...(cue.activates === undefined ? {} : { activates: cue.activates }),
         ...(cue.address === undefined ? {} : { address: cue.address }),
+        ...(cue.fills === undefined ? {} : { fills: cue.fills }),
+        ...(cue.fillsAddress === undefined ? {} : { fillsAddress: cue.fillsAddress }),
       });
       offsetSeconds += spoken.durationSeconds;
     }

@@ -1,5 +1,6 @@
 import type { FigureKind } from "./figure.ts";
 import type { AuthoredFormulaLine } from "./formula.ts";
+import type { AuthoredSeriesGroup } from "./series.ts";
 import type { CodeLanguage } from "./language.ts";
 import { childScope, type Scope } from "./scope.ts";
 import type { AuthoredMark } from "./specimen.ts";
@@ -71,6 +72,14 @@ export type SlideBody =
       readonly lines: readonly AuthoredFormulaLine[];
     }
   | {
+      /**
+       * A bounded population: many of the same thing, in named groups — see `./series.ts`.
+       * The *groups* are the elements; the members have no identity and never will.
+       */
+      readonly kind: "series";
+      readonly groups: readonly AuthoredSeriesGroup[];
+    }
+  | {
       readonly kind: "world";
       /** What exists. Ordered as authored, which is the order narration reaches them in. */
       readonly entities: readonly AuthoredEntity[];
@@ -113,6 +122,8 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       return [{ id: CHANGE_ELEMENT_ID }];
     case "formula":
       return body.lines;
+    case "series":
+      return body.groups;
     case "figure":
       // Nothing. A figure's content is derived from the timing that would have to be derived
       // from it, so it declares no endpoint narration could reach and adds nothing to measure.
@@ -204,6 +215,8 @@ export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAd
       return [named(CHANGE_ELEMENT_ID)];
     case "formula":
       return body.lines.map((line) => named(line.id));
+    case "series":
+      return body.groups.map((group) => named(group.id));
     case "world":
       return [
         ...body.entities.map((entity) => named(entity.id)),

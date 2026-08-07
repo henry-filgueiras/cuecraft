@@ -237,6 +237,31 @@ export function fitSpecimen(
 }
 
 /**
+ * How a bounded population is drawn.
+ *
+ * A height rather than a box, because the *arrangement* comes from the count and only the size
+ * comes from the frame — so what is actually a design decision is how much vertical room a
+ * population gets, and the width is whatever that arrangement then needs.
+ *
+ * A near-square field in a 16:9 frame can never fill the width, and the first cut left a third of
+ * the frame occupied and the rest empty. The answer is not to stretch the field — a strip cannot
+ * be counted — but to give the space to the two things that belong beside it: the running number,
+ * which is the fact the whole composition exists to make checkable, and the legend that says what
+ * the members are.
+ *
+ * `stroke` is the deck's hairline weight. A member that has not happened yet is an outline, so the
+ * *size* of the population is legible from the first frame and only its state changes — which is
+ * what makes accumulation readable as accumulation rather than as things appearing.
+ */
+export const FIELD = {
+  /** The field takes the height under the heading; its width follows from the arrangement. */
+  height: 590,
+  /** ...but never more than this, so the count and the legend keep a column of their own. */
+  maxWidth: 980,
+  stroke: 1.5,
+} as const;
+
+/**
  * How mathematics is set.
  *
  * Three numbers, and the range between the two sizes is narrow on purpose: this body exists for

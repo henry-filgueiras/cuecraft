@@ -1,6 +1,6 @@
 import { bodyAddresses, type SlideBody } from "./body.ts";
 import { ENTER_MS, EXIT_MS, type NarrationCue } from "./cue.ts";
-import { ROOT_SCOPE, scopeLeaf, type Scope } from "./scope.ts";
+import { childScope, ROOT_SCOPE, scopeLeaf, type Scope } from "./scope.ts";
 import type { AuthoredEntity } from "./world.ts";
 
 /**
@@ -111,33 +111,60 @@ export function bindNarration(
       return;
     }
 
-    if (cue.kind !== "speech" || cue.activates === undefined) {
+    if (cue.kind !== "speech") {
       bound.push(cue);
       return;
     }
 
-    const address = byName.get(cue.activates);
+    // The two relationships resolve identically — same scope, same names, same "already
+    // reached" rule — and differ only in what they compile to. Resolving them through one path
+    // is what keeps that true.
+    const named = cue.activates ?? cue.fills;
+    if (named === undefined) {
+      bound.push(cue);
+      return;
+    }
+    const relation = cue.activates === undefined ? "fills" : "activates";
+
+    const address = byName.get(named);
     if (address === undefined) {
       const known = [...byName.keys()];
       issues.push({
         path: [index],
         message:
-          `activates ${JSON.stringify(cue.activates)}, which nothing ${where(scope)} declares` +
+          `${relation} ${JSON.stringify(named)}, which nothing ${where(scope)} declares` +
           (known.length === 0
             ? `; ${scope === ROOT_SCOPE ? "this slide" : "this module"} declares no ids`
             : ` (declared: ${known.join(", ")})`),
       });
       return;
     }
-    if (reached.has(cue.activates)) {
+    if (reached.has(named)) {
       issues.push({
         path: [index],
-        message: `activates ${JSON.stringify(cue.activates)}, which an earlier cue already reaches`,
+        message: `${relation} ${JSON.stringify(named)}, which an earlier cue already reaches`,
       });
       return;
     }
-    reached.add(cue.activates);
-    bound.push({ ...cue, address });
+
+    // Only a population accumulates. Everything else in this format is one of something, and
+    // "this bullet fills up over the next sentence" is a request the renderer could not honour
+    // and the author would never see fail.
+    if (relation === "fills" && !fillableAddresses(body, scope).includes(address)) {
+      issues.push({
+        path: [index],
+        message:
+          `fills ${JSON.stringify(named)}, which is not a group of a series; only a bounded ` +
+          "population accumulates over a sentence, and everything else is reached at a moment " +
+          "with activates",
+      });
+      return;
+    }
+
+    reached.add(named);
+    bound.push(
+      relation === "activates" ? { ...cue, address } : { ...cue, fillsAddress: address },
+    );
   });
 
   return { cues: bound, issues };
@@ -173,6 +200,28 @@ function openable(body: SlideBody): string {
   return names.length === 0
     ? "; no entity in this world carries a child"
     : ` (entered with: ${names.join(", ")})`;
+}
+
+/**
+ * Whether this address names a group of a bounded population.
+ *
+ * Walks the same structure `bodyAddresses` walks, because the answer has to agree with it: an
+ * address is fillable exactly when the element it names came from a `series`. Recursive for the
+ * same reason everything else here is — the group may be inside an entity's interior, and an
+ * interior is an ordinary body.
+ */
+function fillableAddresses(body: SlideBody, scope: Scope): readonly Scope[] {
+  if (body.kind === "series") {
+    return body.groups.flatMap((group) =>
+      group.id === undefined ? [] : [childScope(scope, group.id)],
+    );
+  }
+  if (body.kind !== "world") return [];
+  return body.entities.flatMap((entity) =>
+    entity.detail === undefined
+      ? []
+      : fillableAddresses(entity.detail, childScope(scope, entity.id)),
+  );
 }
 
 function entityIn(body: SlideBody, id: string): AuthoredEntity | undefined {

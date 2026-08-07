@@ -178,6 +178,38 @@ export interface Call {
 }
 
 /**
+ * A resolved link between a *stretch* of narration and a population that accumulates across it.
+ *
+ * The interval sibling of `Anchor`, and separate from it on purpose. An anchor is a frame: this
+ * moment and this element are the same idea (decision:14). A span is a range: this element comes
+ * into being while this sentence is spoken. Collapsing them into one record with a duration that
+ * is usually zero would make every consumer decide which kind it was holding, and the one that
+ * forgot would be silently wrong rather than loudly broken.
+ *
+ * **Where the range comes from is the whole point.** It begins at the clip's first audible sample
+ * — decision:13's rule, the same one an anchor uses, because a population that started filling
+ * during Kokoro's leading silence would be visibly ahead of the voice. It ends with the clip.
+ * Trailing silence is *not* subtracted, because nothing measures it: `leadingSilence` in
+ * `../tts/kokoro.ts` is the only onset the synthesizer reports, and subtracting a guess would be
+ * inventing a measurement. The consequence is that the field finishes a beat before the last word
+ * rather than after it, which is the side to err on — the viewer sees a completed population while
+ * the sentence lands.
+ */
+export interface Span {
+  /** The identity as the author wrote it, local to whichever scope reached it. */
+  readonly id: string;
+  readonly address: Scope;
+  /** Index into `bodyElements(Scene.body)` — the group, not any of its members. */
+  readonly elementIndex: number;
+  /** Index into `Scene.clips`. */
+  readonly clipIndex: number;
+  /** Absolute frame at which accumulation begins: the clip's first audible sample. */
+  readonly from: number;
+  /** How long it takes. Measured, never authored, and never zero. */
+  readonly durationInFrames: number;
+}
+
+/**
  * A resolved link between a moment in the narration and an element on the slide.
  *
  * Deliberately a record of the *relationship* rather than a field on the element saying when
@@ -218,6 +250,8 @@ export interface Scene {
   readonly anchors: readonly Anchor[];
   /** Every descent and return, in frame order. Empty on every deck that never descends. */
   readonly calls: readonly Call[];
+  /** Every population accumulating over a sentence. Empty on almost every deck. */
+  readonly spans: readonly Span[];
   /** Absolute frame at which the slide appears. */
   readonly from: number;
   readonly durationInFrames: number;
@@ -354,6 +388,33 @@ export function buildTimeline(
       });
     });
 
+    // Populations, resolved exactly as anchors are — same addresses, same clips, same rounding.
+    // A span carries a range where an anchor carries a frame, and nothing else about them differs.
+    const spans: Span[] = [];
+    slide.narration.clips.forEach((clip, clipIndex) => {
+      if (clip.fills === undefined || clip.fillsAddress === undefined) return;
+      const address = clip.fillsAddress;
+      const elementIndex = addresses.findIndex((entry) => entry.address === address);
+      if (elementIndex === -1) {
+        throw new Error(
+          `slide ${slide.ordinal}: narration fills "${address}" but nothing on the slide declares it`,
+        );
+      }
+      const placed = clips[clipIndex];
+      if (placed === undefined) return;
+      const onset = framesFor(clip.leadingSilenceSeconds, fps);
+      spans.push({
+        id: clip.fills,
+        address,
+        elementIndex,
+        clipIndex,
+        from: placed.from + onset,
+        // Never zero: a population that filled in no frames would be a cut, and the shortest
+        // clip Kokoro produces is still a couple of seconds of audible sound.
+        durationInFrames: Math.max(1, placed.durationInFrames - onset),
+      });
+    });
+
     // The track runs to whichever is later: the last clip's end, or a trailing pause.
     const narrationDurationInFrames = Math.max(
       cursor,
@@ -372,6 +433,7 @@ export function buildTimeline(
       layout: chooseLayout(slide),
       anchors,
       calls,
+      spans,
       from,
       durationInFrames,
       narrationFrom,

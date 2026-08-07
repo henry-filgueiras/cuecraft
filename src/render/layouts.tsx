@@ -10,6 +10,8 @@ import {
   type SlideBody,
 } from "../presentation/body.ts";
 import { formulaMeasure, setFormula } from "../presentation/formula.ts";
+import { groupOffset, seriesTotal } from "../presentation/series.ts";
+import { cellSize, fieldShape, memberFill, membersDone } from "./series.ts";
 import { useMathFonts } from "./mathfonts.tsx";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
@@ -48,6 +50,7 @@ import {
   CODE,
   CODE_COLORS,
   COLORS,
+  FIELD,
   FORMULA,
   FONT_STACK,
   FRAME,
@@ -1085,6 +1088,185 @@ function Formula({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
 }
 
 /**
+ * **series** — the content is a bounded population, and the composition is its size.
+ *
+ * The eleventh archetype, and the only one whose extent comes from a *number* rather than from how
+ * much the author wrote. Everything else here draws what was typed; this draws sixty-four things
+ * from one line, which is the entire reason the role exists — a presentation could previously show
+ * one unit of work and could only assert that unit becoming repeated work.
+ *
+ * Three derivations, none of them reachable from the source:
+ *
+ *     count            ->  the arrangement            (`./series.ts`)
+ *     arrangement+box  ->  the size of a member
+ *     measured span    ->  how much of it has happened
+ *
+ * **Members fill in reading order** — left to right, top to bottom — because that is the order a
+ * viewer will count them in, and an order nobody has to be told is an order that costs no
+ * narration. The frontier is a *wave* rather than a switch: the member the fill is passing is part
+ * way in, so a population accumulating over four seconds reads as something happening rather than
+ * as sixty-four separate pops.
+ *
+ * **The colour vocabulary is the deck's, unchanged** (decision:23). A member that has not happened
+ * is `future`: present, dim, and legible as structure, so the field's *size* is readable from the
+ * first frame and only its state changes. A member that has happened is normal. The accent is
+ * spent on the frontier alone, which is the moment, and it settles behind it.
+ *
+ * **Groups are the elements** and their own state drives their own members, which is what lets a
+ * schedule show sixteen words already present while forty-eight accumulate — with no second visual
+ * language for "given" against "derived", because the *state* already says it and then stops
+ * saying it once they are all just words.
+ */
+function Series({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const body = scene.body;
+  if (body.kind !== "series") return null;
+
+  const groups = body.groups;
+  const total = seriesTotal(groups);
+  const shape = fieldShape(total);
+
+  // How far each group has got: a span fills it across a sentence, an anchor lands it at a
+  // moment, and a group the narration never mentions is simply there — the same default every
+  // unanchored element in this deck has had since decision:14.
+  const stateOf = anchorStatesFor(scene, absoluteFrame);
+  const spanOf = new Map(scene.spans.map((span) => [span.elementIndex, span]));
+  const progressOf = (index: number): number => {
+    const span = spanOf.get(index);
+    if (span === undefined) return stateOf(index).degree;
+    return clamp((absoluteFrame - span.from) / span.durationInFrames);
+  };
+
+  const { cell, gap } = cellSize(shape, {
+    width: FIELD.maxWidth,
+    height: FIELD.height,
+  });
+  const done = groups.reduce(
+    (sum, group, index) => sum + membersDone(group.count, progressOf(index)),
+    0,
+  );
+
+  return (
+    <>
+      <Heading scene={scene} frame={frame} />
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: SPACE.xxl,
+          marginTop: SPACE.lg,
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${shape.columns}, ${cell}px)`,
+            gap,
+          }}
+        >
+          {groups.flatMap((group, groupIndex) => {
+            const progress = progressOf(groupIndex);
+            const before = groupOffset(groups, groupIndex);
+            return Array.from({ length: group.count }, (_, member) => {
+              const filled = memberFill(member, group.count, progress);
+              // The frontier: bright while the wave is on it, gone once it has passed.
+              const edge = filled > 0 && filled < 1 ? filled : 0;
+              return (
+                <div
+                  key={before + member}
+                  style={{
+                    width: cell,
+                    height: cell,
+                    borderRadius: Math.max(2, cell * 0.16),
+                    border: `${FIELD.stroke}px solid ${mix(
+                      COLORS.hairline,
+                      COLORS.flare,
+                      Math.max(filled * 0.5, edge),
+                    )}`,
+                    backgroundColor: withAlpha(
+                      COLORS.paper,
+                      0.02 + 0.46 * filled * filled,
+                    ),
+                    boxShadow:
+                      edge > 0.01
+                        ? `0 0 ${20 * edge}px ${withAlpha(COLORS.accent, 0.75 * edge)}`
+                        : "none",
+                    ...reveal(frame, contentDelay(0)),
+                  }}
+                />
+              );
+            });
+          })}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE.xl }}>
+          {/* The running count, derived from the same progress the field is drawn from, so it
+              cannot disagree with what is on screen. Large, because it is the fact the whole
+              composition exists to make checkable rather than a readout beside one. */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: SPACE.sm }}>
+            <span
+              style={{
+                ...heading,
+                fontSize: TYPE.title,
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+                ...reveal(frame, contentDelay(0)),
+              }}
+            >
+              {done}
+            </span>
+            <span
+              style={{
+                ...heading,
+                fontSize: TYPE.row,
+                lineHeight: 1,
+                color: COLORS.dim,
+                ...reveal(frame, contentDelay(0)),
+              }}
+            >
+              of {total}
+            </span>
+          </div>
+
+          {/* What the members are. One row per group, in the deck's item voice, carrying its own
+              group's state — so a group that has not happened reads recessive exactly as an
+              unreached bullet does, and stops doing so once it has. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: SPACE.md }}>
+            {groups.map((group, index) => (
+              <div
+                key={group.text}
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: SPACE.sm,
+                  fontSize: TYPE.ordinal,
+                  maxWidth: 620,
+                  ...establishedText(stateOf(index), COLORS.muted),
+                  ...reveal(frame, contentDelay(index + 1)),
+                }}
+              >
+                <span
+                  style={{
+                    ...heading,
+                    fontSize: TYPE.ordinal,
+                    color: COLORS.accent,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {group.count}
+                </span>
+                <span>{group.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
  * **atlas** — the content is a semantic world, and the world is bigger than the frame.
  *
  * Every other composition fits a slide into 1920x1080 and stops. This one lays the world out once
@@ -2061,6 +2243,8 @@ function Composition({
         />
       </div>
     </>
+  ) : scene.layout === "series" ? (
+    <Series scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "formula" ? (
     <Formula scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "statement" ? (

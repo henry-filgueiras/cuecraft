@@ -1,0 +1,67 @@
+# A bounded population, with nothing cryptographic anywhere near it.
+#
+#   cuecraft render examples/tally.yaml -o out/tally.mp4
+#
+# This deck exists to prove that `series` is a quantifier rather than a SHA-256 animation. Nothing
+# here is sixty-four, nothing is a round, and the counts are deliberately awkward — seven is prime,
+# ninety is not square, and one is the degenerate case that every grid rule gets wrong first.
+#
+# The author writes a count and what the members are. Everything else — the arrangement, the order
+# they fill in, how long that takes, the colour, the running number — is derived. There is no key
+# in the format that could set any of it.
+
+title: "Counting things"
+
+defaults:
+  pre_say: 500ms
+  post_say: 1.4s
+  voice: af_heart
+
+slides:
+  - slide:
+      title: "Seven of something"
+      series:
+        - id: seven
+          count: 7
+          text: prime, so the field cannot be square
+    say:
+      - speech: >
+          Seven members, arranged by a rule that knows nothing about seven.
+        fills: seven
+
+  - slide:
+      title: "Sixteen, and then some"
+      series:
+        - count: 16
+          text: already here when the sentence starts
+        - id: later
+          count: 48
+          text: arriving while it is spoken
+    say:
+      - speech: >
+          Sixteen are already present. The other forty-eight arrive across this sentence, and
+          the count above them is derived from the same progress the field is.
+        fills: later
+
+  - slide:
+      title: "Ninety"
+      series:
+        - id: ninety
+          count: 90
+          text: not square, and still a rectangle with no holes in it
+    say:
+      - speech: >
+          Ninety members fill in reading order, which is the order anybody would count them in.
+        fills: ninety
+
+  - slide:
+      title: "One"
+      series:
+        - id: one
+          count: 1
+          text: the degenerate case
+    say:
+      - speech: >
+          And one, because a rule that only works above some threshold is a rule with a
+          threshold in it.
+        fills: one

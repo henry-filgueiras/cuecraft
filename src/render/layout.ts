@@ -36,7 +36,8 @@ export type LayoutArchetype =
   | "revision"
   | "atlas"
   | "figure"
-  | "formula";
+  | "formula"
+  | "series";
 
 export interface SlideContent {
   readonly title: string;
@@ -98,6 +99,9 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   narration does. Nothing else here has a camera, and nothing else needs one.
  * - **formula** — mathematics. Set by KaTeX at a size derived from the longest line, because a
  *   definition is not points and not source: it is one line whose spacing carries its meaning.
+ * - **series** — a bounded population. A derived field of members, filling in reading order over
+ *   a measured narration interval. The only composition whose size comes from a number rather
+ *   than from how much the author wrote.
  * - **figure** — the compilation's own facts. One archetype rather than one per kind, because
  *   `timing` and `anchors` are two shapes of the same role — "show what the compiler worked out"
  *   — and the role picks the composition while the shape decides within it, which is the rule
@@ -117,6 +121,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
 export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "figure") return "figure";
   if (content.body.kind === "formula") return "formula";
+  if (content.body.kind === "series") return "series";
   if (content.body.kind === "code") return "specimen";
   if (content.body.kind === "change") return "revision";
   if (content.body.kind === "world") return "atlas";

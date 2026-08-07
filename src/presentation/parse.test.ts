@@ -262,7 +262,7 @@ slides:
     say: Hello.
 `),
     [
-      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world, figure, formula)',
+      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world, figure, formula, series)',
     ],
   );
 
@@ -598,7 +598,7 @@ test("unknown keys on a speech cue are rejected", () => {
         'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        emphasise: loud\n',
       )[0],
     ),
-    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, pronounce\)$/,
+    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, fills, pronounce\)$/,
   );
 });
 

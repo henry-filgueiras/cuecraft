@@ -40,6 +40,24 @@ export type NarrationCue =
        */
       readonly address?: Scope;
       /**
+       * A group of a bounded population that accumulates *across* this cue.
+       *
+       * The second kind of relationship between narration and content, and it is deliberately
+       * not the first one wearing a hat. `activates` is a **point**: decision:14's claim is that
+       * this moment in the narration and this element are the same idea, and the compiler works
+       * out the frame it happens on. `fills` is an **interval**: the population is not reached
+       * at an instant, it comes into being over a sentence, and the sentence's measured length
+       * is how long that takes.
+       *
+       * They are separate fields rather than one field with a mode because they resolve to
+       * different compiled records — an `Anchor` is a frame and a `Span` is a range — and a
+       * component that forgot to check the mode would silently get the wrong one. A cue may
+       * carry at most one of them: they are two different claims about the same moment.
+       */
+      readonly fills?: string;
+      /** `fills`, resolved to a structural address, exactly as `address` resolves `activates`. */
+      readonly fillsAddress?: Scope;
+      /**
        * Per-occurrence spelling substitutions applied before synthesis only. See decision:12 —
        * this repairs one word in one cue, and is not a dictionary.
        */
