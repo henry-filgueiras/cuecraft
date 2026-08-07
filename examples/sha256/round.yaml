@@ -1,0 +1,66 @@
+# Inside `round` — the second grandchild, entered from examples/sha256/compression.yaml after
+# the schedule has been visited and left.
+#
+# This is where the algorithm stops being plumbing. Everything above is moving numbers around;
+# `choose` and `majority` are the two places where a specific idea is doing the work, and they
+# are the reason this deck needed a `formula` body at all. At world scale each of them is three
+# words on a plate, and three words cannot say what a multiplexer is.
+
+world:
+  entities:
+    slots: Eight slots, a to h
+
+    # Both games in one interior rather than one each. They are a matched pair — the same shape
+    # of thing, doing opposite jobs — and seeing them together is most of what makes them
+    # legible. It also keeps this world one rank tall, which is what keeps the camera's
+    # establishing shot clear of the heading.
+    games:
+      label: Two little games
+      detail:
+        formula:
+          # No identity: this one is simply *there* the moment the boundary opens, because the
+          # sentence that opened it is already about it.
+          - tex: '\mathrm{Ch}(e,f,g) \;=\; (e \wedge f) \;\oplus\; (\lnot e \wedge g)'
+          # This one has one, so it stays recessive until the narration arrives — the deck's
+          # activation envelope, doing to a definition exactly what it does to a bullet.
+          - id: maj
+            tex: '\mathrm{Maj}(a,b,c) \;=\; (a \wedge b) \;\oplus\; (a \wedge c) \;\oplus\; (b \wedge c)'
+
+    total: Add it all up
+    shift: Shift everything down
+
+  relations:
+    - slots -> games
+    - games -> total
+    - total -> shift
+
+say:
+  - speech: >
+      A round starts with the eight working slots, and one of them gets stirred: rotated
+      three different ways and folded together.
+    activates: slots
+
+  - speech: >
+      Then two little games are played on the others. The first one is called choose.
+    activates: games
+
+  - speech: >
+      One number decides, bit by bit, which of the other two survives. Where it has a one,
+      take the second one's bit; where it has a zero, take the third's.
+
+  - speech: >
+      The second game is the opposite. Three numbers vote, and whatever most of them say is
+      what the bit becomes — so no single one of them decides anything alone.
+    activates: maj
+
+  - speech: >
+      All of that is added together, with one more constant that is different in every round.
+    activates: total
+
+  - speech: >
+      Then everything shifts down a place. a becomes b, b becomes c, and the new number drops
+      in at the top.
+    activates: shift
+
+  - speech: >
+      Stir, choose, vote, add, shift. Nothing here is clever on its own.

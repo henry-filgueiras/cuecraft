@@ -1,0 +1,96 @@
+# SHA-256, at three scales, without a cut.
+#
+#   cuecraft render examples/sha256/sha256.yaml -o out/sha256.mp4
+#
+# One slide. The camera descends into the step that does the work, descends again twice inside
+# it, and unwinds through the same scopes to finish the sentence it started.
+#
+# The interesting thing about this deck is that SHA-256 was not designed for cuecraft. It is a
+# call stack because that is how the specification is written — `sha256` calls `compress` per
+# block, `compress` calls the message schedule and then the round, and the round calls `Ch`,
+# `Maj` and the sigmas. decision:31 either fits that without persuasion or it is a stunt.
+#
+# Two vocabularies are doing different jobs, and the difference is the whole design:
+#
+#   child:    an interior that narrates itself      -> going in is a *call*   (decision:31)
+#   detail:   an interior the surrounding sentence
+#             is pointing at                        -> going in is a *look*   (decision:25)
+#
+# The three formulas are `detail:`, not modules, because a formula says nothing on its own. That
+# also costs no module depth, so the piece fits inside the guard rather than arguing with it.
+#
+# What cuecraft cannot draw is a loop, and this subject is made of them: sixty-four rounds,
+# forty-eight expansions, one block after another. Every one of those is carried by a spoken
+# sentence, and the one the whole piece depends on is at the end of compression.yaml.
+#
+# See decision:32 (mathematics as a body), decision:31 (child modules), decision:22 (worlds and
+# the camera), and dragon:13 for why this stops at a grandchild.
+
+title: "Anything in, sixty-four characters out"
+
+defaults:
+  pre_say: 700ms
+  post_say: 2.6s
+  voice: af_heart
+
+slides:
+  - slide:
+      title: "How a hash gets made"
+
+      world:
+        entities:
+          anything: Anything at all
+          padded: Padded to a tidy size
+          blocks: Cut into blocks
+
+          # The only entity that says anything for itself. Its label is what this world calls
+          # it and what its own world is titled — the same string at two scales.
+          squeeze:
+            label: The squeeze
+            child: ./compression.yaml
+
+          digest: Sixty-four characters
+
+        relations:
+          - anything -> padded
+          - padded -> blocks
+          - blocks -> squeeze
+          - squeeze -> digest
+
+    say:
+      - speech: >
+          Git does not name the files in your repository. It names their contents, so
+          changing a single character changes the name completely.
+
+      - speech: >
+          That name is a hash. SHA-256 will take anything at all — a file, a sentence, an
+          entire repository.
+        activates: anything
+
+      - speech: >
+          First it is padded: a one bit, then zeros, then the original length, until it
+          divides exactly into five hundred and twelve.
+        activates: padded
+
+      - speech: >
+          Then cut into blocks of that size, taken one at a time.
+        activates: blocks
+
+      - speech: >
+          Eight numbers are carried alongside, and every block gets squeezed into them.
+          That squeezing is the whole algorithm.
+        activates: squeeze
+
+      # The descent. From here until the module's narration runs out, this slide says nothing.
+      - enter: squeeze
+
+      # ...and here is where it resumes.
+      - speech: >
+          At the end, those eight numbers are written out as sixty-four hexadecimal
+          characters.
+        activates: digest
+
+      # A closing remark that reaches nothing, which is how the camera is asked to pull back
+      # and show the whole thing at once (decision:22).
+      - speech: >
+          Anything in. Sixty-four characters out. And no way at all to walk backwards.

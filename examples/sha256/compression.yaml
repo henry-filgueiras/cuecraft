@@ -1,0 +1,57 @@
+# Inside `squeeze` — a child module, entered from examples/sha256/sha256.yaml.
+#
+# This is `compress(block)`, and it is the only scope in the deck that enters *two* others in
+# sequence. That arrangement is the one dragon:9 has been asking for since decision:25: the first
+# time the camera goes from inside one thing, back out, and into another at the same scale.
+#
+# It also carries the sentence the whole piece depends on, which is the last one.
+
+world:
+  entities:
+    sixteen: Sixteen words
+
+    stretch:
+      label: Sixty-four words
+      child: ./schedule.yaml
+
+    round:
+      label: One round
+      child: ./round.yaml
+
+    folded: Folded back in
+
+  relations:
+    - sixteen -> stretch
+    - stretch -> round
+    - round -> folded
+
+say:
+  - speech: >
+      A block is sixteen numbers of thirty-two bits. Call them words.
+    activates: sixteen
+
+  - speech: >
+      Sixty-four rounds are coming, and there are only sixteen words to feed them. So
+      sixteen becomes sixty-four.
+    activates: stretch
+
+  - enter: stretch
+
+  # Resumed, one scope up from where the schedule left off, and immediately descending again —
+  # the first time in this project that the camera leaves one room and enters another (dragon:9).
+  - speech: >
+      Then one round runs. The same round, sixty-four times, each with a different word.
+    activates: round
+
+  - enter: round
+
+  - speech: >
+      Finally the eight numbers that were carried in have the round's results added back into
+      them, and the block is done.
+    activates: folded
+
+  # The load-bearing sentence, and it is the closing remark, so the camera pulls back to the
+  # whole of this world while it is spoken.
+  - speech: >
+      One round barely hides anything. Sixty-four of them, stacked, is what makes it
+      impossible to walk back.
