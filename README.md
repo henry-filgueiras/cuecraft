@@ -16,20 +16,56 @@ downstream is a consequence of that measurement.
 
 ## Showpieces
 
-Four videos, in the order that makes the argument. Each was compiled from the YAML file linked
+Five videos, in the order that makes the argument. Each was compiled from the YAML file linked
 beside it, by `cuecraft render`, with nothing hand-placed and nothing edited afterwards.
 
-### 1. SHA-256 — one round, then sixty-four of them
+### 1. Anatomy of an online order — three scales, one unbroken explanation
+
+<!-- VIDEO: order -->
+
+<!-- Not yet attached. See runme/upload-order.md — render, compress, drop into GitHub's editor,
+     and replace this comment block with the bare user-attachments URL it mints. -->
+
+**Source: [`examples/order/`](examples/order/)** — 198 lines across three files, for 1:38 of video.
+
+The shortest complete statement of what cuecraft is claiming, which is why it goes first. One
+slide, and the camera never cuts. It opens on four boxes — you press Buy, paying, packing, it turns
+up — descends into `paying`, descends again into the check inside _that_, and unwinds back through
+both to finish the sentence it started at the top.
+
+The whole mechanism is two words:
+
+```yaml
+entities:
+  paying:
+    label: Paying
+    child: ./paying.yaml # an interior that arrived in its own file, with its own `say`
+
+say:
+  - enter: paying # go in; the module narrates itself from here
+```
+
+There is no `exit:`. The child's cue list running out _is_ the return, which is the same rule every
+function obeys and the reason this works on worlds that loop or fork. Nothing in any of the three
+files names a zoom, a scale, a transition, a duration or a camera move, and the breadcrumb above the
+title — `ANATOMY OF AN ONLINE ORDER › PAYING` — is derived from where in the stack the viewer
+currently is, not written anywhere.
+
+[`examples/order-flat.yaml`](examples/order-flat.yaml) says the same thing as three ordinary slides,
+in 137 lines. It exists so that the comparison can be made rather than asserted.
+
+### 2. SHA-256 — one round, then sixty-four of them
 
 <!-- VIDEO: sha256 -->
+
 https://github.com/user-attachments/assets/3db97bc4-c98b-434e-a31e-6f50d3b6f673
 
 **Source: [`examples/sha256/`](examples/sha256/)** — 306 lines across four files, for 2:49 of video.
 
-One slide, no cuts. The camera descends into the compression function, descends again into the
-message schedule and then into a single round, and unwinds through both to finish the sentence it
-started. SHA-256 was not chosen because it suits cuecraft; it is a call stack because that is how
-FIPS 180-4 is written.
+The same descent as above, on a subject that was not chosen to suit it. One slide, no cuts: the
+camera descends into the compression function, descends again into the message schedule and then
+into a single round, and unwinds through both to finish the sentence it started. SHA-256 is a call
+stack because that is how FIPS 180-4 is written, not because it flatters the format.
 
 The showpiece moment is the one the format could not previously make true. After the viewer has
 watched one round in full — `T1`, `T2`, and the two values it injects — the camera comes back out,
@@ -52,7 +88,7 @@ the arrangement comes from the count, the pace from the audio, and the camera fr
 Every formula on screen is verified against `node:crypto` by a test that reads the rotation amounts
 out of the deck's own TeX — so a film that misstated the algorithm would fail the suite.
 
-### 2. Observatory — a presentation that reads its own compiler
+### 3. Observatory — a presentation that reads its own compiler
 
 <!-- VIDEO: observatory -->
 
@@ -71,7 +107,7 @@ is the whole of the vocabulary — a kind, from a closed set of two. There is no
 expression, and no way for a presentation to read a derived value, which is what makes it
 impossible to write narration that changes the measurements it is describing.
 
-### 3. Cathedral v2 — a world you walk through, and go inside
+### 4. Cathedral v2 — a world you walk through, and go inside
 
 <!-- VIDEO: cathedral-v2 -->
 
@@ -92,7 +128,7 @@ narration talks about something else again, it closes.
 Nothing in the source asks for a zoom, a transition, a duration, or a camera move. The one thing
 the author says is that this concept has an inside.
 
-### 4. Self-demo — the practical core
+### 5. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 
