@@ -2,9 +2,10 @@
 id: tsk_01KZEM684AXCEZ98EPMY64KGX2
 sequence: 28
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEM4QE178Q5JP12M201A7Y5
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Write the SHA-256 descent

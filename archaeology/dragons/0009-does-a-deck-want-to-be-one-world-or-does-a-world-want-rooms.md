@@ -2,8 +2,9 @@
 id: drg_01KZCSMP3WAS3F0CQ47MT6X5BM
 sequence: 9
 kind: dragon
-status: open
+status: closed
 created: 2026-08-06
+resolved-by: "[[dec_01KZEHRB3GN83B1MBBHT32VTZ9|Let an interior arrive in its own file, and let entering it be a call]]"
 ---
 
 # Does a deck want to be one world, or does a world want rooms?
@@ -82,6 +83,30 @@ neighbouring question rather than this one — which is itself informative.
 
 So: not strengthened, not weakened. The evidence that arrived is about *depth* rather than about
 *adjacency*, and dragon:12 is where the new pressure went.
+
+## What sprint:7 said, which is the answer
+
+`examples/sha256/` finally makes the move. Inside `compress`, the camera enters the message
+schedule, comes back out, and enters the round — two interiors in one scope, one after the other,
+which is the exact arrangement this dragon named as the next useful increment.
+
+**The world between the two rooms is not corridor, and the reason is specific.** It is not that
+the middle world is pretty; it is that *leaving the first room lands you at the thing that comes
+next*. The camera returns to `Sixty-four words` in its place, with `One round` immediately to its
+right and dim, and the next sentence is about that plate. The world is doing the job a corridor
+cannot: it is holding the *order* of the two excursions, and it is holding it visually rather than
+in the viewer's memory. Take the world away and you have two rooms with nothing saying which came
+first or why the second follows the first.
+
+That is a stronger result than "the contrast is nice". It says worlds contain rooms, and the world
+earns its keep precisely at the moment you are not in one.
+
+**Close as strengthened.** With one caveat that belongs to the answer rather than beside it: both
+demonstrations so far are worlds whose rooms sit on a *chain*. A world whose interiors are not
+sequential — two rooms side by side with no order between them — would be asking a different
+question again, and nothing has been built that does it. The chamber-overlap problem this dragon
+raised is also still unresolved and still unencountered: every world drawn so far has had at most
+one interior per rank, so no two chambers have ever needed to coexist.
 
 ## Resolution criteria
 

@@ -2,9 +2,10 @@
 id: tsk_01KZEM6846NG0PXKN7KKGVC4M4
 sequence: 27
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEM4QE178Q5JP12M201A7Y5
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Let a body be mathematics, and let KaTeX set it

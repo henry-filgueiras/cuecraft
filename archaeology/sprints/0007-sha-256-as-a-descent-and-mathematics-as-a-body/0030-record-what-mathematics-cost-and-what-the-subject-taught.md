@@ -2,9 +2,10 @@
 id: tsk_01KZEM684H3TBCA8W1FWTZ8YXR
 sequence: 30
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEM4QE178Q5JP12M201A7Y5
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Record what mathematics cost and what the subject taught

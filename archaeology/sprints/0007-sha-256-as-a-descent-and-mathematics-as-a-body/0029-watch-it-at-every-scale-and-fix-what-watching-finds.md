@@ -2,9 +2,10 @@
 id: tsk_01KZEM684EHZ1ZJ0116AKCSV0N
 sequence: 29
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEM4QE178Q5JP12M201A7Y5
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Watch it at every scale, and fix what watching finds

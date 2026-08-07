@@ -71,3 +71,26 @@ Not urgent. It becomes urgent the first time a render happens anywhere but this 
 Resolved when the same presentation rendered on macOS and on a Linux CI runner produces frames
 with identical text layout, nothing is fetched during a render, and the mechanism is recorded as
 a decision.
+
+## What sprint:7 changed
+
+decision:32 bundles KaTeX, which ships its own faces. A `formula` body therefore sets identically
+on every machine — the first typography in cuecraft that does not depend on what the host happens
+to have installed.
+
+That does not close this. Every other face in the deck is still a system stack, and the deck's
+*own* voice — Helvetica Neue at display sizes — is the one that would actually change what a
+viewer sees if it resolved differently. What it does is settle the two things that were open about
+the fix:
+
+- **It is affordable.** One dependency, about four megabytes of which most is the fonts, bundled by
+  the composition's own webpack config with no new toolchain.
+- **It needs a gate.** A renderer capturing frames as fast as it can will photograph the fallback,
+  so a bundled face has to hold the frame until it has loaded (`delayRender`, asking for each
+  family by name — `document.fonts.ready` resolves immediately when nothing has started loading).
+  That is the part that would have been discovered the hard way, and it has now been discovered
+  the cheap way.
+
+So the remaining question is narrower than it was: not *can this be fixed* but *is the deck's
+sans worth bundling*, which is a question about how much a reader would notice Arial instead of
+Helvetica Neue, and is answerable by rendering one deck on a machine that has neither.

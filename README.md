@@ -262,6 +262,7 @@ content _means_. The body picks the composition; shape decides only within the l
 | `world` — entities and relations       | **atlas** — a laid-out graph, larger than the frame      |
 | `figure` — `timing` or `anchors`       | **figure** — what this compilation derived               |
 | `code` — a specimen                    | **specimen** — the source full width, monospace, sized   |
+| `formula` — lines of mathematics       | **formula** — set by KaTeX, centred, sized to fit        |
 | `change` — one source becoming another | **revision** — the changed lines swapping in place       |
 | `steps` — stages of a transformation   | **cascade** — descending and stepping right              |
 | no body                                | **statement** — the title is the slide, at display scale |
@@ -314,10 +315,28 @@ say:
 - **Depth is currently limited to a child and a grandchild.** The implementation recurses; the
   limit is a claim about what has been watched, not about what the compiler can do.
 
-`examples/order/order.yaml` is the specimen — three scales, one continuous explanation — and
-`examples/order-flat.yaml` says the same thing as three ordinary slides, for comparison. See
-[`decision:31`](archaeology/decisions/) for the reasoning and
+Two specimens use this. `examples/order/order.yaml` is the smallest honest one — three scales, one
+continuous explanation — with `examples/order-flat.yaml` saying the same thing as three ordinary
+slides for comparison. `examples/sha256/` is the harder one: SHA-256 is a call stack because that
+is how its specification is written, so it exercises the feature on a subject that was not chosen
+to suit it. See [`decision:31`](archaeology/decisions/) for the reasoning and
 [`dragon:11`](archaeology/dragons/)–[`dragon:13`](archaeology/dragons/) for what is still open.
+
+**Mathematics.** A body can be a definition, spelled in TeX and set by KaTeX:
+
+```yaml
+formula:
+  - tex: '\mathrm{Ch}(e,f,g) \;=\; (e \wedge f) \;\oplus\; (\lnot e \wedge g)'
+  - id: maj
+    tex: '\mathrm{Maj}(a,b,c) \;=\; (a \wedge b) \;\oplus\; (a \wedge c) \;\oplus\; (b \wedge c)'
+```
+
+A list of lines, exactly as `bullets` is — so `activates:` reaches a line the same way it reaches a
+bullet, and the same three-state envelope applies. TeX that will not typeset is a compile error
+naming the line, with KaTeX's own caret. Nothing in the source names a size, an alignment or a
+colour, and there are no environments, no numbering and no macros: this is a role for a definition,
+not a typesetting system ([`decision:32`](archaeology/decisions/)). It is also the one part of the
+deck whose faces are bundled rather than borrowed from the host machine.
 
 **Quoting instead of copying.** A specimen can name a file, a slide of it, and the construct it
 wants, rather than restating source that already exists:
@@ -362,9 +381,9 @@ Early, opinionated, and honest about it.
 - **Three canonical specimens have shaped the implementation.** Every archetype and every camera
   rule exists because a real rendered minute looked wrong without it. That makes them well-tuned
   for the worlds they were tuned against, and untested against yours.
-- **Child modules are an experiment, not a supported feature.** One probe, one artifact, one pair
-  of eyes. The compiler recurses; the demonstrated contract is a child and a grandchild, and no
-  claim is made about anything deeper ([`decision:31`](archaeology/decisions/)).
+- **Child modules are an experiment, not a supported feature.** Two artifacts and one pair of eyes.
+  The compiler recurses; the demonstrated contract is a child and a grandchild, and no claim is
+  made about anything deeper ([`decision:31`](archaeology/decisions/)).
 - **Not a PowerPoint replacement.** No import, no export, no editing surface.
 - **Not a general motion-graphics DSL.** You cannot express an arbitrary animation, and adding a
   way to would defeat the point.

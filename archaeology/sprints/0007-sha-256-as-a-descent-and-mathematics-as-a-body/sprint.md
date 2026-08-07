@@ -2,8 +2,9 @@
 id: spr_01KZEM4QE178Q5JP12M201A7Y5
 sequence: 7
 kind: sprint
-status: active
+status: closed
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # SHA-256 as a descent, and mathematics as a body
@@ -88,3 +89,54 @@ deck's palette and scale like every other archetype.
 
 Bit-level accuracy is a goal; bit-level *depth* is not. The piece stops at the named functions
 and never shows a rotation happening.
+
+## Outcome
+
+Both questions were answered, and one of them answered something else as well.
+
+**A subject that was not designed for cuecraft fits the call stack.** SHA-256 nests because its
+specification nests, and every level of it went in without argument: the root file references one
+module, that module references two, and the compiled descent is exactly the shape the source
+implies. Nothing about decision:31 had to be bent, extended, or special-cased for it. That is the
+strongest evidence available that the feature is a feature rather than a demonstration, because
+the demonstration (`examples/order/`) was built to fit and this one was not.
+
+**Mathematics is a role, not an escape hatch.** The test decision:15 sets is whether a body says
+what content *means* rather than how it should be arranged, and `formula` passes it in the way
+that matters: it added a tenth archetype and *nothing else*. Lines resolve through `bodyElements`,
+address through `bodyAddresses`, activate through the same three-state envelope, and open as an
+inline interior through decision:25 — six reuses of one seam, and the first for content that is
+not text. decision:32 records what it cost, which is one dependency and a font-loading gate.
+
+**The round that mattered most was the one nobody planned: dragon:9 closed.** Inside `compress`
+the camera enters the message schedule, comes out, and enters the round — the two-adjacent-rooms
+arrangement that has been the named next increment since decision:25. It works, and the reason it
+works is sharper than "the contrast is nice": leaving the first room *lands you at the thing that
+comes next*, so the world between the rooms is holding the order of the excursions visually rather
+than in the viewer's memory. Worlds contain rooms. That is settled.
+
+**What the artifact taught the machinery** was smaller and came from watching. Two of the four
+worlds were drafted with several entry points, dagre stacked them two and three ranks tall, and a
+dim plate landed exactly where the heading sits. Both were fixed in the *world* rather than in the
+renderer, and both were better worlds afterwards — which is idea:16's rule holding for the second
+time. The general finding is dragon:14: every world drawn in this project so far has happened to
+be one plate tall, and the title's placement has been quietly relying on it.
+
+**The iteration problem was carried, not solved.** Sixty-four rounds, forty-eight expansions and N
+blocks are all spoken rather than drawn, because cuecraft cannot show a loop. That is survivable
+here because the piece is honest about it in one sentence — *one round barely hides anything;
+sixty-four of them, stacked, is what makes it impossible to walk back* — placed as the closing
+remark of the compression scope so the camera pulls back to the whole of it while the sentence
+lands. It is the best available answer and it is not a good one: a viewer who understands every
+frame of this video has understood the mechanism and taken the security argument on trust. A
+subject whose repetition is *not* incidental would need something cuecraft does not have.
+
+**On length.** The first cut ran 3:53 and the final one runs 2:56. Nothing was cut from the
+explanation; the sentences were simply too long, which is what a first draft of narration always
+is. Six thresholds cost about twenty seconds, or a ninth of the piece — the first artifact where
+dragon:12's unexplained constants are a measurable fraction rather than a rounding error.
+
+**Promotion.** `formula` should be promoted from experiment to supported body: it is small, it is
+closed, it reuses everything, and its failure mode is a compile error. Child modules should not
+be, and the reason has not changed — dragon:11 means a deck outside this checkout still cannot
+descend, which is the difference between a language feature and a probe.
