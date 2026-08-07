@@ -23,7 +23,8 @@
     "render": "node src/cli.ts render",
     "test:tts": "node --test \"src/**/*.live-test.ts\"",
     "test:render": "node --test \"src/**/*.render-test.ts\"",
-    "bootstrap:tts": "./scripts/bootstrap-local-tts.sh"
+    "bootstrap:tts": "./scripts/bootstrap-local-tts.sh",
+    "compress:upload": "./scripts/compress-for-upload.sh"
   },
   "devDependencies": {
     "@types/d3-interpolate": "^3.0.4",

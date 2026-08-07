@@ -65,3 +65,17 @@ is how a probe becomes a framework nobody asked for.
 - dragon:8 ("is a semantic world a cuecraft body, or one very good specimen?") gets the only
   evidence that can settle it — whether anyone who did not build this finds the world composition
   worth the vocabulary it costs.
+- **The hosting limit turned out to bind, and the fix is a second projection.** GitHub's Markdown
+  editor rejects a dropped video over 10 MB; a minute of atlas renders at 16–17. So
+  `scripts/compress-for-upload.sh` re-encodes a rendered MP4 into a smaller one — constant quality
+  first, stepping down only if the result is still over the ceiling — and writes it to
+  `out/upload/`. All three land at roughly half size with no visible difference (SSIM 0.997 on the
+  observatory at the default quality).
+
+  It is a script rather than a `cuecraft render` flag on purpose. Cuecraft compiles a presentation
+  into a video; fitting that video to somebody's upload form is a property of the destination, not
+  of the presentation, and putting it in the compiler would make the artifact depend on where it
+  was going. The rendered file stays canonical, the compressed one is a projection of a projection,
+  and both are ignored by Git for the same reason (decision:1). The script refuses to write over
+  its own input, and reports honestly rather than mangling when a file will not fit at the quality
+  floor.

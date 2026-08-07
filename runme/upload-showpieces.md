@@ -11,7 +11,7 @@ Markdown editor accepts a dropped video file, uploads it, and mints a hosted
 `user-attachments` URL — which is the one place a repository can carry a video without the video
 being in the repository. So the upload is done by hand, once, in the browser.
 
-## Render the three artifacts first
+## Render the three artifacts, then fit them to the limit
 
 They are gitignored, so a fresh clone will not have them. From the repository root:
 
@@ -21,23 +21,34 @@ npm run render -- examples/cathedral-v2.yaml -o out/cathedral-v2.mp4
 npm run render -- examples/cuecraft.yaml     -o out/cuecraft.mp4
 ```
 
-Each takes about a minute on an M-series Mac. Verify all three before uploading:
+Each takes about a minute on an M-series Mac.
+
+**A rendered showpiece is too big to drop into GitHub's Markdown editor.** The limit there is
+10 MB, and a minute of atlas comes out at 16–17. So compress each one — this re-encodes at
+constant quality and lands at roughly half the size with no visible difference:
 
 ```bash
-ls -la out/observatory.mp4 out/cathedral-v2.mp4 out/cuecraft.mp4
+npm run compress:upload -- out/observatory.mp4
+npm run compress:upload -- out/cathedral-v2.mp4
+npm run compress:upload -- out/cuecraft.mp4
 ```
 
-Expected, as of this round:
+**Upload the files in `out/upload/`, not the ones in `out/`.**
 
-| placeholder in README.md             | local file             | duration | approx. size |
-| ------------------------------------ | ---------------------- | -------- | ------------ |
-| `<!-- VIDEO: observatory -->`        | `out/observatory.mp4`  | 1:17.6   | ~17 MB       |
-| `<!-- VIDEO: cathedral-v2 -->`       | `out/cathedral-v2.mp4` | 1:09.4   | ~18 MB       |
-| `<!-- VIDEO: cuecraft-self-demo -->` | `out/cuecraft.mp4`     | 1:45.3   | ~8 MB        |
+| placeholder in README.md             | file to attach                | duration | rendered | attached |
+| ------------------------------------ | ----------------------------- | -------- | -------- | -------- |
+| `<!-- VIDEO: observatory -->`        | `out/upload/observatory.mp4`  | 1:17.6   | 16.2 MB  | 7.5 MB   |
+| `<!-- VIDEO: cathedral-v2 -->`       | `out/upload/cathedral-v2.mp4` | 1:09.4   | 17.3 MB  | 8.2 MB   |
+| `<!-- VIDEO: cuecraft-self-demo -->` | `out/upload/cuecraft.mp4`     | 1:45.3   | 7.5 MB   | 2.9 MB   |
 
-All three are well under GitHub's per-file attachment limit (10 MB for most file types, but **100
-MB for video**, which is the limit that applies here). If an upload is rejected on size, that is
-the number to check first.
+Verify before uploading:
+
+```bash
+ls -la out/upload/
+```
+
+If GitHub still rejects one on size, its limit has moved; pass a smaller ceiling and re-run, e.g.
+`npm run compress:upload -- out/observatory.mp4 --limit 8`.
 
 ## The upload, one video at a time
 
@@ -51,7 +62,7 @@ the number to check first.
    <!-- Paste GitHub-uploaded video markdown here -->
    ```
 
-5. Put the cursor on the blank line just below them, then **drag `out/observatory.mp4` from Finder
+5. Put the cursor on the blank line just below them, then **drag `out/upload/observatory.mp4` from Finder
    onto the editor** — or use the attach-files control at the bottom of the editing area if the
    editor shows one.
 6. Wait for the upload to finish. GitHub inserts a line of its own referencing a
@@ -59,8 +70,8 @@ the number to check first.
    guess it** — it only exists once the upload completes.
 7. Delete the two placeholder comment lines, leaving GitHub's inserted line in their place.
 8. Repeat steps 4–7 for:
-   - `<!-- VIDEO: cathedral-v2 -->` → `out/cathedral-v2.mp4`
-   - `<!-- VIDEO: cuecraft-self-demo -->` → `out/cuecraft.mp4`
+   - `<!-- VIDEO: cathedral-v2 -->` → `out/upload/cathedral-v2.mp4`
+   - `<!-- VIDEO: cuecraft-self-demo -->` → `out/upload/cuecraft.mp4`
 9. Switch to the **Preview** tab. Each of the three sections should show a video player, in this
    order: Observatory, Cathedral v2, Self-demo.
 10. **Commit changes** — commit directly to `main`, with a message such as

@@ -340,6 +340,17 @@ npm run test:render    # *.render-test.ts — synthesis + headless Chromium + ff
 resolution, frame rate, and that its duration matches the derived timeline. It does not judge how
 the video looks; that test is watching it.
 
+A rendered minute of atlas is 16–17 MB, which is more than some upload forms accept. To fit one
+under a ceiling without touching the render:
+
+```bash
+npm run compress:upload -- out/observatory.mp4          # -> out/upload/, 10 MB default
+npm run compress:upload -- out/observatory.mp4 --limit 8
+```
+
+Constant quality first, stepping down only if the result is still over the limit. The rendered
+file is never modified — both it and the compressed copy are projections.
+
 ### Archaeology
 
 Cuecraft's design decisions, experiments, dragons, and rejected hypotheses are preserved in the
