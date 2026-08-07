@@ -14,9 +14,14 @@ import {
   type RepositoryReader,
 } from "./source.ts";
 import { type AuthoredMark, markProblem, specimenLines } from "./specimen.ts";
-import { resolveWorld } from "./world.ts";
+import { type DetailResolver, resolveWorld, type WorldIssue } from "./world.ts";
 
-import { CHANGE_ELEMENT_ID, type AuthoredItem, type SlideBody } from "./body.ts";
+import {
+  bodyElements,
+  CHANGE_ELEMENT_ID,
+  type AuthoredItem,
+  type SlideBody,
+} from "./body.ts";
 export type { AuthoredEntity, AuthoredRelation, AuthoredWorld } from "./world.ts";
 export type { AuthoredMark } from "./specimen.ts";
 export {
@@ -619,7 +624,7 @@ function buildSlideSchema(read: RepositoryReader) {
         }
       }
       if (slide.world !== undefined) {
-        for (const issue of resolveWorld(slide.world).issues) {
+        for (const issue of resolveWorld(slide.world, detailResolver(read)).issues) {
           context.addIssue({
             code: "custom",
             path: ["world", ...issue.path],
@@ -631,6 +636,101 @@ function buildSlideSchema(read: RepositoryReader) {
 }
 
 const BODY_KEYS = ["bullets", "steps", "code", "change", "world"] as const;
+
+/**
+ * What an entity's interior may be: any slide body except another world.
+ *
+ * The reuse is the point. An interior is validated by the same checks, normalized into the same
+ * closed union, and rendered by the same seven compositions as a slide — so `detail` added a key
+ * to the format and no new machinery underneath it. Nesting is refused here rather than by the
+ * type system, because the error an author needs is a sentence, not a missing overload.
+ */
+function detailResolver(read: RepositoryReader): DetailResolver {
+  return (value: unknown) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return {
+        body: undefined,
+        issues: [{ path: [], message: `must be ${DETAIL_HINT}` }],
+      };
+    }
+    const record = value as Record<string, unknown>;
+    if (record["world"] !== undefined) {
+      return {
+        body: undefined,
+        issues: [
+          {
+            path: ["world"],
+            message:
+              "a world cannot contain a world; an entity's interior is ordinary slide content",
+          },
+        ],
+      };
+    }
+
+    const present = BODY_KEYS.filter((key) => record[key] !== undefined);
+    if (present.length === 0) {
+      return {
+        body: undefined,
+        issues: [{ path: [], message: `must be ${DETAIL_HINT}` }],
+      };
+    }
+    if (present.length > 1) {
+      return {
+        body: undefined,
+        issues: [
+          {
+            path: [],
+            message:
+              `has ${present.map((key) => JSON.stringify(key)).join(" and ")}; an interior's ` +
+              "content is one of those, because each says something different about what it means",
+          },
+        ],
+      };
+    }
+    const extra = Object.keys(record).filter(
+      (key) => !(BODY_KEYS as readonly string[]).includes(key),
+    );
+    if (extra.length > 0) {
+      return {
+        body: undefined,
+        issues: [
+          {
+            path: [],
+            message: `unknown key ${JSON.stringify(extra.join(", "))} (allowed: ${DETAIL_HINT})`,
+          },
+        ],
+      };
+    }
+
+    const issues: WorldIssue[] = [];
+    if (record["code"] !== undefined) {
+      for (const issue of resolveCode(record["code"], read).issues) {
+        issues.push({ path: ["code", ...issue.path], message: issue.message });
+      }
+    }
+    if (record["change"] !== undefined) {
+      for (const issue of resolveChangeBody(record["change"], read).issues) {
+        issues.push({ path: ["change", ...issue.path], message: issue.message });
+      }
+    }
+    for (const key of ["bullets", "steps"] as const) {
+      const items = record[key];
+      if (items === undefined) continue;
+      if (!Array.isArray(items)) {
+        issues.push({ path: [key], message: `must be a list of ${ITEM_HINT}` });
+        continue;
+      }
+      items.forEach((raw: unknown, index: number) => {
+        const problem = checkItem(raw);
+        if (problem !== undefined) issues.push({ path: [key, index], message: problem });
+      });
+    }
+    if (issues.length > 0) return { body: undefined, issues };
+    return { body: bodyOf(record as Parameters<typeof bodyOf>[0], read), issues: [] };
+  };
+}
+
+const DETAIL_HINT = BODY_KEYS.filter((key) => key !== "world").join(", ");
 
 /** A validated item, in either of its two authored forms. */
 function itemOf(value: unknown): AuthoredItem {
@@ -663,7 +763,7 @@ function bodyOf(
   read: RepositoryReader,
 ): SlideBody {
   if (slide.world !== undefined) {
-    const { world } = resolveWorld(slide.world);
+    const { world } = resolveWorld(slide.world, detailResolver(read));
     if (world === undefined)
       throw new Error("world passed validation but did not resolve");
     return { kind: "world", entities: world.entities, relations: world.relations };
@@ -878,10 +978,20 @@ function buildEntrySchema(read: RepositoryReader) {
       // optional — `resolveWorld` has already rejected any that are misspelled or duplicated,
       // so anything that survived it can be declared here as it stands.
       if (entry.slide.world !== undefined) {
-        const { world } = resolveWorld(entry.slide.world);
-        (world?.entities ?? []).forEach((entity, index) => {
-          if (!declared.has(entity.id)) declared.set(entity.id, index);
-        });
+        const { world } = resolveWorld(entry.slide.world, detailResolver(read));
+        // Entities first, then what is inside them — the same order `bodyElements` publishes, so
+        // the "declared:" list an author is shown reads in the order the compiler resolves.
+        for (const entity of world?.entities ?? []) {
+          if (!declared.has(entity.id)) declared.set(entity.id, 0);
+        }
+        for (const entity of world?.entities ?? []) {
+          if (entity.detail === undefined) continue;
+          for (const element of bodyElements(entity.detail)) {
+            if (element.id !== undefined && !declared.has(element.id)) {
+              declared.set(element.id, 0);
+            }
+          }
+        }
       }
       // The one identity nobody typed. A change knows which region of itself is the change, so
       // it declares that region and narration reaches it by name like any other element — the

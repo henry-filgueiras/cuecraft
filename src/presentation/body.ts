@@ -1,6 +1,7 @@
 import type { CodeLanguage } from "./language.ts";
 import type { AuthoredMark } from "./specimen.ts";
 import type { AuthoredEntity, AuthoredRelation } from "./world.ts";
+export type { AuthoredEntity, AuthoredRelation } from "./world.ts";
 
 /**
  * What a slide's content *is*, and which parts of it narration can reach.
@@ -92,8 +93,39 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
     case "change":
       return [{ id: CHANGE_ELEMENT_ID }];
     case "world":
-      return body.entities;
+      return [...body.entities, ...body.entities.flatMap(interiorElements)];
     default:
       return body.items;
   }
+}
+
+/**
+ * Where an entity's interior sits in the flat element list.
+ *
+ * The ordering rule is one sentence and it lives here, next to `bodyElements`, because two
+ * places that agree about an index are one place away from disagreeing about it: **every entity
+ * first, then every interior in entity order**. So a world of eleven entities, the eighth of
+ * which has a three-element interior, has fourteen reachable elements, and the interior's are
+ * 11, 12 and 13.
+ *
+ * That flatness is what let narration reach inside an entity without anything upstream
+ * changing. An `activates:` still resolves to one index into one list, timing still knows
+ * nothing about worlds, and the anchor representation decision:14 chose is untouched — an
+ * interior is not a second addressing scheme, it is more of the same one.
+ */
+export function interiorRange(
+  entities: readonly AuthoredEntity[],
+  id: string,
+): { readonly offset: number; readonly count: number } | undefined {
+  let offset = entities.length;
+  for (const entity of entities) {
+    const count = interiorElements(entity).length;
+    if (entity.id === id) return count === 0 ? undefined : { offset, count };
+    offset += count;
+  }
+  return undefined;
+}
+
+function interiorElements(entity: AuthoredEntity): readonly { readonly id?: string }[] {
+  return entity.detail === undefined ? [] : bodyElements(entity.detail);
 }

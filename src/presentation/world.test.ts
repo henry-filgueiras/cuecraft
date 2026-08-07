@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveWorld } from "./world.ts";
+import { bodyElements, interiorRange } from "./body.ts";
+import { resolveWorld, type DetailResolver } from "./world.ts";
 
 /**
  * What a world has to be before cuecraft will lay one out.
@@ -134,4 +135,81 @@ test("a cycle is allowed, because a layered layout has an answer for one", () =>
     relations: ["a -> b", "b -> a"],
   };
   assert.deepEqual(problems(cyclic), []);
+});
+
+/* --------------------------------------------------------- entities with an inside */
+
+/** A resolver that stands in for the parser, so these tests stay off the disk. */
+const asBullets: DetailResolver = (value) => {
+  const record = value as { bullets?: { id?: string; text: string }[] };
+  if (!Array.isArray(record?.bullets)) {
+    return { body: undefined, issues: [{ path: [], message: "must be bullets" }] };
+  }
+  return { body: { kind: "bullets", items: record.bullets }, issues: [] };
+};
+
+const INSIDE = {
+  entities: {
+    source: "The source",
+    speech: {
+      label: "Local speech",
+      detail: { bullets: [{ id: "one", text: "First" }, { text: "Second" }] },
+    },
+  },
+  relations: ["source -> speech"],
+};
+
+test("an entity may be a label, or a label with an inside", () => {
+  const { world, issues } = resolveWorld(INSIDE, asBullets);
+  assert.deepEqual(issues, []);
+  assert.deepEqual(world?.entities[0], { id: "source", text: "The source" });
+  const inside = world?.entities[1];
+  assert.equal(inside?.text, "Local speech");
+  assert.equal(inside?.detail?.kind, "bullets");
+});
+
+test("an interior's elements are reachable, after every entity, in entity order", () => {
+  const { world } = resolveWorld(INSIDE, asBullets);
+  assert.ok(world !== undefined);
+  const body = { kind: "world", ...world } as const;
+  assert.deepEqual(
+    bodyElements(body).map((element) => element.id),
+    ["source", "speech", "one", undefined],
+  );
+  assert.deepEqual(interiorRange(world.entities, "speech"), { offset: 2, count: 2 });
+  // An entity with nothing inside has no range, which is how the renderer knows not to open it.
+  assert.equal(interiorRange(world.entities, "source"), undefined);
+});
+
+test("the long form with nothing inside it is the short form, and says so", () => {
+  const problems = resolveWorld(
+    { ...INSIDE, entities: { source: "A", speech: { label: "B" } } },
+    asBullets,
+  ).issues.map((issue) => issue.message);
+  assert.match(problems[0] ?? "", /has no detail/);
+});
+
+test("an entity's inside is validated, and its failures are reported under it", () => {
+  const broken = {
+    ...INSIDE,
+    entities: { source: "A", speech: { label: "B", detail: { nonsense: true } } },
+  };
+  const [issue] = resolveWorld(broken, asBullets).issues;
+  assert.deepEqual(issue?.path, ["entities", "speech", "detail"]);
+});
+
+test("an entity may not carry keys that are not a label or an inside", () => {
+  const broken = {
+    ...INSIDE,
+    entities: { source: "A", speech: { label: "B", detail: {}, size: "large" } },
+  };
+  assert.match(
+    resolveWorld(broken, asBullets).issues[0]?.message ?? "",
+    /unknown key "size" \(allowed: label, detail\)/,
+  );
+});
+
+test("a world with no interiors resolves without a resolver at all", () => {
+  // Backward compatibility: nothing about the v1 form needs the new machinery.
+  assert.deepEqual(resolveWorld(WORLD).issues, []);
 });

@@ -1,0 +1,132 @@
+# cuecraft, as a place you can walk through — and go inside.
+#
+#   cuecraft render examples/cathedral-v2.yaml -o out/cathedral-v2.mp4
+#
+# The same world as examples/cathedral.yaml, with one thing added: an entity that has an
+# *inside*. `anchors` is not just a name in this world; it is a concept with something to show,
+# so it carries a `detail`, and a detail is ordinary cuecraft slide content — here a specimen
+# quoting real source out of another deck in this repository.
+#
+# Nothing below asks to go in. The narration simply starts talking about things that live inside
+# `anchors`, and cuecraft works out the rest:
+#
+#   a cue reaches an element inside an entity   -> the portal opens
+#   the entity's own rectangle                  -> the boundary that expands to the frame edge
+#   the entity's own label                      -> the heading of what is inside it
+#   the entity's `detail`                       -> whichever composition its content selects
+#   the next cue that reaches something else    -> the portal closes, and the node is back
+#
+# There is no zoom here, no scale, no transition, no duration for a boundary to expand over, and
+# no name for the shot. The one thing the author says is that this concept has an interior.
+#
+# The camera is also quieter than v1's. It now declines to move when the shot it is holding
+# already frames what is being talked about — see decision:24, which was written after measuring
+# how often v1 recomposed a target that was already comfortably on screen.
+#
+# See decision:22 (world and camera), decision:24 (when not to move), decision:25 (interiors),
+# and dragon:8 for whether any of this should be permanent.
+
+title: "cuecraft: the machine underneath"
+
+slides:
+  - slide:
+      title: "What happens after you stop writing"
+
+      world:
+        entities:
+          source: The source you write
+          cues: Narration cues
+          content: Semantic content
+          speech: Speech, measured here
+          timing: Derived timing
+          elements: What narration can reach
+          composition: Chosen composition
+
+          # The one entity worth going inside. Its label is what the world calls it and what the
+          # interior is titled — the same string, because it is the same thing at two scales.
+          anchors:
+            label: Semantic anchors
+            detail:
+              code:
+                file: examples/witnessglass.yaml
+                slide: "Coding agents are black boxes"
+                marks:
+                  # The two ends of one link, which is the whole reason this concept has an
+                  # inside: at world scale it is two words, and in here it is a real slide with
+                  # both halves of the thing named on it.
+                  - id: named
+                    line: "id: tools"
+                  - id: naming
+                    line: "activates:"
+
+          state: Presentation state
+          remotion: Remotion
+          video: One video file
+
+        relations:
+          - source -> cues
+          - source -> content
+          - cues -> speech
+          - speech -> timing
+          - content -> composition
+          - content -> elements
+          - cues -> anchors
+          - timing -> anchors
+          - elements -> anchors
+          - composition -> state
+          - anchors -> state
+          - state -> remotion
+          - remotion -> video
+
+    pre_say: 2200ms
+    post_say: 2000ms
+
+    say:
+      - "This is what happens after you stop writing."
+      - pause: 500ms
+
+      - speech: "It starts here. Text that says what you mean, and nothing about how it looks."
+        activates: source
+
+      - speech: "It splits in two. What you intend to say,"
+        activates: cues
+      - speech: "and what the slide actually is."
+        activates: content
+
+      - speech: "The words are spoken here, on this machine, and then measured."
+        activates: speech
+      - speech: "That measurement is the only clock cuecraft has."
+        activates: timing
+
+      - speech: "On the other side, content chooses its own composition."
+        activates: composition
+      - speech: "And everything the narration can reach is given a name."
+        activates: elements
+
+      # The concept the whole system turns on — so the story stops here rather than passing it.
+      - speech: "Which brings us to the piece it all turns on."
+        activates: anchors
+
+      # These reach elements that live *inside* that concept. That is the entire portal.
+      - speech: "Here is a real slide, out of another deck in this repository. One thing on it has been given a name."
+        activates: named
+      - speech: "And one sentence, further down, says it is the one being talked about."
+        activates: naming
+      - pause: 250ms
+      - "That is the whole of the link. No time, and no frame."
+      - pause: 300ms
+
+      # And this one reaches something outside it again, which is how you leave.
+      - speech: "All of it collapses into one answer. What is on screen, and when."
+        activates: state
+      - speech: "A browser draws every frame of that,"
+        activates: remotion
+      - speech: "and what you are left with is an ordinary file."
+        activates: video
+      - pause: 700ms
+
+      # Neither of these reaches anything, and both come after every cue that does — so this is
+      # where cuecraft stops looking at concepts and shows the machine they were part of.
+      - "Not one line of that source said where any of this goes."
+      - pause: 400ms
+      - "You described a world. The rest is a consequence."

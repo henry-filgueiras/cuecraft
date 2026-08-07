@@ -1260,3 +1260,78 @@ test("a malformed world is reported under the key that holds it", () => {
   assert.match(reported[0] ?? "", /world\.relations\.1/);
   assert.match(reported[0] ?? "", /no entity declares/);
 });
+
+const INTERIOR_DECK = `
+title: A deck
+slides:
+  - slide:
+      title: A world
+      world:
+        entities:
+          source: The source you write
+          anchors:
+            label: Semantic anchors
+            detail:
+              steps:
+                - id: cue
+                  text: A sentence
+                - id: link
+                  text: The thing it names
+          video: One video file
+        relations:
+          - source -> anchors
+          - anchors -> video
+    say:
+      - speech: It starts here.
+        activates: source
+      - speech: A sentence.
+        activates: cue
+      - speech: And what it names.
+        activates: link
+      - speech: And out again.
+        activates: video
+`;
+
+test("an entity may have an inside, and narration reaches into it by name", () => {
+  const presentation = parsePresentation(INTERIOR_DECK, "test.yaml");
+  const [slide] = presentation.slides;
+  assert.ok(slide !== undefined && slide.body.kind === "world");
+
+  // The interior is an ordinary slide body, resolved by the same code paths as a slide's.
+  const anchors = slide.body.entities.find((entity) => entity.id === "anchors");
+  assert.equal(anchors?.detail?.kind, "steps");
+
+  // And its elements are reachable exactly as an entity is: one flat list, one index.
+  assert.deepEqual(
+    bodyElements(slide.body).map((element) => element.id),
+    ["source", "anchors", "video", "cue", "link"],
+  );
+});
+
+test("an interior may not contain another world", () => {
+  const nested = INTERIOR_DECK.replace(
+    "              steps:\n                - id: cue\n                  text: A sentence\n                - id: link\n                  text: The thing it names",
+    "              world:\n                entities:\n                  a: A\n                  b: B\n                relations:\n                  - a -> b",
+  );
+  const reported = problems(nested);
+  assert.match(reported[0] ?? "", /a world cannot contain a world/);
+});
+
+test("an identity inside an entity is scoped to the slide like every other one", () => {
+  const reported = problems(INTERIOR_DECK.replace("activates: link", "activates: linkk"));
+  assert.match(reported[0] ?? "", /activates "linkk"/);
+  assert.match(reported[0] ?? "", /declared: source, anchors, video, cue, link/);
+});
+
+test("a specimen inside an entity is quoted through the same reader as one on a slide", () => {
+  const quoting = INTERIOR_DECK.replace(
+    "              steps:\n                - id: cue\n                  text: A sentence\n                - id: link\n                  text: The thing it names",
+    '              code:\n                file: examples/witnessglass.yaml\n                slide: "Coding agents are black boxes"\n                marks:\n                  - id: cue\n                    line: "id: tools"\n                  - id: link\n                    line: "activates:"',
+  );
+  const presentation = parsePresentation(quoting, "test.yaml");
+  const world = presentation.slides[0]?.body;
+  assert.ok(world?.kind === "world");
+  const detail = world.entities.find((entity) => entity.id === "anchors")?.detail;
+  assert.ok(detail?.kind === "code");
+  assert.match(detail.source, /activates: tools/);
+});
