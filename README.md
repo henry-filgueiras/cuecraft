@@ -22,9 +22,7 @@ beside it, by `cuecraft render`, with nothing hand-placed and nothing edited aft
 ### 1. SHA-256 — one round, then sixty-four of them
 
 <!-- VIDEO: sha256 -->
-
-<!-- Not yet attached. See runme/upload-sha256.md — render, compress, drop into GitHub's editor,
-     and replace this comment block with the bare user-attachments URL it mints. -->
+https://github.com/user-attachments/assets/3db97bc4-c98b-434e-a31e-6f50d3b6f673
 
 **Source: [`examples/sha256/`](examples/sha256/)** — 306 lines across four files, for 2:49 of video.
 
