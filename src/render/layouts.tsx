@@ -9,6 +9,7 @@ import {
   type AuthoredItem,
   type SlideBody,
 } from "../presentation/body.ts";
+import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
 import {
@@ -36,6 +37,7 @@ import {
   worldOf,
   type PortalPass,
   type Point,
+  type ScheduledCall,
   type Rect,
   type WorldLayout,
   type WorldNode,
@@ -1024,7 +1026,22 @@ function Lead({ scene }: { scene: Scene }) {
  * steps back, so the newly relevant concept is the brightest thing on the frame by a margin
  * nobody has to look for.
  */
-function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+function Atlas({
+  scene,
+  absoluteFrame,
+  scope = ROOT_SCOPE,
+  span,
+  trail = [],
+}: {
+  scene: Scene;
+  absoluteFrame: number;
+  /** Which scope's world this is. `root` on a slide; deeper inside a child module. */
+  scope?: Scope;
+  /** The frames this world is on screen for, when that is not the whole scene. */
+  span?: { from: number; until: number; revealTravel?: number };
+  /** The labels of the scopes above this one, outermost first. Empty at the root. */
+  trail?: readonly string[];
+}) {
   const frame = useCurrentFrame();
   const world = worldOf(scene.body);
   const layout = useMemo(
@@ -1038,8 +1055,13 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
     // publishes, so the renderer and the compiler agree by construction rather than by
     // convention. An anchor past the last entity is inside whichever interior contains it.
     const inside = interiorOwners(world.entities);
+    // Only an *inline* interior opens by being talked about. A module is entered because the
+    // narration said `enter:`, and merely lighting up the concept that has one is not that —
+    // an author who mentions paying before going inside it should get a plate, not a room.
     const openable = new Set(
-      world.entities.filter((entity) => entity.detail !== undefined).map((e) => e.id),
+      world.entities
+        .filter((entity) => entity.detail !== undefined && entity.module === undefined)
+        .map((entity) => entity.id),
     );
     return cameraPlan(
       layout,
@@ -1055,9 +1077,14 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
           ...(owner === undefined ? {} : { inside: owner }),
         };
       }),
-      { from: scene.from, until: revealFrom(scene) },
+      { from: span?.from ?? scene.from, until: span?.until ?? revealFrom(scene) },
+      16 / 9,
+      {
+        calls: scheduledCalls(scene, scope),
+        ...(span?.revealTravel === undefined ? {} : { revealTravel: span.revealTravel }),
+      },
     );
-  }, [layout, world, scene]);
+  }, [layout, world, scene, scope, span]);
 
   if (layout === undefined || world === undefined || plan === undefined) return null;
 
@@ -1144,6 +1171,8 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
                 attention={attention}
                 opening={opening}
                 absoluteFrame={absoluteFrame}
+                scope={scope}
+                trail={[...trail, scene.title]}
               />
             );
           }
@@ -1200,10 +1229,31 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
         }}
       >
         <Rule frame={frame} width={72} />
+        {/* Where the viewer is, when "here" has stopped being obvious.
+            One world looks like a world; three worlds nested inside each other look like a
+            world, and the frame has no other way to say which one. So a scope — and only a
+            scope — carries the labels it was reached through, in the order they were entered.
+            Nothing is authored: the trail is the structural address (`scope.ts`) with each
+            segment shown as the label already on the plate it came from, which is why it cannot
+            drift from what the viewer actually saw. A deck that never descends never sees it. */}
+        {trail.length > 0 ? (
+          <div
+            style={{
+              marginTop: SPACE.md,
+              fontSize: TYPE.ordinal,
+              letterSpacing: "0.09em",
+              textTransform: "uppercase",
+              color: COLORS.dim,
+              textShadow: `0 2px 24px ${withAlpha("#05070B", 0.9)}`,
+            }}
+          >
+            {trail.join("  ›  ")}
+          </div>
+        ) : null}
         <h1
           style={{
             ...heading,
-            marginTop: SPACE.md,
+            marginTop: trail.length > 0 ? SPACE.sm : SPACE.md,
             fontSize: TYPE.row,
             lineHeight: 1.08,
             maxWidth: 1220,
@@ -1223,6 +1273,36 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
  * Read from `interiorRange`, which owns the ordering rule, so this cannot drift from what the
  * compiler resolved an `activates:` against.
  */
+/**
+ * The excursions this scope was told to make, paired up.
+ *
+ * `scene.calls` is the whole scene's descent, at every depth, in one list; a world only wants the
+ * ones made *from* where it is standing. Pairing is by the scope entered, which is unique per
+ * call because an entity may be entered at most once — so a missing half is a compiler bug and
+ * is dropped rather than half-rendered.
+ */
+function scheduledCalls(scene: Scene, scope: Scope): readonly ScheduledCall[] {
+  const opened = scene.calls.filter(
+    (call) => call.scope === scope && call.kind === "enter",
+  );
+  return opened.flatMap((enter) => {
+    const exit = scene.calls.find(
+      (call) => call.kind === "exit" && call.into === enter.into,
+    );
+    return exit === undefined
+      ? []
+      : [
+          {
+            target: enter.target,
+            enterFrame: enter.frame,
+            enterWindow: enter.durationInFrames,
+            exitFrame: exit.frame,
+            exitWindow: exit.durationInFrames,
+          },
+        ];
+  });
+}
+
 function interiorOwners(entities: readonly AuthoredEntity[]): Map<number, string> {
   const owners = new Map<number, string>();
   for (const entity of entities) {
@@ -1570,6 +1650,8 @@ function Portal({
   attention,
   opening,
   absoluteFrame,
+  scope,
+  trail,
 }: {
   node: WorldNode;
   entity: AuthoredEntity;
@@ -1581,6 +1663,9 @@ function Portal({
   attention: number;
   opening: number;
   absoluteFrame: number;
+  /** The scope this plate lives in; what is inside it is one deeper. */
+  scope: Scope;
+  trail: readonly string[];
 }) {
   const hue = flowColor(node.depth);
   const { degree, heat } = state;
@@ -1674,7 +1759,10 @@ function Portal({
               entity={entity}
               entities={entities}
               scene={scene}
+              pass={pass}
               absoluteFrame={absoluteFrame}
+              scope={scope}
+              trail={trail}
             />
           </Sequence>
         </div>
@@ -1732,22 +1820,29 @@ function Interior({
   entity,
   entities,
   scene,
+  pass,
   absoluteFrame,
+  scope,
+  trail,
 }: {
   entity: AuthoredEntity;
   entities: readonly AuthoredEntity[];
   scene: Scene;
+  pass: PortalPass;
   absoluteFrame: number;
+  scope: Scope;
+  trail: readonly string[];
 }) {
   const detail = entity.detail;
   const range = interiorRange(entities, entity.id);
   if (detail === undefined || range === undefined) return null;
 
+  const layout = chooseLayout({ title: entity.text, body: detail });
   const inner: Scene = {
     ...scene,
     title: entity.text,
     body: detail,
-    layout: chooseLayout({ title: entity.text, body: detail }),
+    layout,
     anchors: scene.anchors
       .filter(
         (anchor) =>
@@ -1755,6 +1850,10 @@ function Interior({
           anchor.elementIndex < range.offset + range.count,
       )
       .map((anchor) => ({ ...anchor, elementIndex: anchor.elementIndex - range.offset })),
+    // The interior's own clock origin. Everything inside is sequenced from the moment the
+    // chamber opened, so a portal nested one deeper measures its own opening against this
+    // rather than against the slide — which is what keeps the offsets from compounding.
+    from: pass.enterFrame,
   };
 
   return (
@@ -1762,13 +1861,30 @@ function Interior({
       style={{
         position: "absolute",
         inset: 0,
-        padding: `${FRAME.marginY}px ${FRAME.marginX}px`,
+        // A world is the one composition larger than its frame, so it gets the frame whole —
+        // the same full-bleed rule `Slide` applies to an atlas, applied one scale down.
+        ...(layout === "atlas"
+          ? {}
+          : { padding: `${FRAME.marginY}px ${FRAME.marginX}px` }),
         display: "flex",
         flexDirection: "column",
         fontFamily: FONT_STACK,
       }}
     >
-      <Composition scene={inner} absoluteFrame={absoluteFrame} />
+      <Composition
+        scene={inner}
+        absoluteFrame={absoluteFrame}
+        scope={childScope(scope, entity.id)}
+        trail={trail}
+        // The world inside opens as the chamber does, and has pulled back to the whole of
+        // itself by the time the chamber starts closing — so the two scales contract together
+        // and leaving reads as one movement rather than as a diagram being put away.
+        span={{
+          from: pass.enterFrame,
+          until: pass.exitFrame,
+          revealTravel: pass.exitFrames,
+        }}
+      />
     </div>
   );
 }
@@ -1826,12 +1942,30 @@ export function Slide({
  * function with no branch for being an interior — which is the evidence that `detail` reused the
  * composition layer rather than resembling it.
  */
-function Composition({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+function Composition({
+  scene,
+  absoluteFrame,
+  scope = ROOT_SCOPE,
+  span,
+  trail = [],
+}: {
+  scene: Scene;
+  absoluteFrame: number;
+  scope?: Scope;
+  span?: { from: number; until: number; revealTravel?: number };
+  trail?: readonly string[];
+}) {
   // Unconditionally, at the top: one branch below needs the sequence-local frame, and a hook
   // called inside a conditional is a hook called sometimes.
   const frame = useCurrentFrame();
   return scene.layout === "atlas" ? (
-    <Atlas scene={scene} absoluteFrame={absoluteFrame} />
+    <Atlas
+      scene={scene}
+      absoluteFrame={absoluteFrame}
+      scope={scope}
+      trail={trail}
+      {...(span === undefined ? {} : { span })}
+    />
   ) : scene.layout === "figure" ? (
     <>
       <Heading scene={scene} frame={frame} />
