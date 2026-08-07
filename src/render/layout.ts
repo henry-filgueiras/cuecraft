@@ -12,10 +12,12 @@
  * character counts can tell them apart. So the role is consulted first, and shape now decides
  * only *within* the list role.
  *
- * Nine, and nine is still a ceiling rather than a starting point. Every archetype here exists
- * because a real slide looked wrong without it, and the rule that selects it is a comparison
- * against a number, not a solver. If selection ever needs a scoring function, the right move is
- * to delete an archetype rather than add a heuristic.
+ * Eleven, and the ceiling was meant to be nine. Both of the ones that broke it were added because
+ * a *role* had no composition rather than because an arrangement wanted a variant — mathematics,
+ * and a bounded population — which is evidence that the ceiling was always about arrangements and
+ * never about meanings. Every archetype here exists because a real slide looked wrong without it,
+ * and the rule that selects it is a comparison against a number, not a solver. If selection ever
+ * needs a scoring function, the right move is to delete an archetype rather than add a heuristic.
  *
  * The seventh arrived with the seventh *role*, not with a seventh way of arranging the same
  * content: a change has two states, and no composition for one state can show a transformation.

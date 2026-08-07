@@ -2,9 +2,10 @@
 id: tsk_01KZESBWSQ343FPYBP7CE8HVZW
 sequence: 33
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZES9SFB63FP2G1CRH4NTKEN
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Rewrite the film against FIPS 180-4, and make repetition visible

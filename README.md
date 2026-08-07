@@ -9,17 +9,52 @@ timeline, no keyframe, no coordinate, and no way to write one.
 Narration is synthesized locally, measured, and becomes the only clock in the system. Everything
 downstream is a consequence of that measurement.
 
-**Experimental.** One opinionated visual language, shaped by three specimens. See
+**Experimental.** One opinionated visual language, shaped by the artifacts in `examples/`. See
 [Status](#status) before you plan anything around it.
 
 ---
 
 ## Showpieces
 
-Three videos, in the order that makes the argument. Each was compiled from the YAML file linked
+Four videos, in the order that makes the argument. Each was compiled from the YAML file linked
 beside it, by `cuecraft render`, with nothing hand-placed and nothing edited afterwards.
 
-### 1. Observatory — a presentation that reads its own compiler
+### 1. SHA-256 — one round, then sixty-four of them
+
+<!-- VIDEO: sha256 -->
+
+<!-- Not yet attached. See runme/upload-sha256.md — render, compress, drop into GitHub's editor,
+     and replace this comment block with the bare user-attachments URL it mints. -->
+
+**Source: [`examples/sha256/`](examples/sha256/)** — 306 lines across four files, for 2:49 of video.
+
+One slide, no cuts. The camera descends into the compression function, descends again into the
+message schedule and then into a single round, and unwinds through both to finish the sentence it
+started. SHA-256 was not chosen because it suits cuecraft; it is a call stack because that is how
+FIPS 180-4 is written.
+
+The showpiece moment is the one the format could not previously make true. After the viewer has
+watched one round in full — `T1`, `T2`, and the two values it injects — the camera comes back out,
+and the plate immediately to the right of `One round` opens into a field of sixty-four. The field
+fills while a sentence is spoken, and the sentence's _measured length_ is how long that takes.
+Reword it and the field fills at a different rate; there is no key in the source that could set it.
+
+```yaml
+many:
+  label: Sixty-four times
+  detail:
+    series:
+      - id: rounds
+        count: 64
+        text: one round each, with its own word and its own constant
+```
+
+One line means sixty-four. Nobody wrote a cell, a row, a column, a colour, a duration or a frame:
+the arrangement comes from the count, the pace from the audio, and the camera from the narration.
+Every formula on screen is verified against `node:crypto` by a test that reads the rotation amounts
+out of the deck's own TeX — so a film that misstated the algorithm would fail the suite.
+
+### 2. Observatory — a presentation that reads its own compiler
 
 <!-- VIDEO: observatory -->
 
@@ -38,7 +73,7 @@ is the whole of the vocabulary — a kind, from a closed set of two. There is no
 expression, and no way for a presentation to read a derived value, which is what makes it
 impossible to write narration that changes the measurements it is describing.
 
-### 2. Cathedral v2 — a world you walk through, and go inside
+### 3. Cathedral v2 — a world you walk through, and go inside
 
 <!-- VIDEO: cathedral-v2 -->
 
@@ -59,7 +94,7 @@ narration talks about something else again, it closes.
 Nothing in the source asks for a zoom, a transition, a duration, or a camera move. The one thing
 the author says is that this concept has an inside.
 
-### 3. Self-demo — the practical core
+### 4. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 
@@ -89,6 +124,7 @@ which cue is about what       which composition each slide gets
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
+                              how a population is arranged, and how fast it fills
                               the video
 ```
 
@@ -158,7 +194,7 @@ authored presentation
    v
 compiled presentation
    |  seconds -> frames          one rule, one function, rounding up
-   |  content -> composition     deterministic, nine archetypes
+   |  content -> composition     deterministic, eleven archetypes
    |  narration -> events        which element becomes true, on which frame
    v
 frame timeline                   + the compilation's own facts, frozen
@@ -263,6 +299,7 @@ content _means_. The body picks the composition; shape decides only within the l
 | `figure` — `timing` or `anchors`       | **figure** — what this compilation derived               |
 | `code` — a specimen                    | **specimen** — the source full width, monospace, sized   |
 | `formula` — lines of mathematics       | **formula** — set by KaTeX, centred, sized to fit        |
+| `series` — a bounded population        | **series** — a derived field, filling in reading order   |
 | `change` — one source becoming another | **revision** — the changed lines swapping in place       |
 | `steps` — stages of a transformation   | **cascade** — descending and stepping right              |
 | no body                                | **statement** — the title is the slide, at display scale |
@@ -338,6 +375,40 @@ colour, and there are no environments, no numbering and no macros: this is a rol
 not a typesetting system ([`decision:32`](archaeology/decisions/)). It is also the one part of the
 deck whose faces are bundled rather than borrowed from the host machine.
 
+**Bounded repetition — experimental.** A body can be a _population_: many of the same thing, in
+named groups, in order.
+
+```yaml
+series:
+  - count: 16
+    text: arrive with the block
+  - id: derived
+    count: 48
+    text: built from four earlier words each
+
+say:
+  - speech: "And forty-eight more are built out of them, one at a time."
+    fills: derived
+```
+
+`fills:` is the second kind of relationship narration can have with content, and it is deliberately
+not `activates:` wearing a hat. An anchor is a **point** — this moment and this element are the
+same idea. A fill is an **interval** — this population comes into being while this sentence is
+spoken, and the sentence's measured length is how long that takes. A cue carries one or the other,
+never both.
+
+- **The author writes a count and what the members are.** There is no cell, row, column,
+  coordinate, colour, duration, easing or frame to write, and no key that could become one.
+- **The arrangement is derived from the count**: 64 is 8×8, 48 is 8×6, 90 is 10×9, 7 is 4×2.
+- **Sixty-four members cost one line and zero extra narration clips.**
+- **It is a quantifier, not a data structure.** Members have no identity, no value, and no way to
+  acquire either — the groups are the elements. There is no condition, no unknown bound, no
+  nesting, and no way to say "until". A series states a finite cardinality; it does not _run_.
+- Counts that are zero, fractional, negative or past a stated maximum fail at parse time.
+
+`examples/tally.yaml` exercises it with nothing cryptographic in sight. See
+[`decision:33`](archaeology/decisions/) for the three spellings that were rejected first.
+
 **Quoting instead of copying.** A specimen can name a file, a slide of it, and the construct it
 wants, rather than restating source that already exists:
 
@@ -378,12 +449,13 @@ Early, opinionated, and honest about it.
 - **Experimental.** The version is 0.0.0 and the format is not stable.
 - **One visual language.** Constants, not a theming system. There is no GUI, no editor, and no
   theme key — by decision.
-- **Three canonical specimens have shaped the implementation.** Every archetype and every camera
-  rule exists because a real rendered minute looked wrong without it. That makes them well-tuned
-  for the worlds they were tuned against, and untested against yours.
-- **Child modules are an experiment, not a supported feature.** Two artifacts and one pair of eyes.
-  The compiler recurses; the demonstrated contract is a child and a grandchild, and no claim is
-  made about anything deeper ([`decision:31`](archaeology/decisions/)).
+- **The specimens in `examples/` shaped the implementation.** Every archetype and every camera rule
+  exists because a real rendered minute looked wrong without it. That makes them well-tuned for the
+  worlds they were tuned against, and untested against yours.
+- **Child modules and `series` are experiments, not supported features.** A handful of artifacts and
+  one pair of eyes. The compiler recurses; the demonstrated contract is a child and a grandchild,
+  and no claim is made about anything deeper ([`decision:31`](archaeology/decisions/)). `series` is
+  a quantifier and will not be grown into control flow ([`decision:33`](archaeology/decisions/)).
 - **Not a PowerPoint replacement.** No import, no export, no editing surface.
 - **Not a general motion-graphics DSL.** You cannot express an arbitrary animation, and adding a
   way to would defeat the point.
@@ -391,9 +463,9 @@ Early, opinionated, and honest about it.
   becomes necessary. Feature expansion is deliberately paused while these three artifacts are
   looked at ([`decision:30`](archaeology/decisions/)).
 
-Known open questions live in [`archaeology/dragons/`](archaeology/dragons/) — including
-typography that depends on host fonts, no narration cache yet, and whether a semantic world
-deserves to be permanent vocabulary at all.
+Known open questions live in [`archaeology/dragons/`](archaeology/dragons/) — including typography
+that depends on host fonts, no narration cache yet, a module boundary inherited from the wrong
+place, and whether a semantic world deserves to be permanent vocabulary at all.
 
 ## Development
 

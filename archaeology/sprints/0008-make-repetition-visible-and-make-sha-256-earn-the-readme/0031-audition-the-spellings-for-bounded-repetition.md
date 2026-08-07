@@ -2,9 +2,10 @@
 id: tsk_01KZESBWSEC796TD0S1A0ERBRW
 sequence: 31
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZES9SFB63FP2G1CRH4NTKEN
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Audition the spellings for bounded repetition

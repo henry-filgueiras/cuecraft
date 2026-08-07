@@ -2,9 +2,10 @@
 id: tsk_01KZESBWSZ4QNCWXW446TNHEFM
 sequence: 35
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZES9SFB63FP2G1CRH4NTKEN
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Promote it, and record whether it teaches better

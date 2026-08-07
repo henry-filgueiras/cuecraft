@@ -2,9 +2,10 @@
 id: tsk_01KZESBWSKYRN8T3PHXCCYXXNS
 sequence: 32
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZES9SFB63FP2G1CRH4NTKEN
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Build the population role and the narration interval
