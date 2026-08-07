@@ -22,9 +22,7 @@ beside it, by `cuecraft render`, with nothing hand-placed and nothing edited aft
 ### 1. Anatomy of an online order — three scales, one unbroken explanation
 
 <!-- VIDEO: order -->
-
-<!-- Not yet attached. See runme/upload-order.md — render, compress, drop into GitHub's editor,
-     and replace this comment block with the bare user-attachments URL it mints. -->
+https://github.com/user-attachments/assets/2c4d7874-b76c-4ed8-965d-95982b9d0a75
 
 **Source: [`examples/order/`](examples/order/)** — 198 lines across three files, for 1:38 of video.
 
