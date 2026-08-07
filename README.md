@@ -88,6 +88,7 @@ which cue is about what       which composition each slide gets
                               type size, position, colour
                               camera framing, pacing, and when not to move
                               portal transitions
+                              where a scope returns to, and what it restores
                               the video
 ```
 
@@ -271,6 +272,53 @@ content _means_. The body picks the composition; shape decides only within the l
 An entity inside a `world` can carry a `detail:`, which is a body like any of the above — so the
 inside of a concept is not a tenth archetype, it is one of these nine drawn at concept scale.
 
+**Child modules — experimental.** An entity's inside can instead arrive in its own file, and then
+it brings its own narration. Going in becomes a _call_: the parent stops speaking, the module
+speaks, and the parent resumes.
+
+```yaml
+# order.yaml
+entities:
+  paying:
+    label: Paying
+    child: ./paying.yaml
+
+say:
+  - speech: "Almost everything happens in the middle."
+    activates: paying
+  - enter: paying # paying.yaml narrates itself from here
+  - speech: "All of that took about a second." # ...and the parent resumes
+```
+
+```yaml
+# paying.yaml — one body, its own narration, and nothing else
+world:
+  entities: { ... }
+  relations: [...]
+say:
+  - ...
+```
+
+- **There is no `exit:`.** The module's cue list running out is the return. Completion unwinds the
+  stack rather than graph terminality, because a world may cycle, fork, or have four sinks — "come
+  back when the traversal reaches the end" only works on worlds that happen to be trees.
+- **A module is one body and one `say`.** Not a presentation: `title`, `slides` and `defaults` are
+  refused by name. Its title is the entity's label; theme, voice and timing are the root
+  presentation's, inherited whole.
+- **Paths resolve relative to the file that declares them,** and must stay inside the checkout.
+- **Identities are local.** Internally every element gets a structural address —
+  `root/paying/check/allowed` — so two modules may both contain something called `check`.
+- **Merely mentioning an entity does not enter it.** Only `enter:` does.
+- **Missing files, inclusion cycles and excessive depth are compile errors**, reported before a
+  second of audio is synthesized, with the whole inclusion chain in the message.
+- **Depth is currently limited to a child and a grandchild.** The implementation recurses; the
+  limit is a claim about what has been watched, not about what the compiler can do.
+
+`examples/order/order.yaml` is the specimen — three scales, one continuous explanation — and
+`examples/order-flat.yaml` says the same thing as three ordinary slides, for comparison. See
+[`decision:31`](archaeology/decisions/) for the reasoning and
+[`dragon:11`](archaeology/dragons/)–[`dragon:13`](archaeology/dragons/) for what is still open.
+
 **Quoting instead of copying.** A specimen can name a file, a slide of it, and the construct it
 wants, rather than restating source that already exists:
 
@@ -314,6 +362,9 @@ Early, opinionated, and honest about it.
 - **Three canonical specimens have shaped the implementation.** Every archetype and every camera
   rule exists because a real rendered minute looked wrong without it. That makes them well-tuned
   for the worlds they were tuned against, and untested against yours.
+- **Child modules are an experiment, not a supported feature.** One probe, one artifact, one pair
+  of eyes. The compiler recurses; the demonstrated contract is a child and a grandchild, and no
+  claim is made about anything deeper ([`decision:31`](archaeology/decisions/)).
 - **Not a PowerPoint replacement.** No import, no export, no editing surface.
 - **Not a general motion-graphics DSL.** You cannot express an arbitrary animation, and adding a
   way to would defeat the point.

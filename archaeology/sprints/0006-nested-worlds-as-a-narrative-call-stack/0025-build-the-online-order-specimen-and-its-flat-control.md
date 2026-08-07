@@ -2,9 +2,10 @@
 id: tsk_01KZEFMY3AFS2W2HE6BCPBG6QS
 sequence: 25
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Build the online-order specimen and its flat control

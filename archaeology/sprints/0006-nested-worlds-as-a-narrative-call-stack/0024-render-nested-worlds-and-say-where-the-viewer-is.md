@@ -2,9 +2,10 @@
 id: tsk_01KZEFMY35MJSVSEX4H4TB3QRB
 sequence: 24
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Render nested worlds, and say where the viewer is

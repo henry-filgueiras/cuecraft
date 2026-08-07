@@ -2,9 +2,10 @@
 id: tsk_01KZEFMY2DRNTQJCJSJZ7Q9YDM
 sequence: 20
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Address every element, and let an entity name a child module

@@ -62,6 +62,27 @@ specifically for whether the world between the two rooms still feels necessary. 
 contain rooms and that is the shape. If the world starts feeling like corridor between
 destinations, the deck-as-world hypothesis gets much stronger and the corridor should go.
 
+## What sprint:6 said, and what it did not
+
+`examples/order/order.yaml` (decision:31) is the second and third interior, and it answers a
+neighbouring question rather than this one — which is itself informative.
+
+- **The world between the rooms was not corridor.** Coming back out of `paying` and finding it in
+  its place, with `packing` and `arrives` still to the right of it, is what makes the four steps
+  read as four steps rather than as three videos. Every existing observation about contrast between
+  map and room held at two levels as well as at one.
+- **But the two interiors were still never adjacent.** They are *nested*, not sequential: the
+  camera never goes from inside one thing to inside another at the same scale, which is exactly the
+  move a global deck-space would be making constantly. The specific gap this dragon named is
+  therefore still open, and this round did not narrow it.
+- **The chamber-overlap problem did not arise and is unresolved.** A chamber is still a fixed size
+  in world units, and it worked here because each world has exactly one entity with an inside. A
+  world with two chambers side by side would still have them overlapping, and that is layout rather
+  than cinematography.
+
+So: not strengthened, not weakened. The evidence that arrived is about *depth* rather than about
+*adjacency*, and dragon:12 is where the new pressure went.
+
 ## Resolution criteria
 
 Close as **strengthened** if a two-interior artifact makes the world feel like connective tissue

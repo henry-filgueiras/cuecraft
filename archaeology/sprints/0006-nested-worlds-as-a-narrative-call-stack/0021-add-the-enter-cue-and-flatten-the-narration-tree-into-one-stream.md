@@ -2,9 +2,10 @@
 id: tsk_01KZEFMY2PNXJTVWPS5Z8WN1J6
 sequence: 21
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Add the enter cue, and flatten the narration tree into one stream

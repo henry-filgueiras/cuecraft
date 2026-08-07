@@ -2,9 +2,10 @@
 id: tsk_01KZEFMY2WJRWE4QX3C24DYFPC
 sequence: 22
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZEFJJVPNCDAJ6MJHYZCN95M
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # Carry the call stack in the compiled timeline

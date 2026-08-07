@@ -83,3 +83,56 @@ four-deep presentation is watchable, and this round has no artifact that would s
 `detail:` is not widened. An inline interior still may not be a world — decision:25's boundary is
 narrowed by exception, not deleted, and the exception is exactly "the interior arrived in its own
 file with its own narration".
+
+## Outcome
+
+Every success criterion above was met, and the round landed roughly where it aimed. Three things
+came out differently enough to be worth writing down.
+
+**The architecture was smaller than expected, and the reason is decision:25's seam.** `bodyElements`
+and `interiorRange` were already recursive and needed no edit at all; `Interior` already synthesized
+a scene and handed it to the same archetype switch a slide gets, so a world inside an entity was
+already drawn by an `Atlas` with no idea it was inside anything. What actually had to be built was
+an *address* that cannot collide, a *cue* that says "go in", and a *schedule* that puts the descent
+on the same clock as the speech. The rest was wiring. That is the second time decision:25's flat
+element list has absorbed a change it was not designed for.
+
+**The unwind rule turned out to be the finding, not the mechanism.** The plan went in expecting the
+interesting part to be the camera stack. It was not — pushing and popping a viewport is six lines.
+The interesting part is that *lexical completion* is the only return rule that generalizes.
+decision:22 derives the closing reveal from out-degree zero, which is exact and beautiful on one
+world traversed once, and is simply unavailable inside a descent: a world may cycle, may have four
+sinks, or may have none. "Come back when the callee stops talking" needs no analysis of the graph
+at all, and an author already knows it, because it is the rule every function they have written
+obeys. decision:31 records this as the load-bearing claim.
+
+**The comparison against the flat control went further than "is it prettier".** Both artifacts
+render; the nested one runs 1:38 against 1:29, and spends 7.2 seconds of that on thresholds. What
+the control could not do is more interesting than how it looked:
+
+- *The flat version cannot tell the story in causal order.* Slide 1 has to run the whole chain —
+  buy, paying, packing, it turns up — before descending, because there is no way back. So the
+  detour into paying happens after the story has finished rather than at the point in the chain
+  where it belongs, and the payment explanation is an appendix. The nested version stops mid-chain,
+  explains, returns, and continues. That is a structural difference, not a stylistic one, and it is
+  the strongest argument the round produced.
+- *Containment is shown rather than asserted.* In the nested version the `Paying` plate itself
+  becomes the frame. In the control, slide 2 arrives as a hard cut and nothing on screen relates it
+  to the second box on slide 1 except the word.
+- *The control needed two bridging sentences* — "But paying is not one thing, here is what is
+  inside it", "Now, that check" — to do in prose what the camera does for free.
+- *And the return is where the nesting is most obviously worth it.* Coming back out and finding
+  `Paying` in its place, with `Packing and posting` still to the right of it, is what makes the four
+  steps read as four steps. The control has no equivalent moment and cannot have one.
+
+Against that: the control is easier to skim and to seek, it compiles from one file rather than
+three, and 7% of the nested runtime is spent travelling. The honest summary is that semantic zoom
+bought **narrative ordering**, which sequence cannot provide at any price, and that the motion is
+the mechanism rather than the point.
+
+**Promotion is not recommended yet.** One artifact, one pair of eyes, and three live dragons —
+dragon:11 (a module is contained by cuecraft's checkout rather than the deck's own directory,
+which means a real user's deck cannot descend), dragon:12 (the descent's duration is the first in
+cuecraft that is neither authored nor measured), and dragon:13 (the implementation recurses and the
+demonstration stops at two). The first of those is the one that would have to be settled before
+this could be called a language feature rather than a probe.
