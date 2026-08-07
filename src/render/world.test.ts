@@ -4,13 +4,20 @@ import { test } from "node:test";
 import {
   CAMERA,
   cameraAt,
+  cameraPlan,
   cameraTrack,
+  chamberFor,
   fitTo,
   layoutWorld,
+  marginOf,
+  occupancyOf,
   plateSize,
+  portalAt,
+  shotFor,
   smootherstep,
   targetBounds,
   union,
+  viewRect,
   viewportTransform,
   wrapLabel,
   type Rect,
@@ -53,19 +60,43 @@ function rectOf(layout: WorldLayout, id: string): Rect {
   return node.rect;
 }
 
-test("a label is broken to the plate measure, and nothing is dropped", () => {
-  assert.deepEqual(wrapLabel("Speech, measured here", 12), [
-    "Speech,",
-    "measured",
-    "here",
+test("a label is laid out, not squeezed: the break is balanced and nothing is dropped", () => {
+  // v1 wrapped greedily at a fixed measure and produced `What / narration / can reach`.
+  assert.deepEqual(wrapLabel("What narration can reach"), [
+    "What narration",
+    "can reach",
   ]);
-  assert.deepEqual(wrapLabel("Remotion", 12), ["Remotion"]);
-  // A word longer than the measure gets its own line rather than being cut.
-  assert.deepEqual(wrapLabel("Indistinguishable from", 12), [
-    "Indistinguishable",
-    "from",
-  ]);
-  assert.equal(wrapLabel("a b c", 12).join(" "), "a b c");
+  assert.deepEqual(wrapLabel("Remotion"), ["Remotion"]);
+  assert.deepEqual(wrapLabel("Speech, measured here"), ["Speech,", "measured here"]);
+
+  // Whatever the break, every word survives it in order.
+  for (const label of [
+    "One video file",
+    "Presentation state",
+    "The source you write",
+    "A very considerably longer entity label than anyone should write",
+  ]) {
+    assert.equal(wrapLabel(label).join(" "), label);
+    assert.ok(wrapLabel(label).length <= 3);
+  }
+});
+
+test("a break is chosen for the plate it makes, not for a fixed measure", () => {
+  // Each candidate break is scored on the plate's proportion, so the chosen one is never
+  // wildly further from the target shape than another achievable break.
+  const chosen = plateSize(wrapLabel("Semantic anchors"));
+  const oneLine = plateSize(["Semantic anchors"]);
+  const three = plateSize(["Semantic", "anch", "ors"]);
+  const away = (size: { width: number; height: number }) =>
+    Math.abs(size.width / size.height - 2.3);
+  assert.ok(away(chosen) <= away(oneLine));
+  assert.ok(away(chosen) < away(three));
+});
+
+test("a word longer than any sensible line gets its own, rather than being cut", () => {
+  const lines = wrapLabel("Indistinguishable from compression");
+  assert.ok(lines.includes("Indistinguishable"));
+  assert.equal(lines.join(" "), "Indistinguishable from compression");
 });
 
 test("a plate is sized to its label, and a longer label makes a wider plate", () => {
@@ -201,20 +232,115 @@ const EVENTS = [
   { frame: 300, id: "speech" },
 ];
 const SPAN = { from: 0, until: 400 };
-const track = cameraTrack(laid, EVENTS, SPAN);
+const plan = cameraPlan(laid, EVENTS, SPAN);
+const track = plan.track;
+
+/* ------------------------------------------------- a move has to be worth making */
+
+test("a shot that already frames the target with room is kept", () => {
+  const bounds = rectOf(laid, "state");
+  const held = fitTo(bounds, laid.bounds, { widest: CAMERA.widest });
+  const shot = shotFor(held, bounds, laid.bounds);
+  assert.equal(shot.kind, "hold");
+  assert.deepEqual(shot.view, held);
+});
+
+test("a target clipped by the current frame is brought in, at the same scale", () => {
+  const bounds = rectOf(laid, "state");
+  const held = fitTo(bounds, laid.bounds, { widest: CAMERA.widest });
+  // Slide the camera until the subject is half out of frame.
+  const drifted = { ...held, cx: held.cx + held.width * 0.45 };
+  const shot = shotFor(drifted, bounds, laid.bounds);
+  assert.equal(shot.kind, "pan");
+  assert.equal(shot.view.width, drifted.width, "a pan must not change the scale");
+  // And it pans the *least* it can: the subject ends up against the margin, not centred.
+  assert.ok(Math.abs(shot.view.cx - held.cx) > 1, "it moved");
+  assert.ok(shot.view.cx > held.cx, "it stayed on the side it came from");
+});
+
+test("a target too small to read is recomposed even though it is fully visible", () => {
+  // This is the case containment alone gets wrong: the opening whole-world shot contains every
+  // target perfectly and is the right shot for none of them.
+  const whole = fitTo(laid.bounds, laid.bounds, { pad: CAMERA.revealPad });
+  const held = viewRect(whole);
+  // Whichever plate sits furthest from the edges: the case is about size, not about clipping.
+  const inmost = [...laid.nodes].sort(
+    (a, b) => marginOf(b.rect, held) - marginOf(a.rect, held),
+  )[0];
+  assert.ok(inmost !== undefined);
+  assert.ok(
+    marginOf(inmost.rect, held) > CAMERA.holdMargin,
+    "it really is fully contained",
+  );
+  assert.ok(
+    occupancyOf(inmost.rect, held) < CAMERA.holdOccupancy,
+    "and really is too small",
+  );
+  assert.equal(shotFor(whole, inmost.rect, laid.bounds).kind, "recompose");
+});
+
+test("a target that does not fit at the current scale is recomposed", () => {
+  const tight = fitTo(rectOf(laid, "source"), laid.bounds, { widest: CAMERA.widest });
+  const wide = union([rectOf(laid, "source"), rectOf(laid, "video")]);
+  assert.equal(shotFor(tight, wide, laid.bounds).kind, "recompose");
+});
+
+test("holding is stable: re-deciding the same shot never starts drifting", () => {
+  // The property hysteresis exists for. Feeding a decision back in must reach a fixed point
+  // rather than oscillating between two nearby solutions.
+  let view = fitTo(rectOf(laid, "state"), laid.bounds, { widest: CAMERA.widest });
+  const bounds = rectOf(laid, "state");
+  for (let round = 0; round < 8; round += 1) {
+    const shot = shotFor(view, bounds, laid.bounds);
+    assert.equal(shot.kind, "hold", `moved again on round ${round}`);
+    view = shot.view;
+  }
+});
+
+test("the plan records what it decided about every event, including the ones it ignored", () => {
+  assert.deepEqual(
+    plan.shots.map((shot) => shot.id),
+    EVENTS.map((event) => event.id),
+  );
+  for (const shot of plan.shots) {
+    assert.ok(["hold", "pan", "recompose"].includes(shot.kind));
+  }
+});
+
+test("an event that changes nothing produces no key at all", () => {
+  const still = cameraPlan(laid, [{ frame: 100, id: "source" }], SPAN);
+  const held = still.track.at(-2)?.view;
+  assert.ok(held !== undefined);
+  // Reaching the same entity again from the shot that already frames it is a hold, and a hold
+  // adds nothing to the track.
+  const again = cameraPlan(
+    laid,
+    [
+      { frame: 100, id: "source" },
+      { frame: 200, id: "source" },
+    ],
+    SPAN,
+  );
+  assert.equal(again.track.length, still.track.length);
+  assert.equal(again.shots.at(-1)?.kind, "hold");
+});
+
+/* ---------------------------------------------------------------- the whole track */
 
 test("the track opens on the whole world and closes on it again", () => {
-  assert.equal(track.length, EVENTS.length + 2);
   const whole = fitTo(laid.bounds, laid.bounds, { pad: CAMERA.revealPad });
   assert.deepEqual(track[0]?.view, whole);
   assert.deepEqual(track.at(-1)?.view, whole);
   assert.equal(track.at(-1)?.frame, SPAN.until);
 });
 
-test("each stop begins at the frame the narration reached its entity", () => {
+test("every key that is not a hold begins at the frame the narration reached its entity", () => {
+  const moved = plan.shots
+    .filter((shot) => shot.kind !== "hold")
+    .map((shot) => shot.frame);
   assert.deepEqual(
     track.slice(1, -1).map((key) => key.frame),
-    EVENTS.map((event) => event.frame),
+    moved,
   );
 });
 
@@ -226,13 +352,19 @@ test("a move is paced by its own path and never outlives the gap after it", () =
     if (next !== undefined) assert.ok(key.travel <= next.frame - key.frame);
   }
   // A traversal across the world is not given the same time as a hop between neighbours.
-  const far = cameraTrack(laid, [{ frame: 100, id: "video" }], { from: 0, until: 900 });
-  const near = cameraTrack(laid, [{ frame: 100, id: "source" }], { from: 0, until: 900 });
+  const far = cameraPlan(laid, [{ frame: 100, id: "video" }], {
+    from: 0,
+    until: 900,
+  }).track;
+  const near = cameraPlan(laid, [{ frame: 100, id: "source" }], {
+    from: 0,
+    until: 900,
+  }).track;
   assert.ok((far[1]?.travel ?? 0) >= (near[1]?.travel ?? 0));
 });
 
 test("events are ordered by frame, whatever order they arrive in", () => {
-  const shuffled = cameraTrack(laid, [...EVENTS].reverse(), SPAN);
+  const shuffled = cameraPlan(laid, [...EVENTS].reverse(), SPAN).track;
   assert.deepEqual(
     shuffled.map((key) => key.view),
     track.map((key) => key.view),
@@ -248,9 +380,6 @@ test("the camera sits still until a stop, then arrives exactly at it", () => {
   const arrived = cameraAt(track, key.frame + key.travel);
   assert.ok(Math.abs(arrived.cx - key.view.cx) < 0.5);
   assert.ok(Math.abs(arrived.width - key.view.width) < 0.5);
-
-  // And having arrived, it holds until the next stop.
-  assert.deepEqual(cameraAt(track, key.frame + key.travel + 20), cameraAt(track, 199));
 });
 
 test("the camera moves monotonically and never jumps", () => {
@@ -269,6 +398,112 @@ test("a world nobody narrates is framed whole from beginning to end", () => {
   const whole = fitTo(laid.bounds, laid.bounds, { pad: CAMERA.revealPad });
   assert.deepEqual(cameraAt(still, 0), whole);
   assert.deepEqual(cameraAt(still, 999), whole);
+});
+
+/* ------------------------------------------------------------------- going inside */
+
+const INSIDE = [
+  { frame: 100, id: "cues" },
+  { frame: 200, id: "detail-one", inside: "speech" },
+  { frame: 260, id: "detail-two", inside: "speech" },
+  { frame: 340, id: "state" },
+];
+const excursion = cameraPlan(laid, INSIDE, { from: 0, until: 500 });
+
+test("a cue reaching inside an entity opens it, and the next one outside closes it", () => {
+  assert.equal(excursion.portals.length, 1);
+  const pass = excursion.portals[0];
+  assert.ok(pass !== undefined);
+  assert.equal(pass.id, "speech");
+  assert.equal(pass.enterFrame, 200, "opens on the first cue that reaches inside");
+  assert.equal(pass.exitFrame, 340, "closes on the first cue that reaches outside");
+  assert.deepEqual(
+    excursion.shots.map((shot) => shot.kind),
+    ["recompose", "enter", "exit", "pan"],
+  );
+});
+
+test("a second cue inside the same entity does not re-enter it", () => {
+  assert.equal(excursion.shots.filter((shot) => shot.kind === "enter").length, 1);
+});
+
+test("an excursion nobody leaves is closed by the end of the narration", () => {
+  const unfinished = cameraPlan(
+    laid,
+    [{ frame: 100, id: "detail-one", inside: "speech" }],
+    { from: 0, until: 400 },
+  );
+  assert.equal(unfinished.portals[0]?.exitFrame, 400);
+});
+
+test("the chamber is centred on the plate, so the plate does not move while it opens", () => {
+  const node = laid.byId.get("speech");
+  assert.ok(node !== undefined);
+  const chamber = chamberFor(node);
+  assert.ok(
+    Math.abs(chamber.x + chamber.width / 2 - (node.rect.x + node.rect.width / 2)) < 1e-9,
+  );
+  assert.ok(
+    Math.abs(chamber.y + chamber.height / 2 - (node.rect.y + node.rect.height / 2)) <
+      1e-9,
+  );
+  assert.ok(Math.abs(chamber.width / chamber.height - 16 / 9) < 1e-9);
+  assert.ok(
+    chamber.width > node.rect.width,
+    "a chamber is bigger than the plate it opens from",
+  );
+});
+
+test("the interior is entered and left at rest, and is fully open in between", () => {
+  const pass = excursion.portals[0];
+  assert.ok(pass !== undefined);
+  assert.equal(portalAt(pass, pass.enterFrame), 0);
+  assert.equal(portalAt(pass, pass.enterFrame + pass.enterFrames), 1);
+  assert.equal(portalAt(pass, pass.exitFrame), 1);
+  assert.equal(portalAt(pass, pass.exitFrame + pass.exitFrames), 0);
+  assert.equal(portalAt(pass, pass.exitFrame + pass.exitFrames + 60), 0);
+
+  // Monotone in, held, monotone out — no wobble anywhere.
+  let previous = 0;
+  for (
+    let frame = pass.enterFrame;
+    frame <= pass.enterFrame + pass.enterFrames;
+    frame += 1
+  ) {
+    const value = portalAt(pass, frame);
+    assert.ok(value >= previous - 1e-9, `portal went backwards at ${frame}`);
+    previous = value;
+  }
+  for (
+    let frame = pass.enterFrame + pass.enterFrames;
+    frame <= pass.exitFrame;
+    frame += 1
+  ) {
+    assert.equal(portalAt(pass, frame), 1);
+  }
+});
+
+test("coming out lands on the entity that was entered, before going anywhere else", () => {
+  const exit = excursion.shots.find((shot) => shot.kind === "exit");
+  assert.ok(exit !== undefined);
+  const back = fitTo(rectOf(laid, "speech"), laid.bounds, { widest: CAMERA.widest });
+  assert.deepEqual(exit.view, back);
+
+  // And the cue that closed it is framed only after the retreat and the beat that follows it.
+  const after = excursion.track.find((key) => key.frame > exit.frame);
+  assert.ok(after !== undefined);
+  assert.equal(after.frame, exit.frame + CAMERA.exitTravel + CAMERA.returnHold);
+});
+
+test("a world with no interiors plans exactly as it did before they existed", () => {
+  // Backward compatibility, stated as an identity rather than as a promise.
+  const withInside = cameraPlan(
+    laid,
+    EVENTS.map((event) => ({ ...event })),
+    SPAN,
+  );
+  assert.deepEqual(withInside.track, track);
+  assert.deepEqual(withInside.portals, []);
 });
 
 test("the viewport becomes one transform, and the world's centre lands in the frame's", () => {

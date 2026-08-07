@@ -62,11 +62,16 @@ export type AnchorTiming = { readonly [K in keyof typeof ANCHOR_TIMING]: number 
  *
  * So heat rises where the word lands, holds while the camera flies, and settles once it arrives.
  * Same three numbers, same shape, different duration; nothing else about activation changes.
+ *
+ * The hold got longer again once entities could be *entered*. Coming back out of one is a retreat
+ * followed by a traversal, and the concept the narration has moved on to ignites at the start of
+ * both — so the plateau has to outlast the longest journey the camera can be on when a word
+ * lands, or the arrival is at something that has already stopped glowing.
  */
 export const WORLD_TIMING: AnchorTiming = {
   establish: 26,
   heatRise: 6,
-  heatHold: 30,
+  heatHold: 42,
   heatFall: 34,
   sweep: 40,
 } as const;

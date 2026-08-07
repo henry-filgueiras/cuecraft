@@ -1,9 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from "remotion";
 
 import { deriveChange } from "../presentation/change.ts";
-import type { AuthoredItem, SlideBody } from "../presentation/body.ts";
+import {
+  interiorRange,
+  type AuthoredEntity,
+  type AuthoredItem,
+  type SlideBody,
+} from "../presentation/body.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
 import {
@@ -19,13 +24,16 @@ import {
   projectLines,
   wrapLine,
 } from "./projection.ts";
+import { chooseLayout } from "./layout.ts";
 import { sliceTokens, tokenizeLine } from "./tokens.ts";
 import {
   cameraAt,
-  cameraTrack,
+  cameraPlan,
   layoutWorld,
+  portalAt,
   viewportTransform,
   worldOf,
+  type PortalPass,
   type Point,
   type Rect,
   type WorldLayout,
@@ -1023,20 +1031,32 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
     [world],
   );
 
-  const track = useMemo(() => {
-    if (layout === undefined) return [];
-    return cameraTrack(
+  const plan = useMemo(() => {
+    if (layout === undefined || world === undefined) return undefined;
+    // Which anchors are inside something is read off the element ordering `bodyElements`
+    // publishes, so the renderer and the compiler agree by construction rather than by
+    // convention. An anchor past the last entity is inside whichever interior contains it.
+    const inside = interiorOwners(world.entities);
+    return cameraPlan(
       layout,
-      scene.anchors.map((anchor) => ({ frame: anchor.frame, id: anchor.id })),
+      scene.anchors.map((anchor) => ({
+        frame: anchor.frame,
+        id: anchor.id,
+        ...(inside.get(anchor.elementIndex) === undefined
+          ? {}
+          : { inside: inside.get(anchor.elementIndex) as string }),
+      })),
       { from: scene.from, until: revealFrom(scene) },
     );
-  }, [layout, scene]);
+  }, [layout, world, scene]);
 
-  if (layout === undefined) return null;
+  if (layout === undefined || world === undefined || plan === undefined) return null;
 
-  const view = cameraAt(track, absoluteFrame);
+  const view = cameraAt(plan.track, absoluteFrame);
   const viewport = { width: 1920, height: 1080 };
   const scale = viewport.width / view.width;
+  /** How wide the shot that holds the whole world is, for judging how wide this one is. */
+  const whole = plan.track[0]?.view.width ?? view.width;
 
   const stateOf = anchorStatesFor(scene, absoluteFrame, WORLD_TIMING);
   const states = new Map(
@@ -1045,7 +1065,16 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
   const heat = (id: string): number => states.get(id)?.heat ?? 0;
   const degree = (id: string): number => states.get(id)?.degree ?? 0;
   const sweep = (id: string): number => states.get(id)?.sweep ?? 0;
-  const attention = Math.max(0, ...[...states.values()].map((state) => state.heat));
+
+  // Everything that is not the moment steps back while the moment lasts. An entity being
+  // *entered* holds the frame's attention for as long as the excursion lasts, not just for the
+  // length of a transient, so the portal contributes its own progress to the same number.
+  const open = plan.portals.find(
+    (pass) =>
+      absoluteFrame > pass.enterFrame && absoluteFrame < pass.exitFrame + pass.exitFrames,
+  );
+  const portal = open === undefined ? 0 : portalAt(open, absoluteFrame);
+  const attention = Math.max(portal, ...[...states.values()].map((state) => state.heat));
 
   // The world layer, and a fainter copy of the field behind it moving at a fraction of the rate.
   // Parallax is the cheapest honest depth cue there is, and it is what makes a lateral move read
@@ -1071,13 +1100,17 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
     <AbsoluteFill style={{ backgroundColor: COLORS.ink, overflow: "hidden" }}>
       <div style={place(WORLD.gridParallax)}>
         <Field
-          opacity={0.5 * opening}
+          opacity={0.5 * opening * (1 - portal)}
           step={WORLD.gridStep * 3}
           scale={scale * WORLD.gridParallax}
         />
       </div>
       <div style={place(1)}>
-        <Field opacity={0.85 * opening} step={WORLD.gridStep} scale={scale} />
+        <Field
+          opacity={0.85 * opening * (1 - portal)}
+          step={WORLD.gridStep}
+          scale={scale}
+        />
         <Relations
           layout={layout}
           degree={degree}
@@ -1085,33 +1118,76 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
           heat={heat}
           attention={attention}
         />
-        {layout.nodes.map((node) => (
-          <Plate
-            key={node.id}
-            node={node}
-            state={states.get(node.id) as AnchorState}
-            attention={attention}
-            opening={opening}
-          />
-        ))}
+        {layout.nodes.map((node) => {
+          const pass = plan.portals.find((entry) => entry.id === node.id);
+          const entity = world.entities.find((candidate) => candidate.id === node.id);
+          if (pass !== undefined && entity?.detail !== undefined) {
+            return (
+              <Portal
+                key={node.id}
+                node={node}
+                entity={entity}
+                entities={world.entities}
+                scene={scene}
+                pass={pass}
+                progress={portalAt(pass, absoluteFrame)}
+                state={states.get(node.id) as AnchorState}
+                attention={attention}
+                opening={opening}
+                absoluteFrame={absoluteFrame}
+              />
+            );
+          }
+          return (
+            <Plate
+              key={node.id}
+              node={node}
+              state={states.get(node.id) as AnchorState}
+              attention={attention}
+              opening={opening}
+              explored={plan.portals.some(
+                (entry) => entry.id === node.id && absoluteFrame > entry.exitFrame,
+              )}
+            />
+          );
+        })}
       </div>
 
       {/* Screen space, and the only thing in the composition that does not move: a horizon the
-          travelling world is seen against. */}
+          travelling world is seen against. It lifts while the camera is inside something, so an
+          interior reads as a lit room rather than as the same void with a diagram in it. */}
       <AbsoluteFill
         style={{
           background:
             `radial-gradient(ellipse 78% 74% at 50% 48%, ${withAlpha("#05070B", 0)} 0%, ` +
-            `${withAlpha("#05070B", 0.22)} 62%, ${withAlpha("#04060A", 0.62)} 100%)`,
+            `${withAlpha("#05070B", 0.22 * (1 - portal))} 62%, ` +
+            `${withAlpha("#04060A", 0.62 - 0.42 * portal)} 100%)`,
           pointerEvents: "none",
         }}
       />
+      {/* The deck's title labels the *world*, so it is present exactly when the world is.
+          It is at full strength on the establishing shot and on the reveal, absent on every close
+          shot in between, and it steps aside entirely inside a concept — down there the concept's
+          name is the title, and two titles on one frame is one too many.
+
+          Derived from the camera rather than scheduled: how much of the world is on screen is
+          already known, and it answers the question better than a keyframe would. It also fixes
+          the one thing v1 never solved, which is that a fixed caption over a moving world collides
+          with whatever happens to be behind it. */}
       <div
         style={{
           position: "absolute",
           left: FRAME.marginX,
           top: FRAME.marginY,
           ...reveal(frame, 0),
+          // Combined with the entrance rather than layered over it: `reveal` sets opacity too.
+          opacity:
+            (reveal(frame, 0).opacity as number) *
+            (1 - Math.min(1, portal * 2.2)) *
+            interpolate(view.width / whole, [0.62, 0.88], [0, 1], {
+              extrapolateLeft: "clamp",
+              extrapolateRight: "clamp",
+            }),
         }}
       >
         <Rule frame={frame} width={72} />
@@ -1130,6 +1206,24 @@ function Atlas({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }
       </div>
     </AbsoluteFill>
   );
+}
+
+/**
+ * Which entity each reachable element belongs to, for the elements that are inside one.
+ *
+ * Read from `interiorRange`, which owns the ordering rule, so this cannot drift from what the
+ * compiler resolved an `activates:` against.
+ */
+function interiorOwners(entities: readonly AuthoredEntity[]): Map<number, string> {
+  const owners = new Map<number, string>();
+  for (const entity of entities) {
+    const range = interiorRange(entities, entity.id);
+    if (range === undefined) continue;
+    for (let index = 0; index < range.count; index += 1) {
+      owners.set(range.offset + index, entity.id);
+    }
+  }
+  return owners;
 }
 
 /**
@@ -1234,7 +1328,11 @@ function Relations({
         const drawn = Math.min(sweep(edge.from), sweep(edge.to));
         const live = Math.min(degree(edge.from), degree(edge.to));
         const arriving = heat(edge.to);
-        const dim = 1 - 0.34 * attention * (1 - arriving);
+        // A relation that touches the moment is part of the moment. Lighting the wires into and
+        // out of a hot concept is what makes it read as *connected* rather than merely bright,
+        // and it costs one `max` — the edge already knows both of its endpoints' states.
+        const touched = Math.max(heat(edge.from), heat(edge.to));
+        const dim = 1 - 0.34 * attention * (1 - touched);
 
         return (
           <g key={`${edge.from}-${edge.to}`}>
@@ -1246,12 +1344,15 @@ function Relations({
               strokeWidth={WORLD.edgeStroke * 0.55}
               strokeLinecap="round"
             />
-            {/* The established run, drawn as it establishes. */}
+            {/* The established run, drawn as it establishes, and lit while it carries a moment. */}
             <path
               d={edge.path}
               fill="none"
-              stroke={withAlpha(hue, (0.34 + 0.34 * live) * dim)}
-              strokeWidth={WORLD.edgeStroke}
+              stroke={withAlpha(
+                mix(hue, "#FFFFFF", 0.45 * touched),
+                (0.34 + 0.34 * live + 0.5 * touched) * dim,
+              )}
+              strokeWidth={WORLD.edgeStroke * (1 + 0.6 * touched)}
               strokeLinecap="round"
               strokeDasharray={edge.length}
               strokeDashoffset={edge.length * (1 - drawn)}
@@ -1328,11 +1429,14 @@ function Plate({
   state,
   attention,
   opening,
+  explored = false,
 }: {
   node: WorldNode;
   state: AnchorState;
   attention: number;
   opening: number;
+  /** The camera has been inside this one and come back out. */
+  explored?: boolean;
 }) {
   const hue = flowColor(node.depth);
   const { degree, heat } = state;
@@ -1340,7 +1444,7 @@ function Plate({
   // Everything that is not the moment steps back while the moment lasts. Half a stop is a lot,
   // and it is the single most effective thing on this frame: the eye finds the brightest object
   // before it finds anything else, so making the moment brightest is the whole job.
-  const dim = 1 - 0.5 * attention * (1 - heat);
+  const dim = 1 - 0.55 * attention * (1 - heat);
   const presence = (0.4 + 0.6 * degree) * dim * opening;
 
   // Hot is the entity's own colour *brightened*, not washed towards white. A white border is
@@ -1379,6 +1483,19 @@ function Plate({
       }}
     >
       {node.terminal ? <Gate hue={hue} degree={degree} /> : null}
+      {/* A concept the camera has been inside keeps a second line just within its own, so the
+          final wide shot distinguishes the things that were opened from the things that were
+          only named. No badge, no tick — the plate is simply built a little more deeply. */}
+      {explored ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: 9,
+            borderRadius: WORLD.plateRadius - 4,
+            border: `1.5px solid ${withAlpha(hue, 0.34)}`,
+          }}
+        />
+      ) : null}
       {/* Ignition. One ring, once, expanding away from the plate as it lights — the thing that
           makes an activation visible from the corner of the eye while the camera is still on its
           way there. Driven by `sweep` because a ring that came back would be absurd. */}
@@ -1410,6 +1527,239 @@ function Plate({
           <div key={line}>{line}</div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * An entity being entered, and the same entity being a box in a diagram.
+ *
+ * One component for both, because they are one object. The plate's rectangle is interpolated
+ * from where it sits in the world to the chamber it opens into — same centre, so the thing does
+ * not travel and then become something else; it stays where it is and opens — while the camera
+ * closes on the chamber at exactly the same rate. What the viewer sees is the node's own outline
+ * arriving at the edge of the picture and stopping there.
+ *
+ * The interior is an **ordinary cuecraft composition**, drawn in a 1920x1080 box scaled into the
+ * chamber, so at the portal shot it lands at about one composition pixel per screen pixel. That
+ * is the whole of the semantic zoom: at world scale the entity is two words, and at concept scale
+ * it is whichever of the seven compositions its content selected — here a source specimen with
+ * regions the narration lights. Nothing about the interior knows it is inside anything.
+ *
+ * The label is the same string in both states, so the handoff is a fade between two settings of
+ * one word while both are travelling to the same place. It reads as reflow rather than as a
+ * substitution, which is the difference between "we went inside this" and "a slide arrived".
+ */
+function Portal({
+  node,
+  entity,
+  entities,
+  scene,
+  pass,
+  progress,
+  state,
+  attention,
+  opening,
+  absoluteFrame,
+}: {
+  node: WorldNode;
+  entity: AuthoredEntity;
+  entities: readonly AuthoredEntity[];
+  scene: Scene;
+  pass: PortalPass;
+  progress: number;
+  state: AnchorState;
+  attention: number;
+  opening: number;
+  absoluteFrame: number;
+}) {
+  const hue = flowColor(node.depth);
+  const { degree, heat } = state;
+  const p = progress;
+
+  // The boundary, between its two rectangles.
+  const box = {
+    x: node.rect.x + (pass.chamber.x - node.rect.x) * p,
+    y: node.rect.y + (pass.chamber.y - node.rect.y) * p,
+    width: node.rect.width + (pass.chamber.width - node.rect.width) * p,
+    height: node.rect.height + (pass.chamber.height - node.rect.height) * p,
+  };
+  const inner = box.width / 1920;
+
+  const ignited = mix(hue, "#FFFFFF", 0.42);
+  const stroke = mix(
+    mix("#465873", hue, 0.42 + 0.58 * degree),
+    ignited,
+    Math.max(heat, p),
+  );
+  const label = mix(mix(COLORS.dim, COLORS.paper, degree), "#FFFFFF", 0.6 * heat);
+  const dim = 1 - 0.55 * attention * (1 - Math.max(heat, p));
+  const presence = ((0.4 + 0.6 * degree) * dim + p) * opening;
+
+  // Where the interior's own heading will be, in world units. The plate label travels to it.
+  const detail = entity.detail;
+  const headingSize = fitHeading(node.label.length, TYPE.title);
+  const headingAt = {
+    x: box.x + FRAME.marginX * inner,
+    y: box.y + (FRAME.marginY + 6 + SPACE.lg) * inner,
+    size: headingSize * inner,
+  };
+
+  const plateLabel = interpolate(p, [0, 0.42], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const interior = interpolate(p, [0.34, 0.78], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: ease,
+  });
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: box.x,
+        top: box.y,
+        width: box.width,
+        height: box.height,
+        // In front of the world once it starts opening. Plates are drawn in entity order, and an
+        // entity that comes later in the source is not thereby in front of the room you are
+        // standing in.
+        zIndex: p > 0 ? 2 : 1,
+        opacity: Math.min(1, presence),
+        transform: `scale(${1 + 0.05 * heat * (1 - p)})`,
+        borderRadius: WORLD.plateRadius * (1 + 1.6 * p),
+        border: `${(WORLD.plateStroke + 1.5 * heat) * (1 + p)}px solid ${stroke}`,
+        backgroundColor: mix(
+          "#0B1017",
+          hue,
+          (0.02 + 0.05 * degree + 0.09 * heat) * (1 - p) + 0.012 * p,
+        ),
+        boxShadow:
+          `0 0 ${(28 + 74 * heat) * (1 + 4 * p)}px ${withAlpha(hue, 0.09 + 0.2 * degree + 0.62 * heat)}, ` +
+          `inset 0 0 ${30 + 60 * heat}px ${withAlpha(hue, (0.05 + 0.18 * heat) * (1 - p))}`,
+        overflow: "hidden",
+      }}
+    >
+      {/* The interior, at its own scale, choreographing itself as the camera arrives. */}
+      {detail !== undefined && interior > 0 ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: 1920,
+            height: 1080,
+            transformOrigin: "0 0",
+            transform: `scale(${inner})`,
+            opacity: interior,
+          }}
+        >
+          <Sequence
+            from={Math.max(0, pass.enterFrame - scene.from)}
+            layout="none"
+            name={`interior-${node.id}`}
+          >
+            <Interior
+              entity={entity}
+              entities={entities}
+              scene={scene}
+              absoluteFrame={absoluteFrame}
+            />
+          </Sequence>
+        </div>
+      ) : null}
+
+      {/* The label, on its way to becoming the heading. */}
+      {plateLabel > 0 ? (
+        <div
+          style={{
+            position: "absolute",
+            left: box.x + (headingAt.x - box.x) * p - box.x,
+            top: box.y + (headingAt.y - box.y) * p - box.y,
+            width: box.width,
+            height: box.height * (1 - p) + headingAt.size * 1.2 * p,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: plateLabel,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              padding: `0 ${WORLD.padX}px`,
+              textAlign: "center",
+              fontSize: WORLD.label + (headingAt.size - WORLD.label) * p,
+              fontWeight: 600,
+              letterSpacing: "-0.018em",
+              lineHeight: WORLD.lineHeight,
+              color: label,
+              textShadow:
+                heat > 0.01 ? `0 0 ${44 * heat}px ${withAlpha(hue, heat)}` : "none",
+            }}
+          >
+            {node.lines.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The composition inside an entity.
+ *
+ * A synthesized scene rather than a special case: the entity's label is the title, its `detail`
+ * is the body, `chooseLayout` picks the composition from that body exactly as it would for a
+ * slide, and the anchors are the slide's own anchors with the interior's offset subtracted. So
+ * an interior is rendered by code that has no idea interiors exist, which is the test of whether
+ * `detail` was a real reuse or a costume.
+ */
+function Interior({
+  entity,
+  entities,
+  scene,
+  absoluteFrame,
+}: {
+  entity: AuthoredEntity;
+  entities: readonly AuthoredEntity[];
+  scene: Scene;
+  absoluteFrame: number;
+}) {
+  const detail = entity.detail;
+  const range = interiorRange(entities, entity.id);
+  if (detail === undefined || range === undefined) return null;
+
+  const inner: Scene = {
+    ...scene,
+    title: entity.text,
+    body: detail,
+    layout: chooseLayout({ title: entity.text, body: detail }),
+    anchors: scene.anchors
+      .filter(
+        (anchor) =>
+          anchor.elementIndex >= range.offset &&
+          anchor.elementIndex < range.offset + range.count,
+      )
+      .map((anchor) => ({ ...anchor, elementIndex: anchor.elementIndex - range.offset })),
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        padding: `${FRAME.marginY}px ${FRAME.marginX}px`,
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: FONT_STACK,
+      }}
+    >
+      <Composition scene={inner} absoluteFrame={absoluteFrame} />
     </div>
   );
 }
@@ -1454,23 +1804,35 @@ export function Slide({
 }) {
   return (
     <Frame scene={scene} slideCount={slideCount} bleed={scene.layout === "atlas"}>
-      {scene.layout === "atlas" ? (
-        <Atlas scene={scene} absoluteFrame={absoluteFrame} />
-      ) : scene.layout === "statement" ? (
-        <Statement scene={scene} />
-      ) : scene.layout === "matrix" ? (
-        <Matrix scene={scene} absoluteFrame={absoluteFrame} />
-      ) : scene.layout === "index" ? (
-        <IndexList scene={scene} absoluteFrame={absoluteFrame} />
-      ) : scene.layout === "cascade" ? (
-        <Cascade scene={scene} absoluteFrame={absoluteFrame} />
-      ) : scene.layout === "specimen" ? (
-        <Specimen scene={scene} absoluteFrame={absoluteFrame} />
-      ) : scene.layout === "revision" ? (
-        <Revision scene={scene} absoluteFrame={absoluteFrame} />
-      ) : (
-        <Lead scene={scene} />
-      )}
+      <Composition scene={scene} absoluteFrame={absoluteFrame} />
     </Frame>
+  );
+}
+
+/**
+ * The archetype switch, separated from the frame that usually surrounds it.
+ *
+ * Separated because a composition is now drawn in two places: on a slide, and inside a world
+ * entity that the camera has entered. The interior gets the same eight-way choice from the same
+ * function with no branch for being an interior — which is the evidence that `detail` reused the
+ * composition layer rather than resembling it.
+ */
+function Composition({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  return scene.layout === "atlas" ? (
+    <Atlas scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "statement" ? (
+    <Statement scene={scene} />
+  ) : scene.layout === "matrix" ? (
+    <Matrix scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "index" ? (
+    <IndexList scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "cascade" ? (
+    <Cascade scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "specimen" ? (
+    <Specimen scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "revision" ? (
+    <Revision scene={scene} absoluteFrame={absoluteFrame} />
+  ) : (
+    <Lead scene={scene} />
   );
 }

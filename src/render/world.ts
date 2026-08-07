@@ -89,15 +89,67 @@ export interface WorldLayout {
 }
 
 /**
- * Break a label to the measure a node plate is set at.
+ * Break a label into the lines a plate should hold.
  *
- * Greedy rather than balanced, and character-counted rather than measured, for the reason
- * `headingLines` estimates instead of measuring: composition has to resolve without a browser.
- * A label that will not fit in two lines gets a third; nothing is truncated, because a world
- * whose entities are unnamed is not explaining anything.
+ * v1 wrapped greedily at a fixed twelve characters, and it showed. "What narration can reach"
+ * came out `What / narration / can reach` — three lines, the longest of them nine characters,
+ * in a plate at the minimum width with the text jammed against a ragged right edge. The label
+ * was not laid out; it was survived.
+ *
+ * So the wrap is chosen rather than fallen into. For one, two and three lines, this finds the
+ * *balanced* break — the smallest maximum line length that fits in that many lines — and then
+ * picks whichever of the three makes the better plate, scored on two things a designer would
+ * actually look at:
+ *
+ *     proportion   how close the resulting plate is to the shape a plate wants to be
+ *     simplicity   fewer lines, all else equal
+ *
+ * "What narration can reach" now comes out `What narration / can reach`: two lines, balanced,
+ * in a plate close to 2.3:1. Nothing about the label was changed to get there.
+ *
+ * Character counts rather than measured text, for the reason `headingLines` estimates: layout
+ * has to resolve without a browser, and monospaced-in-the-aggregate is close enough to predict a
+ * break in a twenty-character label.
  */
-export function wrapLabel(label: string, measure: number = WORLD.measure): string[] {
+export function wrapLabel(label: string, maxLines: number = WORLD.maxLines): string[] {
   const words = label.split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) return [label];
+
+  let best: { lines: string[]; score: number } | undefined;
+  for (let lines = 1; lines <= Math.min(maxLines, words.length); lines += 1) {
+    const broken = balance(words, lines);
+    // A break that could not be achieved in this many lines is not a candidate for it.
+    if (broken.length !== lines) continue;
+    const plate = plateSize(broken);
+    const proportion = Math.abs(plate.width / plate.height - WORLD.plateAspect);
+    const score = proportion + WORLD.linePenalty * (lines - 1);
+    if (best === undefined || score < best.score) best = { lines: broken, score };
+  }
+  return best?.lines ?? [words.join(" ")];
+}
+
+/**
+ * The balanced break into exactly `lines` lines: the smallest longest-line that fits.
+ *
+ * Searched rather than computed, because the search space is a label's length and the answer is
+ * exact. Greedy filling at a given measure is monotone in the measure, so the smallest measure
+ * that yields few enough lines is the balanced one.
+ */
+function balance(words: readonly string[], lines: number): string[] {
+  const longestWord = Math.max(...words.map((word) => word.length));
+  const total = words.join(" ").length;
+  for (
+    let measure = Math.max(longestWord, Math.ceil(total / lines));
+    measure <= total;
+    measure += 1
+  ) {
+    const broken = greedy(words, measure);
+    if (broken.length <= lines) return broken;
+  }
+  return [words.join(" ")];
+}
+
+function greedy(words: readonly string[], measure: number): string[] {
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
@@ -110,7 +162,7 @@ export function wrapLabel(label: string, measure: number = WORLD.measure): strin
     }
   }
   if (line !== "") lines.push(line);
-  return lines.length === 0 ? [label] : lines;
+  return lines;
 }
 
 /** A node plate, sized to the label it holds. Authors do not set sizes (decision:10). */
@@ -358,14 +410,14 @@ export const CAMERA = {
    * space, and every percent of padding is a percent smaller the labels come out in the one frame
    * that has to be read whole.
    */
-  revealPad: 0.06,
+  revealPad: 0.035,
   /** Closest the camera will ever come. Below this a single plate fills the frame. */
   nearest: 1250,
   /**
    * Widest a *travelling* shot is allowed to be. The whole-world reveal is exempt: it is the one
    * shot that is supposed to be wider than anything the traversal showed.
    */
-  widest: 3100,
+  widest: 2600,
   /** Frames a move may take, before the gap to the next cue is allowed to shorten it. */
   minTravel: 22,
   maxTravel: 46,
@@ -378,6 +430,70 @@ export const CAMERA = {
   paceMsPerFrame: 26,
   /** How far outside the world the centre may wander, as a fraction of the viewport. */
   slack: 0.3,
+
+  /* ---- what a move has to be worth, before it is made at all ---- */
+
+  /**
+   * A shot is kept if every target sits at least this far inside it, as a fraction of the frame.
+   *
+   * Measured, not guessed. Across v1's eleven moves the smallest comfortable margin on a shot
+   * that plainly did not need recomposing was 0.18, and the tightest shot that plainly *did* was
+   * clipping at -0.006. Anything in between is a judgement call, and the threshold sits nearer
+   * the clipping end because a target touching the frame edge looks like an accident.
+   */
+  holdMargin: 0.045,
+  /**
+   * ...and only if the subject is at least this much of the frame.
+   *
+   * The whole-world opening shot contains every target perfectly and is the wrong shot for all of
+   * them, because at that scale a plate is nine percent of the frame. Containment alone would
+   * have held it and never dived in.
+   */
+  holdOccupancy: 0.21,
+  /** A pan keeps the scale if the subject fits inside the frame with this much room. */
+  panMargin: 0.06,
+  /**
+   * Beyond this, a pan across the world is not a small move and pretending otherwise is worse
+   * than recomposing honestly: a long sideways slide at close range is the most nauseating shot
+   * available.
+   */
+  maxPan: 1.15,
+
+  /* ---- going inside something ---- */
+
+  /**
+   * How much world a chamber spans. The interior is drawn as a 1920x1080 composition scaled into
+   * this, so at the portal shot it lands at roughly one composition pixel per screen pixel.
+   */
+  chamberWidth: 2400,
+  /**
+   * The chamber is framed almost exactly, so its border sits just inside the frame edge.
+   *
+   * That is the entire trick of the transition: the plate's own outline arrives at the edge of
+   * the picture and stops there, and the viewer reads the frame as the inside of the node.
+   */
+  chamberPad: 0.008,
+  /**
+   * How long it takes to go in, and to come back out.
+   *
+   * Constants rather than derivations, like `revealTravel` and for the same reason: neither is a
+   * traversal. A move between two concepts is paced by the distance between them because that is
+   * what makes it feel like distance; going inside one covers no distance at all, and its
+   * duration is a directorial choice about how long a threshold should take to cross.
+   *
+   * The exit is quicker than the entry. Opening something is an arrival and wants to be savoured;
+   * closing it is a departure, and a slow one reads as reluctance.
+   */
+  enterTravel: 44,
+  exitTravel: 30,
+  /**
+   * A beat on the way out, before the camera goes anywhere else.
+   *
+   * Without it the retreat runs straight into the next traversal and the node the viewer just
+   * came out of is never actually seen back in its place — which is the only thing that tells
+   * them where they have returned to. Six tenths of a second is enough to land it.
+   */
+  returnHold: 20,
 } as const;
 
 /**
@@ -490,10 +606,164 @@ export interface CameraKey {
 export interface CameraEvent {
   readonly frame: number;
   readonly id: string;
+  /** Set when this event reaches an element *inside* an entity, and names that entity. */
+  readonly inside?: string;
+}
+
+/** What the camera decided to do about one narration event, and why it is describable. */
+export type ShotKind = "hold" | "pan" | "recompose" | "enter" | "exit";
+
+export interface CameraShot {
+  readonly frame: number;
+  readonly id: string;
+  readonly kind: ShotKind;
+  readonly view: Viewport;
 }
 
 /**
- * The whole camera track, derived from the narration's own events.
+ * Whether the shot the camera is already holding is good enough for what was just said.
+ *
+ * This is the whole of decision:24, and it is three comparisons rather than an optimiser. The
+ * measurement that motivated it is in the decision: of v1's eleven moves, one recomposed a target
+ * that was already fully visible with comfortable margin, and three more zoomed by ten to
+ * twenty-five percent to fix a framing nobody would have complained about. Each was individually
+ * correct and the sequence was restless, because every shot was solved from scratch as though the
+ * viewer had not been looking at anything a moment earlier.
+ *
+ *     hold        the target is already inside the frame, with room, at a readable size
+ *     pan         it fits at this scale but not in this position — keep the scale, move the least
+ *     recompose   it does not fit, or it is too small to read: solve the shot properly
+ *
+ * The ordering is the preference ladder, and the reason it is a ladder rather than a cost
+ * function is that the three cases are perceptually different rather than differently weighted.
+ * A hold costs the viewer nothing. A pan costs them tracking. A recompose costs them
+ * re-orientation, and re-orientation is the one that reads as the camera being nervous.
+ */
+export function shotFor(
+  current: Viewport,
+  bounds: Rect,
+  world: Rect,
+  aspect: number = 16 / 9,
+): { readonly view: Viewport; readonly kind: "hold" | "pan" | "recompose" } {
+  const held = viewRect(current, aspect);
+
+  if (
+    marginOf(bounds, held) >= CAMERA.holdMargin &&
+    occupancyOf(bounds, held) >= CAMERA.holdOccupancy
+  ) {
+    return { view: current, kind: "hold" };
+  }
+
+  // Would it fit where we are standing, if we simply looked somewhere else?
+  const room = 1 - 2 * CAMERA.panMargin;
+  const fitsHere =
+    bounds.width <= held.width * room && bounds.height <= held.height * room;
+  if (fitsHere && occupancyOf(bounds, held) >= CAMERA.holdOccupancy) {
+    const panned: Viewport = {
+      cx: slideInto(current.cx, bounds.x, bounds.width, held.width),
+      cy: slideInto(current.cy, bounds.y, bounds.height, held.height),
+      width: current.width,
+    };
+    const distanceMoved =
+      Math.hypot(panned.cx - current.cx, panned.cy - current.cy) / current.width;
+    if (distanceMoved <= CAMERA.maxPan) return { view: panned, kind: "pan" };
+  }
+
+  return {
+    view: fitTo(bounds, world, { aspect, widest: CAMERA.widest }),
+    kind: "recompose",
+  };
+}
+
+/** The rectangle a viewport covers. */
+export function viewRect(view: Viewport, aspect: number = 16 / 9): Rect {
+  const height = view.width / aspect;
+  return {
+    x: view.cx - view.width / 2,
+    y: view.cy - height / 2,
+    width: view.width,
+    height,
+  };
+}
+
+/** The smallest gap between a target and the frame edge, as a fraction of the frame's width. */
+export function marginOf(inner: Rect, frame: Rect): number {
+  const aspect = frame.width / frame.height;
+  return (
+    Math.min(
+      inner.x - frame.x,
+      frame.x + frame.width - (inner.x + inner.width),
+      (inner.y - frame.y) * aspect,
+      (frame.y + frame.height - (inner.y + inner.height)) * aspect,
+    ) / frame.width
+  );
+}
+
+/** How much of the frame the target takes up, on whichever axis it fills more of. */
+export function occupancyOf(inner: Rect, frame: Rect): number {
+  return Math.max(inner.width / frame.width, inner.height / frame.height);
+}
+
+/** Move a centre the least distance that brings `[low, low + extent]` inside the frame. */
+function slideInto(centre: number, low: number, extent: number, frame: number): number {
+  const gap = frame * CAMERA.panMargin;
+  const min = low + extent - frame / 2 + gap;
+  const max = low + frame / 2 - gap;
+  if (min > max) return low + extent / 2;
+  return Math.min(Math.max(centre, min), max);
+}
+
+/**
+ * The rectangle an entity opens into.
+ *
+ * Sixteen by nine, centred on the plate's own centre, and that centring is the load-bearing part:
+ * the camera also centres on the plate, so through the whole expansion the plate's middle sits at
+ * exactly the same place on screen. The thing does not travel and then become something else; it
+ * stays where it is and opens.
+ *
+ * Not clamped to the world. A chamber is allowed to extend past the edge of the world, because by
+ * the time it has, the world is no longer what is being looked at.
+ */
+export function chamberFor(node: WorldNode, aspect: number = 16 / 9): Rect {
+  const centre = centreOf(node.rect);
+  const width = CAMERA.chamberWidth;
+  const height = width / aspect;
+  return { x: centre.x - width / 2, y: centre.y - height / 2, width, height };
+}
+
+/**
+ * One excursion inside an entity: when it opens, when it closes, and how long each takes.
+ *
+ * Nothing here is authored. The interior opens on the first cue that reaches inside the entity
+ * and closes on the first cue afterwards that does not — so the author asks for a portal by
+ * writing a sentence about something inside a concept, and asks to leave by writing one about
+ * something else. The durations are the camera's own travel times for the two moves, which keeps
+ * the boundary expanding at exactly the rate the camera approaches.
+ */
+export interface PortalPass {
+  readonly id: string;
+  readonly chamber: Rect;
+  readonly enterFrame: number;
+  readonly enterFrames: number;
+  readonly exitFrame: number;
+  readonly exitFrames: number;
+}
+
+/** How far inside an entity the camera is on a given frame, 0 to 1. */
+export function portalAt(pass: PortalPass, frame: number): number {
+  if (frame <= pass.enterFrame) return 0;
+  if (frame < pass.enterFrame + pass.enterFrames) {
+    return smootherstep((frame - pass.enterFrame) / pass.enterFrames);
+  }
+  if (frame <= pass.exitFrame) return 1;
+  if (frame < pass.exitFrame + pass.exitFrames) {
+    return 1 - smootherstep((frame - pass.exitFrame) / pass.exitFrames);
+  }
+  return 0;
+}
+
+/**
+ * The whole camera plan, derived from the narration's own events.
  *
  * The shape of the sequence is not authored anywhere and is not configurable:
  *
@@ -503,39 +773,155 @@ export interface CameraEvent {
  * and it ends wide because when the narration stops there is nothing left to frame but all of it.
  * The final reveal is therefore *derived from the absence of further narration* — the author asks
  * for it by writing a `post_say` long enough to hold it, which is a duration, not a camera move.
+ *
+ * Two things fold into that walk, and both are decided one event at a time against the shot the
+ * camera is *actually holding* rather than against an ideal:
+ *
+ * - **A move must be worth making** (`shotFor`). An event whose target is already well framed
+ *   produces no key at all, and the camera simply does not move. This is the only place in
+ *   cuecraft where the right answer to "what should happen now" is "nothing".
+ * - **An entity may be entered.** An event that reaches inside one opens a portal, and the first
+ *   event afterwards that does not closes it. Entering and leaving are exempt from the hold
+ *   policy, because they are not framing decisions — the scale transition *is* the content.
  */
+export interface CameraPlan {
+  readonly track: readonly CameraKey[];
+  /** One per event, including the ones that moved nothing. The record of what was decided. */
+  readonly shots: readonly CameraShot[];
+  readonly portals: readonly PortalPass[];
+}
+
+export function cameraPlan(
+  layout: WorldLayout,
+  events: readonly CameraEvent[],
+  span: { readonly from: number; readonly until: number },
+  aspect: number = 16 / 9,
+): CameraPlan {
+  const whole = fitTo(layout.bounds, layout.bounds, { aspect, pad: CAMERA.revealPad });
+  const ordered = [...events].sort((a, b) => a.frame - b.frame);
+
+  const established = new Set<string>();
+  // A stop may name its own duration. Only the two that are not framing decisions do: going
+  // inside something and coming back out are thresholds, not traversals, so they are not paced
+  // by a distance they do not cover.
+  const stops: { frame: number; view: Viewport; travel?: number }[] = [
+    { frame: span.from, view: whole },
+  ];
+  const shots: CameraShot[] = [];
+  const portals: PortalPass[] = [];
+  let current = whole;
+  let open: { id: string; chamber: Rect; enterFrame: number } | undefined;
+
+  const push = (frame: number, view: Viewport, travel?: number): void => {
+    stops.push({
+      frame: Math.max(frame, span.from),
+      view,
+      ...(travel === undefined ? {} : { travel }),
+    });
+    current = view;
+  };
+
+  for (const event of ordered) {
+    let frame = Math.max(event.frame, span.from);
+
+    // Leaving comes first: an event outside the open entity closes it before it is framed.
+    if (open !== undefined && event.inside !== open.id) {
+      const node = layout.byId.get(open.id);
+      const back = fitTo(node === undefined ? layout.bounds : node.rect, layout.bounds, {
+        aspect,
+        widest: CAMERA.widest,
+      });
+      push(frame, back, CAMERA.exitTravel);
+      portals.push({
+        id: open.id,
+        chamber: open.chamber,
+        enterFrame: open.enterFrame,
+        enterFrames: CAMERA.enterTravel,
+        exitFrame: frame,
+        exitFrames: CAMERA.exitTravel,
+      });
+      shots.push({ frame, id: open.id, kind: "exit", view: back });
+      open = undefined;
+      // The cue that took us back out is spoken over the retreat, and whatever it is about is
+      // framed once the node is back in its place and has been seen there. Cutting straight to
+      // the next concept throws away the one beat that says where the viewer has returned to.
+      frame += CAMERA.exitTravel + CAMERA.returnHold;
+      // The event that closed the portal is then framed normally, from where we came back to —
+      // which is why the exit lands on the entity we left rather than on wherever we are going.
+      // The viewer sees the node they were inside, in its own place, before anything else moves.
+    }
+
+    if (event.inside !== undefined) {
+      if (open === undefined) {
+        const node = layout.byId.get(event.inside);
+        if (node !== undefined) {
+          const chamber = chamberFor(node, aspect);
+          const view: Viewport = {
+            cx: chamber.x + chamber.width / 2,
+            cy: chamber.y + chamber.height / 2,
+            width: chamber.width * (1 + 2 * CAMERA.chamberPad),
+          };
+          push(frame, view, CAMERA.enterTravel);
+          open = { id: event.inside, chamber, enterFrame: frame };
+          shots.push({ frame, id: event.inside, kind: "enter", view });
+        }
+      }
+      // Everything said inside an entity is framed by the chamber, so no further shot is
+      // considered until the narration comes back out.
+      established.add(event.id);
+      continue;
+    }
+
+    const bounds = targetBounds(layout, event.id, established);
+    established.add(event.id);
+    const shot = shotFor(current, bounds, layout.bounds, aspect);
+    shots.push({ frame, id: event.id, kind: shot.kind, view: shot.view });
+    if (shot.kind !== "hold") push(frame, shot.view);
+  }
+
+  if (open !== undefined) {
+    const closing = Math.max(span.until, span.from);
+    portals.push({
+      id: open.id,
+      chamber: open.chamber,
+      enterFrame: open.enterFrame,
+      enterFrames: CAMERA.enterTravel,
+      exitFrame: closing,
+      exitFrames: CAMERA.exitTravel,
+    });
+  }
+
+  stops.push({ frame: Math.max(span.until, span.from), view: whole });
+
+  const track: CameraKey[] = stops.map((stop, index) => {
+    if (index === 0) return { frame: stop.frame, view: stop.view, travel: 1 };
+    const previous = stops[index - 1] as { frame: number; view: Viewport };
+    const next = stops[index + 1];
+    const gap = next === undefined ? Infinity : Math.max(1, next.frame - stop.frame);
+    const isReveal = index === stops.length - 1;
+    const suggested =
+      stop.travel ??
+      (isReveal
+        ? CAMERA.revealTravel
+        : paceOf(previous.view, stop.view, CAMERA.minTravel, CAMERA.maxTravel));
+    return {
+      frame: stop.frame,
+      view: stop.view,
+      travel: Math.max(1, Math.min(suggested, gap)),
+    };
+  });
+
+  return { track, shots, portals };
+}
+
+/** The camera track alone, for callers that do not care how it was decided. */
 export function cameraTrack(
   layout: WorldLayout,
   events: readonly CameraEvent[],
   span: { readonly from: number; readonly until: number },
   aspect: number = 16 / 9,
 ): CameraKey[] {
-  const whole = fitTo(layout.bounds, layout.bounds, { aspect, pad: CAMERA.revealPad });
-  const ordered = [...events].sort((a, b) => a.frame - b.frame);
-
-  const established = new Set<string>();
-  const stops: { frame: number; view: Viewport }[] = [{ frame: span.from, view: whole }];
-  for (const event of ordered) {
-    const bounds = targetBounds(layout, event.id, established);
-    established.add(event.id);
-    stops.push({
-      frame: Math.max(event.frame, span.from),
-      view: fitTo(bounds, layout.bounds, { aspect, widest: CAMERA.widest }),
-    });
-  }
-  stops.push({ frame: Math.max(span.until, span.from), view: whole });
-
-  return stops.map((stop, index) => {
-    if (index === 0) return { ...stop, travel: 1 };
-    const previous = stops[index - 1] as { frame: number; view: Viewport };
-    const next = stops[index + 1];
-    const gap = next === undefined ? Infinity : Math.max(1, next.frame - stop.frame);
-    const isReveal = index === stops.length - 1;
-    const suggested = isReveal
-      ? CAMERA.revealTravel
-      : paceOf(previous.view, stop.view, CAMERA.minTravel, CAMERA.maxTravel);
-    return { ...stop, travel: Math.max(1, Math.min(suggested, gap)) };
-  });
+  return [...cameraPlan(layout, events, span, aspect).track];
 }
 
 /**

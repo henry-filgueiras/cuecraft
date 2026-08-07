@@ -251,16 +251,20 @@ export const WORLD = {
   /** Advance width of the heading face at plate weight, as a fraction of the size. */
   charWidth: 0.55,
   /**
-   * Characters before a label wraps.
+   * How many lines a label may be broken into, and what shape the result should aim for.
    *
-   * Deliberately tight. A wide plate widens its whole rank, a widened rank widens the world, and
-   * a wider world is a smaller world in the one shot that has to show all of it. Two short lines
-   * also read faster than one long one, so the constraint and the typography agree.
+   * A plate is chosen, not filled: `wrapLabel` balances the label into one, two or three lines
+   * and keeps whichever produces a plate nearest `plateAspect`, with a small penalty per extra
+   * line so a two-line break has to actually earn itself. 2.3:1 is where a two-line plate stops
+   * looking like a column and starts looking like a card.
    */
-  measure: 12,
-  padX: 40,
-  padY: 36,
-  minPlateWidth: 320,
+  maxLines: 3,
+  plateAspect: 2.3,
+  linePenalty: 0.35,
+  /** Room around the text. Generous: v1's plates were the right size and the wrong shape. */
+  padX: 46,
+  padY: 44,
+  minPlateWidth: 340,
   /**
    * Space between ranks, and between plates within a rank.
    *
@@ -269,8 +273,8 @@ export const WORLD = {
    * a shape a 16:9 frame can hold, and it separates the narration lane from the content lane,
    * which is a thing the world is actually claiming.
    */
-  ranksep: 140,
-  nodesep: 560,
+  ranksep: 90,
+  nodesep: 520,
   edgesep: 30,
   plateRadius: 10,
   /** Stroke of a plate's edge, and of a relation. */
