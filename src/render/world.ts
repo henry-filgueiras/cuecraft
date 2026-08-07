@@ -832,6 +832,43 @@ export interface PortalPass {
   readonly exitFrames: number;
 }
 
+/**
+ * An excursion the *narration* asked for, with the frames already decided.
+ *
+ * The derived rule above is right for an interior narrated from outside: the author writes a
+ * sentence about something in there and the portal opens, which is decision:25 and is not being
+ * revisited. It is wrong for an interior that narrates itself, twice over. The first cue inside
+ * the child is not where the descent begins — the descent begins where the parent stopped
+ * talking, which is earlier and is a fact only the narration knows. And the last cue inside the
+ * child is not where it ends — a child may finish on a sentence that names nothing at all, and
+ * "the next cue that reaches something else" would hold the chamber open across it.
+ *
+ * So a call arrives here as a schedule rather than as something to infer. The camera's job is
+ * then the one it is good at: to be in the right place when the window opens, to spend the
+ * window crossing the threshold, and to put the frame back exactly where it found it.
+ */
+export interface ScheduledCall {
+  readonly target: string;
+  /** The frame the narration went silent for the descent, and how long it stays silent. */
+  readonly enterFrame: number;
+  readonly enterWindow: number;
+  /** The same, coming back. */
+  readonly exitFrame: number;
+  readonly exitWindow: number;
+}
+
+export interface CameraOptions {
+  /** Excursions the narration scheduled, rather than ones this derives. */
+  readonly calls?: readonly ScheduledCall[];
+  /**
+   * How long the closing pull back takes.
+   *
+   * A constant everywhere except inside a scope, where the pull back has to finish before the
+   * chamber around it starts contracting — so it borrows the length of the exit it is part of.
+   */
+  readonly revealTravel?: number;
+}
+
 /** How far inside an entity the camera is on a given frame, 0 to 1. */
 export function portalAt(pass: PortalPass, frame: number): number {
   if (frame <= pass.enterFrame) return 0;
@@ -892,9 +929,13 @@ export function cameraPlan(
   events: readonly CameraEvent[],
   span: { readonly from: number; readonly until: number },
   aspect: number = 16 / 9,
+  options: CameraOptions = {},
 ): CameraPlan {
   const whole = fitTo(layout.bounds, layout.bounds, { aspect, pad: CAMERA.revealPad });
   const ordered = [...events].sort((a, b) => a.frame - b.frame);
+  const scheduled = [...(options.calls ?? [])].sort(
+    (a, b) => a.enterFrame - b.enterFrame,
+  );
 
   const established = new Set<string>();
   // A stop may name its own duration. Two kinds do: going inside something and coming back out
@@ -906,7 +947,9 @@ export function cameraPlan(
   const shots: CameraShot[] = [];
   const portals: PortalPass[] = [];
   let current = whole;
-  let open: { id: string; chamber: Rect; enterFrame: number } | undefined;
+  let open:
+    | { id: string; chamber: Rect; enterFrame: number; frames: number; scheduled?: true }
+    | undefined;
   /** The earliest the reveal may begin, once something has landed that it must not cut off. */
   let landed = span.from;
 
@@ -919,8 +962,145 @@ export function cameraPlan(
     current = view;
   };
 
-  for (const [index, event] of ordered.entries()) {
-    let frame = Math.max(event.frame, span.from);
+  /**
+   * The camera stack, one viewport per open scope.
+   *
+   * Pushed on the way in and popped on the way out, rather than recomputed from the node the
+   * excursion was about. The two agree in the ordinary case and they are not the same claim:
+   * recomputing says "frame that concept again", and popping says "put it back where you found
+   * it". Only the second one is true when the camera was already holding a shot it liked, and
+   * only the second one composes — a grandchild's return has to land on the child's view, not on
+   * a fresh framing of the child's node, or two levels of unwinding accumulate two corrections.
+   */
+  const restore: Viewport[] = [];
+
+  /**
+   * Go inside, on a window the narration set aside for it.
+   *
+   * The window is silence, and the descent has to fit in it exactly: the child's first word lands
+   * on the frame after it closes, and a threshold still being crossed while somebody is talking
+   * over it is the thing this schedule exists to prevent.
+   *
+   *     ... parent speech |  approach   settle   expansion  | child speech ...
+   *                       ^ enterFrame                      ^ enterFrame + window
+   *
+   * The approach is the one part allowed to start early, and it is allowed because it is not a
+   * threshold — it is the camera turning towards what the parent has just finished talking about,
+   * which is a move a documentary makes under the last sentence rather than after it.
+   */
+  const openScheduled = (call: ScheduledCall, at: number): void => {
+    const node = layout.byId.get(call.target);
+    if (node === undefined) return;
+
+    const before = current;
+    const approach = composedShot(before, node.rect, layout.bounds, aspect);
+    if (approach.kind !== "hold") {
+      const travel = paceOf(before, approach.view, CAMERA.minTravel, CAMERA.maxTravel);
+      const lands = Math.max(stops.at(-1)?.frame ?? span.from, at - travel);
+      push(lands, approach.view, travel);
+    }
+    // The view the excursion is leaving, and the one it will be put back to. Recorded after the
+    // approach, because the approach is part of the enclosing shot rather than part of the
+    // descent — coming back out lands on the composition the viewer last saw the node in.
+    restore.push(current);
+
+    const expansion = Math.max(1, call.enterWindow - CAMERA.settle);
+    const openAt = at + CAMERA.settle;
+    const chamber = chamberFor(node, aspect, { x: current.cx, y: current.cy });
+    const view: Viewport = {
+      cx: chamber.x + chamber.width / 2,
+      cy: chamber.y + chamber.height / 2,
+      width: chamber.width * (1 + 2 * CAMERA.chamberPad),
+    };
+    push(openAt, view, expansion);
+    open = {
+      id: call.target,
+      chamber,
+      enterFrame: openAt,
+      frames: expansion,
+      scheduled: true,
+    };
+    shots.push({ frame: openAt, id: call.target, kind: "enter", view });
+  };
+
+  /**
+   * Come back out, one scope, to exactly the view that was pushed.
+   *
+   * The contraction takes the window less the beat that follows it, because what the beat is for
+   * is seeing the node back in its own place — decision:25 measured that, and a return with no
+   * beat on it runs straight into whatever the parent says next and never tells the viewer where
+   * they have come back to.
+   */
+  const closeScheduled = (call: ScheduledCall, at: number): void => {
+    if (open?.id !== call.target) return;
+    const back = restore.pop() ?? whole;
+    const contraction = Math.max(
+      1,
+      Math.min(call.exitWindow - CAMERA.returnHold, call.exitWindow),
+    );
+    push(at, back, contraction);
+    portals.push({
+      id: open.id,
+      chamber: open.chamber,
+      enterFrame: open.enterFrame,
+      enterFrames: open.frames,
+      exitFrame: at,
+      exitFrames: contraction,
+    });
+    shots.push({ frame: at, id: call.target, kind: "exit", view: back });
+    open = undefined;
+  };
+
+  /**
+   * Everything that happens, in the order it happens.
+   *
+   * A scheduled descent is a moment in the same list as a narration event rather than a second
+   * loop over the same frames, because the two have to interleave correctly and the only way to
+   * be sure they do is to sort them together. Transitions sort ahead of utterances at the same
+   * frame: the chamber is already opening when the first word inside it is spoken.
+   */
+  type Moment =
+    | { at: number; rank: number; event: CameraEvent; last: boolean }
+    | { at: number; rank: number; open: ScheduledCall }
+    | { at: number; rank: number; close: ScheduledCall };
+
+  const moments: Moment[] = [
+    ...ordered.map((event, index) => ({
+      at: Math.max(event.frame, span.from),
+      rank: 1,
+      event,
+      last: index === ordered.length - 1,
+    })),
+    ...scheduled.map((call) => ({
+      at: Math.max(call.enterFrame, span.from),
+      rank: 0,
+      open: call,
+    })),
+    ...scheduled.map((call) => ({
+      at: Math.max(call.exitFrame, span.from),
+      rank: 0,
+      close: call,
+    })),
+  ].sort((a, b) => (a.at === b.at ? a.rank - b.rank : a.at - b.at));
+
+  for (const moment of moments) {
+    if ("open" in moment) {
+      openScheduled(moment.open, moment.at);
+      continue;
+    }
+    if ("close" in moment) {
+      closeScheduled(moment.close, moment.at);
+      continue;
+    }
+
+    const event = moment.event;
+    let frame = moment.at;
+
+    // A scheduled excursion has claimed this stretch of the narration. Everything said in it is
+    // framed by the chamber and by whatever camera is running inside it, so the enclosing shot
+    // has no decision to make and correctly makes none — including for the entity being entered,
+    // which is why an anchor on it does not fight the descent it is announcing.
+    if (open?.scheduled === true) continue;
 
     // Leaving comes first: an event outside the open entity closes it before it is framed.
     if (open !== undefined && event.inside !== open.id) {
@@ -934,12 +1114,13 @@ export function cameraPlan(
         id: open.id,
         chamber: open.chamber,
         enterFrame: open.enterFrame,
-        enterFrames: CAMERA.enterTravel,
+        enterFrames: open.frames,
         exitFrame: frame,
         exitFrames: CAMERA.exitTravel,
       });
       shots.push({ frame, id: open.id, kind: "exit", view: back });
       open = undefined;
+      restore.pop();
       // The cue that took us back out is spoken over the retreat, and whatever it is about is
       // framed once the node is back in its place and has been seen there. Cutting straight to
       // the next concept throws away the one beat that says where the viewer has returned to.
@@ -977,6 +1158,7 @@ export function cameraPlan(
             openAt = frame + travel + CAMERA.settle;
           }
 
+          restore.push(current);
           const chamber = chamberFor(node, aspect, { x: current.cx, y: current.cy });
           const view: Viewport = {
             cx: chamber.x + chamber.width / 2,
@@ -984,7 +1166,12 @@ export function cameraPlan(
             width: chamber.width * (1 + 2 * CAMERA.chamberPad),
           };
           push(openAt, view, CAMERA.enterTravel);
-          open = { id: event.inside, chamber, enterFrame: openAt };
+          open = {
+            id: event.inside,
+            chamber,
+            enterFrame: openAt,
+            frames: CAMERA.enterTravel,
+          };
           shots.push({ frame: openAt, id: event.inside, kind: "enter", view });
         }
       }
@@ -1009,7 +1196,7 @@ export function cameraPlan(
     // The subject alone, without the established context `targetBounds` would gather: this is a
     // full stop, and a full stop is not shared.
     const node = layout.byId.get(event.id);
-    if (index === ordered.length - 1 && node?.terminal === true) {
+    if (moment.last && node?.terminal === true) {
       const arrival = composedShot(current, node.rect, layout.bounds, aspect);
       shots.push({ frame, id: event.id, kind: arrival.kind, view: arrival.view });
       if (arrival.kind === "hold") {
@@ -1034,7 +1221,7 @@ export function cameraPlan(
       id: open.id,
       chamber: open.chamber,
       enterFrame: open.enterFrame,
-      enterFrames: CAMERA.enterTravel,
+      enterFrames: open.frames,
       exitFrame: closing,
       exitFrames: CAMERA.exitTravel,
     });
@@ -1055,7 +1242,7 @@ export function cameraPlan(
     const suggested =
       stop.travel ??
       (isReveal
-        ? CAMERA.revealTravel
+        ? (options.revealTravel ?? CAMERA.revealTravel)
         : paceOf(previous.view, stop.view, CAMERA.minTravel, CAMERA.maxTravel));
     return {
       frame: stop.frame,
@@ -1073,8 +1260,9 @@ export function cameraTrack(
   events: readonly CameraEvent[],
   span: { readonly from: number; readonly until: number },
   aspect: number = 16 / 9,
+  options: CameraOptions = {},
 ): CameraKey[] {
-  return [...cameraPlan(layout, events, span, aspect).track];
+  return [...cameraPlan(layout, events, span, aspect, options).track];
 }
 
 /**

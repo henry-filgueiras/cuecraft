@@ -630,3 +630,157 @@ test("the timing curve leaves and arrives at rest", () => {
     assert.ok(value >= 0 && value <= 1);
   }
 });
+
+/* ------------------------------------------------ a scope the narration scheduled */
+
+/**
+ * The other kind of excursion.
+ *
+ * Everything above derives when to go in from which cue reached what, which is right for an
+ * interior narrated from outside. A child module narrates itself, so the descent has a *time* —
+ * the silence the parent left for it — and the camera is told rather than left to infer. What
+ * these check is the pair of properties that inference cannot give: the descent fits the window
+ * it was given, and coming out lands on the view going in left behind.
+ */
+
+const CALL = {
+  target: "speech",
+  enterFrame: 200,
+  enterWindow: 57,
+  exitFrame: 400,
+  exitWindow: 51,
+} as const;
+
+const called = cameraPlan(
+  laid,
+  [
+    { frame: 100, id: "cues" },
+    { frame: 260, id: "detail-one", inside: "speech" },
+    { frame: 500, id: "state" },
+  ],
+  { from: 0, until: 600 },
+  16 / 9,
+  { calls: [CALL] },
+);
+
+test("a scheduled descent opens and closes on the frames it was given", () => {
+  const pass = called.portals[0];
+  assert.ok(pass !== undefined);
+  assert.equal(pass.id, "speech");
+  // The expansion begins after the settle and ends exactly as the window does, so the child's
+  // first word lands on a chamber that has finished opening.
+  assert.equal(pass.enterFrame, CALL.enterFrame + CAMERA.settle);
+  assert.equal(pass.enterFrame + pass.enterFrames, CALL.enterFrame + CALL.enterWindow);
+  assert.equal(pass.exitFrame, CALL.exitFrame);
+  // ...and the contraction leaves the beat that shows the viewer where they came back to.
+  assert.equal(pass.exitFrames, CALL.exitWindow - CAMERA.returnHold);
+});
+
+test("the approach lands before the descent begins, not after it", () => {
+  const opening = called.track.find(
+    (key) => key.frame === CALL.enterFrame + CAMERA.settle,
+  );
+  assert.ok(opening !== undefined);
+  const approach = called.track.filter((key) => key.frame < CALL.enterFrame).at(-1);
+  assert.ok(approach !== undefined);
+  assert.ok(
+    approach.frame + approach.travel <= CALL.enterFrame,
+    "the camera is standing still by the time the threshold starts",
+  );
+});
+
+test("coming out restores the view going in left, rather than a fresh framing of it", () => {
+  const enter = called.shots.find((shot) => shot.kind === "enter");
+  const exit = called.shots.find((shot) => shot.kind === "exit");
+  assert.ok(enter !== undefined && exit !== undefined);
+
+  // The view immediately before the expansion is the one the exit lands on.
+  const before = called.track.filter((key) => key.frame < enter.frame).at(-1);
+  assert.ok(before !== undefined);
+  assert.deepEqual(exit.view, before.view);
+  assert.deepEqual(cameraAt(called.track, CALL.exitFrame + CALL.exitWindow), before.view);
+});
+
+test("nothing said inside a scheduled scope moves the camera outside it", () => {
+  // The thresholds themselves are the exception: they are what the window is *for*.
+  const inside = called.shots.filter(
+    (shot) =>
+      shot.frame > CALL.enterFrame &&
+      shot.frame < CALL.exitFrame &&
+      shot.kind !== "enter" &&
+      shot.kind !== "exit",
+  );
+  assert.deepEqual(inside, []);
+});
+
+test("an entity with a module is entered because it was called, not because it was named", () => {
+  // The same events with no schedule: the renderer withholds `inside` from a module entity, so
+  // reaching it frames the plate and opens nothing.
+  const uncalled = cameraPlan(
+    laid,
+    [
+      { frame: 100, id: "cues" },
+      { frame: 200, id: "speech" },
+      { frame: 500, id: "state" },
+    ],
+    { from: 0, until: 600 },
+  );
+  assert.deepEqual(uncalled.portals, []);
+});
+
+test("two scopes unwind one at a time, innermost first, to the view each left", () => {
+  // Nesting composes because each level plans its own world; what this checks is that one
+  // level's two calls do not interfere, which is the same stack discipline one level down.
+  const twice = cameraPlan(
+    laid,
+    [{ frame: 100, id: "cues" }],
+    { from: 0, until: 900 },
+    16 / 9,
+    {
+      calls: [
+        {
+          target: "speech",
+          enterFrame: 200,
+          enterWindow: 57,
+          exitFrame: 400,
+          exitWindow: 51,
+        },
+        {
+          target: "state",
+          enterFrame: 500,
+          enterWindow: 57,
+          exitFrame: 700,
+          exitWindow: 51,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    twice.shots.map((shot) => `${shot.kind}:${shot.id}`),
+    ["recompose:cues", "enter:speech", "exit:speech", "enter:state", "exit:state"],
+  );
+
+  for (const pass of twice.portals) {
+    const enter = twice.shots.find(
+      (shot) => shot.kind === "enter" && shot.id === pass.id,
+    );
+    const exit = twice.shots.find((shot) => shot.kind === "exit" && shot.id === pass.id);
+    assert.ok(enter !== undefined && exit !== undefined);
+    const before = twice.track.filter((key) => key.frame < enter.frame).at(-1);
+    assert.deepEqual(exit.view, before?.view);
+  }
+});
+
+test("a scheduled reveal takes the length it is given, so it finishes before the frame does", () => {
+  const inner = cameraPlan(
+    laid,
+    [{ frame: 120, id: "cues" }],
+    { from: 100, until: 300 },
+    16 / 9,
+    { revealTravel: 31 },
+  );
+  const reveal = inner.track.at(-1);
+  assert.ok(reveal !== undefined);
+  assert.equal(reveal.frame, 300);
+  assert.equal(reveal.travel, 31);
+});
