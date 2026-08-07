@@ -1,10 +1,11 @@
 # Inside `squeeze` — a child module, entered from examples/sha256/sha256.yaml.
 #
-# This is `compress(block)`, and it is the only scope in the deck that enters *two* others in
-# sequence. That arrangement is the one dragon:9 has been asking for since decision:25: the first
-# time the camera goes from inside one thing, back out, and into another at the same scale.
+# This is FIPS 180-4's compression function for one block, and it is the only scope in the deck
+# that enters two others in sequence — the arrangement dragon:9 was closed on.
 #
-# It also carries the sentence the whole piece depends on, which is the last one.
+# It also carries the film's centre of gravity. `many` is a `series`: one line of source that
+# means sixty-four, filling over a sentence rather than being asserted by one. Coming out of
+# `round` and finding `many` immediately to its right is the whole reveal.
 
 world:
   entities:
@@ -18,40 +19,65 @@ world:
       label: One round
       child: ./round.yaml
 
-    folded: Folded back in
+    # A population, not a place: no interior to walk into, just a count and what the members
+    # are. The camera opens it because the narration reaches it (decision:25), and the field
+    # fills because the next sentence says it does (decision:33).
+    many:
+      label: Sixty-four times
+      detail:
+        series:
+          - id: rounds
+            count: 64
+            text: one round each, with its own word and its own constant
+
+    folded:
+      label: Added back in
+      detail:
+        formula:
+          - tex: 'H_0 \;\leftarrow\; H_0 + a, \quad H_1 \;\leftarrow\; H_1 + b, \;\ldots,\; H_7 \;\leftarrow\; H_7 + h'
 
   relations:
     - sixteen -> stretch
     - stretch -> round
-    - round -> folded
+    - round -> many
+    - many -> folded
 
 say:
   - speech: >
-      A block is sixteen numbers of thirty-two bits. Call them words.
+      A block is sixteen words of thirty-two bits.
     activates: sixteen
 
   - speech: >
-      Sixty-four rounds are coming, and there are only sixteen words to feed them. So
-      sixteen becomes sixty-four.
+      Sixty-four rounds are coming, and there are only sixteen words. So sixteen becomes
+      sixty-four.
     activates: stretch
 
   - enter: stretch
 
-  # Resumed, one scope up from where the schedule left off, and immediately descending again —
-  # the first time in this project that the camera leaves one room and enters another (dragon:9).
+  # Resumed, one scope up from where the schedule left off, and immediately descending again.
   - speech: >
-      Then one round runs. The same round, sixty-four times, each with a different word.
+      The eight carried words are copied into slots, a to h. Then one round runs.
     activates: round
 
   - enter: round
 
+  # The reveal. `round` is still in its place, one plate to the left, while this opens.
   - speech: >
-      Finally the eight numbers that were carried in have the round's results added back into
-      them, and the block is done.
+      And then that same round runs again, and again — sixty-four times in all.
+    activates: many
+
+  # The field fills across this sentence. Nothing here says how long that takes; the sentence
+  # says it, by being this long.
+  - speech: >
+      Once per schedule word, each with its own constant, each one stirring the eight slots
+      further from where they started.
+    fills: rounds
+
+  - speech: >
+      Then the slots are added back into the words that came in — which is how this block
+      reaches the next.
     activates: folded
 
-  # The load-bearing sentence, and it is the closing remark, so the camera pulls back to the
-  # whole of this world while it is spoken.
   - speech: >
-      One round barely hides anything. Sixty-four of them, stacked, is what makes it
-      impossible to walk back.
+      Sixty-four rounds of mixing, then that addition. Neither alone is what makes a hash hard
+      to reverse.

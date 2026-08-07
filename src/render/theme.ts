@@ -271,10 +271,21 @@ export const FIELD = {
  * shouted.
  */
 export const FORMULA = {
-  minSize: 46,
+  minSize: 34,
   maxSize: 88,
   /** Space between stacked lines, as a fraction of the size. Displayed maths wants air. */
   leading: 0.75,
+  /**
+   * How tall a set line actually is, as a multiple of its size.
+   *
+   * More than one, and that is the whole reason this constant exists. A displayed equation is
+   * not a line of text: superscripts sit above its cap height and subscripts below its baseline,
+   * so KaTeX's box for `ROTR^{22}(a)` is half again as tall as the type it is set in. Sizing a
+   * six-line formula by its longest line alone put four of them off the bottom of the frame.
+   */
+  line: 1.42,
+  /** The vertical room a formula gets, under the heading. */
+  height: 555,
 } as const;
 
 /**

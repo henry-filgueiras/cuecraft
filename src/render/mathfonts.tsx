@@ -25,6 +25,20 @@ import "katex/dist/katex.min.css";
  */
 const FAMILIES = ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size1"] as const;
 
+/**
+ * The one thing KaTeX's stylesheet does that cuecraft has to undo.
+ *
+ * `.katex-display` carries `margin: 1em 0`, which is right for mathematics set among paragraphs
+ * of prose and wrong here: the `formula` composition supplies its own leading, derived from the
+ * size it chose, and KaTeX's margin is *also* derived from that size — so the two compound and a
+ * six-line definition sets two and a half times as tall as the fit predicted, with the last two
+ * lines off the bottom of the frame. That is exactly how it was found.
+ *
+ * Zeroed rather than accounted for, because a layout rule that has to know another stylesheet's
+ * margins is a layout rule that breaks on the next release of it.
+ */
+export const MATH_RESET = ".katex-display{margin:0}";
+
 export function useMathFonts(): void {
   const [handle] = useState(() => delayRender("loading the mathematics faces"));
 

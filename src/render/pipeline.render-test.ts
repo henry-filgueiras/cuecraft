@@ -126,6 +126,44 @@ say:
     activates: out
 `;
 
+/**
+ * A bounded population, with nothing cryptographic anywhere near it.
+ *
+ * The counts are deliberately awkward — a prime, a two-group split, and the degenerate one — so
+ * that a `series` which only worked for sixty-four would fail here rather than in the artifact
+ * it was built for.
+ */
+const SERIES_FIXTURE = `
+title: "Counting things"
+
+defaults:
+  pre_say: 300ms
+  post_say: 600ms
+
+slides:
+  - slide:
+      title: "Seven"
+      series:
+        - id: seven
+          count: 7
+          text: prime, so the field cannot be square
+    say:
+      - speech: "Seven of them, filling in reading order."
+        fills: seven
+
+  - slide:
+      title: "Sixteen and forty-eight"
+      series:
+        - count: 16
+          text: already here
+        - id: later
+          count: 48
+          text: arriving while this is spoken
+    say:
+      - speech: "Sixteen are present, and forty-eight more arrive across this sentence."
+        fills: later
+`;
+
 let workspace: string;
 /** A second workspace *inside* the checkout: a module is contained by it, like a quoted file. */
 let nested: string;
@@ -300,6 +338,51 @@ test(
 
     const expectedSeconds = summary.timeline.totalFrames / summary.timeline.fps;
     assert.ok(Math.abs(Number(probed.format.duration) - expectedSeconds) < 0.15);
+
+    await rm(summary.workspace, { recursive: true, force: true });
+  },
+);
+
+test(
+  "a bounded population fills over measured narration, on the real rendering path",
+  { timeout: 900_000 },
+  async () => {
+    const input = join(workspace, "series.yaml");
+    const output = join(workspace, "series.mp4");
+    await writeFile(input, SERIES_FIXTURE, "utf8");
+
+    const summary = await renderPresentationFile(input, output);
+    const [seven, split] = summary.timeline.scenes;
+    assert.ok(seven !== undefined && split !== undefined);
+
+    // Both compositions came from the role, not from anything about the counts.
+    assert.equal(seven.layout, "series");
+    assert.equal(split.layout, "series");
+
+    // One span per slide, and it is the *measured* clip that gave it its length.
+    for (const scene of [seven, split]) {
+      assert.equal(scene.spans.length, 1);
+      const span = scene.spans[0];
+      const clip = scene.clips[scene.spans[0]?.clipIndex ?? 0];
+      assert.ok(span !== undefined && clip !== undefined);
+      assert.ok(span.durationInFrames > 1, "a fill with no duration is a cut");
+      assert.ok(span.from >= clip.from, "a fill must not begin before its clip");
+      assert.ok(
+        span.from + span.durationInFrames <= clip.from + clip.durationInFrames,
+        "a fill must not outlast its clip",
+      );
+    }
+
+    // Fifty-five members between them, and two clips: a population costs no narration.
+    assert.equal(seven.clips.length + split.clips.length, 2);
+    // The second slide's group that is *not* filled has no span and no anchor — it is simply
+    // there, which is what an element the narration never reaches has always been.
+    assert.equal(split.spans[0]?.id, "later");
+
+    const written = await stat(output);
+    assert.ok(written.size > 10_000, `the MP4 is only ${written.size} bytes`);
+    const probed = await probe(output);
+    assert.ok(probed.streams.some((stream) => stream.codec_type === "video"));
 
     await rm(summary.workspace, { recursive: true, force: true });
   },

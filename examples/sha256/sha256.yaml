@@ -5,32 +5,29 @@
 # One slide. The camera descends into the step that does the work, descends again twice inside
 # it, and unwinds through the same scopes to finish the sentence it started.
 #
-# The interesting thing about this deck is that SHA-256 was not designed for cuecraft. It is a
-# call stack because that is how the specification is written — `sha256` calls `compress` per
-# block, `compress` calls the message schedule and then the round, and the round calls `Ch`,
-# `Maj` and the sigmas. decision:31 either fits that without persuasion or it is a stunt.
+# SHA-256 was not designed for cuecraft, which is the point of using it: it is a call stack
+# because that is how FIPS 180-4 is written. `sha256` compresses each block; `compress` builds a
+# message schedule and then runs a round; the round calls Ch, Maj and two big sigmas.
 #
-# Two vocabularies are doing different jobs, and the difference is the whole design:
+# Three vocabularies are doing three different jobs, and the difference is the whole design:
 #
-#   child:    an interior that narrates itself      -> going in is a *call*   (decision:31)
-#   detail:   an interior the surrounding sentence
-#             is pointing at                        -> going in is a *look*   (decision:25)
+#   child:    an interior that narrates itself     -> going in is a *call*      (decision:31)
+#   detail:   an interior a sentence points at     -> going in is a *look*      (decision:25)
+#   series:   a population with a size             -> a sentence fills it up    (decision:33)
 #
-# The three formulas are `detail:`, not modules, because a formula says nothing on its own. That
-# also costs no module depth, so the piece fits inside the guard rather than arguing with it.
+# The last one is why this film was rebuilt. cuecraft could show one round and could only
+# *assert* that it happens sixty-four times; now the sixty-four are watched arriving, over a
+# sentence whose length is the measured length of the sentence.
 #
-# What cuecraft cannot draw is a loop, and this subject is made of them: sixty-four rounds,
-# forty-eight expansions, one block after another. Every one of those is carried by a spoken
-# sentence, and the one the whole piece depends on is at the end of compression.yaml.
-#
-# See decision:32 (mathematics as a body), decision:31 (child modules), decision:22 (worlds and
-# the camera), and dragon:13 for why this stops at a grandchild.
+# Everything on screen is checked. `src/examples.test.ts` reads the rotation and shift amounts
+# out of the TeX in these files, runs a reference SHA-256 with them, and compares the digest
+# against node:crypto — so a deck that misstates the algorithm fails the suite, not the viewer.
 
 title: "Anything in, sixty-four characters out"
 
 defaults:
   pre_say: 700ms
-  post_say: 2.6s
+  post_say: 2.2s
   voice: af_heart
 
 slides:
@@ -49,7 +46,7 @@ slides:
             label: The squeeze
             child: ./compression.yaml
 
-          digest: Sixty-four characters
+          digest: Sixty-four hex digits
 
         relations:
           - anything -> padded
@@ -59,26 +56,22 @@ slides:
 
     say:
       - speech: >
-          Git does not name the files in your repository. It names their contents, so
-          changing a single character changes the name completely.
-
-      - speech: >
-          That name is a hash. SHA-256 will take anything at all — a file, a sentence, an
-          entire repository.
+          Git names every object by a hash of its contents. Change one character, and the name
+          changes completely. Most repositories use SHA-1; this is its successor.
         activates: anything
 
       - speech: >
-          First it is padded: a one bit, then zeros, then the original length, until it
-          divides exactly into five hundred and twelve.
+          First, padding: a one bit, then zeros, then the original length, until it divides
+          exactly into five hundred and twelve.
         activates: padded
 
       - speech: >
-          Then cut into blocks of that size, taken one at a time.
+          That gets cut into blocks, taken strictly in order.
         activates: blocks
 
       - speech: >
-          Eight numbers are carried alongside, and every block gets squeezed into them.
-          That squeezing is the whole algorithm.
+          Eight thirty-two-bit words travel alongside. Every block is squeezed into them,
+          starting from what the block before it left.
         activates: squeeze
 
       # The descent. From here until the module's narration runs out, this slide says nothing.
@@ -86,11 +79,12 @@ slides:
 
       # ...and here is where it resumes.
       - speech: >
-          At the end, those eight numbers are written out as sixty-four hexadecimal
-          characters.
+          Those eight words are the answer. Eight times thirty-two is two hundred and fifty-six
+          bits — sixty-four hexadecimal digits.
         activates: digest
 
       # A closing remark that reaches nothing, which is how the camera is asked to pull back
       # and show the whole thing at once (decision:22).
       - speech: >
-          Anything in. Sixty-four characters out. And no way at all to walk backwards.
+          Change one bit going in, and about half the bits coming out flip. Going back has no
+          shortcut better than guessing — fast enough, if what you hashed was a PIN.

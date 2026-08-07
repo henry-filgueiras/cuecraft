@@ -1,33 +1,38 @@
 # Inside `stretch` — a grandchild module, entered from examples/sha256/compression.yaml.
 #
 # Two levels below the slide, and this file has no idea of that. It names its entities locally
-# and is resolved relative to the file that declared it, so `examples/sha256/` could be moved
-# somewhere else without a line of it changing.
+# and is resolved relative to the file that declared it.
 #
-# `smear` carries a `detail:` rather than a `child:`, and that is the distinction the deck is
-# built to show: the two sigmas have nothing to say for themselves. They are what the sentence
-# above them is pointing at, so they are an inline interior (decision:25) and cost no depth.
+# Both kinds of interior appear here, doing what each is for. `recur` carries a `detail:` — the
+# recurrence has nothing to say for itself, it is what the sentence above it points at. `all`
+# carries a `series:` — forty-eight words arriving is not a picture, it is a quantity.
 
 world:
   entities:
     first: The first sixteen
-    four: Reach back four
-
-    smear:
-      label: Smear two of them
+    recur:
+      label: Built from four earlier
       detail:
         formula:
-          - tex: '\sigma_0(x) \;=\; \mathrm{ROTR}^{7}(x) \;\oplus\; \mathrm{ROTR}^{18}(x) \;\oplus\; \mathrm{SHR}^{3}(x)'
-          - tex: '\sigma_1(x) \;=\; \mathrm{ROTR}^{17}(x) \;\oplus\; \mathrm{ROTR}^{19}(x) \;\oplus\; \mathrm{SHR}^{10}(x)'
+          - tex: 'W_t \;=\; \sigma_1(W_{t-2}) \,+\, W_{t-7} \,+\, \sigma_0(W_{t-15}) \,+\, W_{t-16}'
+          - tex: '\sigma_0(x) \;=\; \mathrm{ROTR}^{7}(x) \oplus \mathrm{ROTR}^{18}(x) \oplus \mathrm{SHR}^{3}(x)'
+          - tex: '\sigma_1(x) \;=\; \mathrm{ROTR}^{17}(x) \oplus \mathrm{ROTR}^{19}(x) \oplus \mathrm{SHR}^{10}(x)'
 
-    sum: Add all four
-    next: The next word
+    all:
+      label: Sixty-four words
+      detail:
+        series:
+          # No identity, so these are simply *there* the moment the boundary opens: they arrived
+          # with the block and were never built.
+          - count: 16
+            text: arrive with the block
+          - id: derived
+            count: 48
+            text: built from four earlier words each
 
   relations:
-    - first -> four
-    - four -> smear
-    - smear -> sum
-    - sum -> next
+    - first -> recur
+    - recur -> all
 
 say:
   - speech: >
@@ -35,31 +40,17 @@ say:
     activates: first
 
   - speech: >
-      Every word after that is built from four earlier ones.
-    activates: four
-
-  # Reaching an entity that has an inside is how the author asks to go in. Nothing here names
-  # a zoom, a scale or a transition (decision:25). The two lines have no identities of their
-  # own, so they are simply *there* the moment the boundary opens: they are one idea, and the
-  # sentence below is about both of them.
-  - speech: >
-      Two of them are smeared first. Rotated one way, rotated another, shifted, and folded
-      together.
-    activates: smear
+      Every word after is built from four earlier ones. Two are smeared first by the small
+      sigmas — rotate, rotate, shift, fold.
+    activates: recur
 
   - speech: >
-      Sigma zero and sigma one. Different rotations, same idea — afterwards, no bit is
-      anywhere near where it started.
-
-  # The first cue that reaches something else closes the portal, and the camera comes back out
-  # to find the concept in its place.
-  - speech: >
-      Then all four are added, and that is the next word.
-    activates: sum
+      So sixteen words arrive with the block itself, and then the building starts.
+    activates: all
 
   - speech: >
-      Forty-eight times over, until there are sixty-four.
-    activates: next
+      And forty-eight more are built out of them, one at a time, until there are sixty-four.
+    fills: derived
 
   - speech: >
-      Nothing new comes in. Every one of them is a different squeeze of the same block.
+      One for every round, and nothing new came in.

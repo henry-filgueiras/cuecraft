@@ -1,65 +1,76 @@
 # Inside `round` — the second grandchild, entered from examples/sha256/compression.yaml after
 # the schedule has been visited and left.
 #
-# This is where the algorithm stops being plumbing. Everything above is moving numbers around;
-# `choose` and `majority` are the two places where a specific idea is doing the work, and they
-# are the reason this deck needed a `formula` body at all. At world scale each of them is three
-# words on a plate, and three words cannot say what a multiplexer is.
+# This is FIPS 180-4 section 6.2.2 step 3, and the thing it exists to get right is that a round
+# injects *two* new values rather than one. The previous cut of this film said only that
+# everything shifts down, which is true of six of the eight words and wrong about the two that
+# matter.
 
 world:
   entities:
-    slots: Eight slots, a to h
+    inputs: Eight words, plus two
 
-    # Both games in one interior rather than one each. They are a matched pair — the same shape
-    # of thing, doing opposite jobs — and seeing them together is most of what makes them
-    # legible. It also keeps this world one rank tall, which is what keeps the camera's
-    # establishing shot clear of the heading.
-    games:
-      label: Two little games
+    sums:
+      label: Two sums
       detail:
         formula:
-          # No identity: this one is simply *there* the moment the boundary opens, because the
-          # sentence that opened it is already about it.
-          - tex: '\mathrm{Ch}(e,f,g) \;=\; (e \wedge f) \;\oplus\; (\lnot e \wedge g)'
-          # This one has one, so it stays recessive until the narration arrives — the deck's
-          # activation envelope, doing to a definition exactly what it does to a bullet.
-          - id: maj
-            tex: '\mathrm{Maj}(a,b,c) \;=\; (a \wedge b) \;\oplus\; (a \wedge c) \;\oplus\; (b \wedge c)'
+          # The four ingredients carry no identity, so they are simply *there* the moment the
+          # boundary opens: the sentence that opened it is already about all four.
+          - tex: '\mathrm{Ch}(e,f,g) \;=\; (e \wedge f) \oplus (\lnot e \wedge g)'
+          - tex: '\mathrm{Maj}(a,b,c) \;=\; (a \wedge b) \oplus (a \wedge c) \oplus (b \wedge c)'
+          # The big sigmas, which are *not* the schedule's small ones — different distances, and
+          # three rotations rather than two rotations and a shift.
+          - tex: '\Sigma_0(a) \;=\; \mathrm{ROTR}^{2}(a) \oplus \mathrm{ROTR}^{13}(a) \oplus \mathrm{ROTR}^{22}(a)'
+          - tex: '\Sigma_1(e) \;=\; \mathrm{ROTR}^{6}(e) \oplus \mathrm{ROTR}^{11}(e) \oplus \mathrm{ROTR}^{25}(e)'
+          # The two results do carry one, so each stays recessive until its own sentence arrives.
+          - id: t1
+            tex: 'T_1 \;=\; h + \Sigma_1(e) + \mathrm{Ch}(e,f,g) + K_t + W_t'
+          - id: t2
+            tex: 'T_2 \;=\; \Sigma_0(a) + \mathrm{Maj}(a,b,c)'
 
-    total: Add it all up
-    shift: Shift everything down
+    inject:
+      label: Two get new values
+      detail:
+        formula:
+          - tex: 'a \;\leftarrow\; T_1 + T_2'
+          - tex: 'e \;\leftarrow\; d + T_1'
+
+    shift: The other six move down
 
   relations:
-    - slots -> games
-    - games -> total
-    - total -> shift
+    - inputs -> sums
+    - sums -> inject
+    - inject -> shift
 
 say:
   - speech: >
-      A round starts with the eight working slots, and one of them gets stirred: rotated
-      three different ways and folded together.
-    activates: slots
+      A round takes the eight slots, plus this round's schedule word and one of sixty-four
+      constants.
+    activates: inputs
 
   - speech: >
-      Then two little games are played on the others. The first one is called choose.
-    activates: games
+      All of it goes into two sums, built from four pieces.
+    activates: sums
 
   - speech: >
-      One number decides, bit by bit, which of the other two survives. Where it has a one,
-      take the second one's bit; where it has a zero, take the third's.
+      Choose: one word picks between two others, bit by bit. Majority: three of them vote.
+      And two big sigmas.
 
   - speech: >
-      The second game is the opposite. Three numbers vote, and whatever most of them say is
-      what the bit becomes — so no single one of them decides anything alone.
-    activates: maj
+      T one gathers h, the big sigma of e, choose, the constant and the word.
+    activates: t1
 
   - speech: >
-      All of that is added together, with one more constant that is different in every round.
-    activates: total
+      T two is the big sigma of a, plus majority.
+    activates: t2
 
   - speech: >
-      Then everything shifts down a place. a becomes b, b becomes c, and the new number drops
-      in at the top.
+      T one plus T two becomes the new a. And d plus T one becomes the new e — two get new
+      values, not one.
+    activates: inject
+
+  - speech: >
+      The other six shift down a place.
     activates: shift
 
   - speech: >

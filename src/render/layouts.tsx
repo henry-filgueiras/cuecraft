@@ -12,7 +12,7 @@ import {
 import { formulaMeasure, setFormula } from "../presentation/formula.ts";
 import { groupOffset, seriesTotal } from "../presentation/series.ts";
 import { cellSize, fieldShape, memberFill, membersDone } from "./series.ts";
-import { useMathFonts } from "./mathfonts.tsx";
+import { MATH_RESET, useMathFonts } from "./mathfonts.tsx";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
@@ -1037,17 +1037,22 @@ function Formula({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   if (body.kind !== "formula") return null;
 
   const stateOf = anchorStatesFor(scene, absoluteFrame);
+  // The largest size at which the longest line clears both margins *and* the whole stack clears
+  // the frame — the same two-constraint fit `fitSpecimen` makes, and for the same reason: a
+  // formula sized by its width alone will happily set six lines off the bottom of the picture.
   const widest = Math.max(...body.lines.map((line) => formulaMeasure(line.tex)), 1);
-  // The largest size at which the longest line still clears both margins, stepped down from the
-  // deck's own scale rather than solved — three sizes is enough for a body that holds a
-  // definition, and a continuous fit would put a different size on every frame of the deck.
+  const byWidth = (1920 - 2 * FRAME.marginX) / widest;
+  const byHeight =
+    FORMULA.height /
+    (body.lines.length * FORMULA.line + (body.lines.length - 1) * FORMULA.leading);
   const size = Math.max(
     FORMULA.minSize,
-    Math.min(FORMULA.maxSize, Math.floor((1920 - 2 * FRAME.marginX) / widest)),
+    Math.min(FORMULA.maxSize, Math.floor(Math.min(byWidth, byHeight))),
   );
 
   return (
     <>
+      <style>{MATH_RESET}</style>
       <Heading scene={scene} frame={frame} />
       <div
         style={{
@@ -2116,6 +2121,18 @@ function Interior({
           anchor.elementIndex < range.offset + range.count,
       )
       .map((anchor) => ({ ...anchor, elementIndex: anchor.elementIndex - range.offset })),
+    // Spans are reindexed by the same rule, and the fact that this line was missing is worth a
+    // comment. An interior whose population kept the *slide's* element index looked up nothing,
+    // fell through to the unanchored default — established, because that is what an element the
+    // narration never reaches is — and drew a field that was complete on its first frame and
+    // never moved. It rendered perfectly and taught the opposite of the truth.
+    spans: scene.spans
+      .filter(
+        (span) =>
+          span.elementIndex >= range.offset &&
+          span.elementIndex < range.offset + range.count,
+      )
+      .map((span) => ({ ...span, elementIndex: span.elementIndex - range.offset })),
     // The interior's own clock origin. Everything inside is sequenced from the moment the
     // chamber opened, so a portal nested one deeper measures its own opening against this
     // rather than against the slide — which is what keeps the offsets from compounding.
