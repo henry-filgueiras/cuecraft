@@ -358,6 +358,135 @@ export function flowColor(depth: number): string {
 }
 
 /**
+ * How an ordered exchange is set, in world units.
+ *
+ * The second coordinate system's second inhabitant, and the axes mean something this time. In a
+ * world both axes are "wherever dagre put it"; here **x is who and y is when**, and every constant
+ * below defends one of those two readings.
+ *
+ * The pitch is *uniform* — every lane the same distance from its neighbour, whatever its name is
+ * — because irregular spacing would make the gap between two lanes look like a fact about the
+ * protocol. It is the widest plate plus a fixed gap, so the widest name sets the rhythm and nobody
+ * else's does.
+ *
+ * A row's height is not uniform, and that asymmetry is the whole of the long-label policy. A label
+ * is wrapped to a measure derived from the arrow it belongs to; the arrow is as long as the
+ * distance between two lanes, which is a fact about the protocol; so a message between neighbours
+ * gets a narrow measure and several lines, and one across the whole cast gets a wide measure and
+ * one. The row then grows to hold whatever that came to. Nothing is ever cut, and no row ever
+ * overlaps its neighbour, because the height is computed from the wrap rather than assumed.
+ *
+ * `message` is smaller than `actor` by about a fifth: a lane's name has to be readable in the
+ * widest shot the camera ever takes, and a message label only has to be readable in the shot that
+ * is *about* it. That is the hierarchy, expressed as the only two sizes this composition has.
+ */
+export const TRANSCRIPT = {
+  /** A lane's name. Large, because the establishing shot has to work. */
+  actor: 46,
+  actorLineHeight: 1.18,
+  actorMaxLines: 2,
+  actorPadX: 40,
+  actorPadY: 30,
+  actorMinWidth: 300,
+  /** Between one lane's plate and the next. Fixed, so the pitch is uniform. */
+  laneGap: 160,
+
+  /** A message label. */
+  message: 36,
+  messageLineHeight: 1.26,
+  /** Room between the bottom of a label and the arrow it sits on. */
+  messageGap: 20,
+  /** Between one row's arrow and the top of the next row's label. */
+  rowGap: 92,
+  /**
+   * Least a row may occupy.
+   *
+   * Measured against the lane pitch rather than chosen in isolation, and that ratio is the whole
+   * number. A shot holds `minLanesInShot` of the cast, so a 16:9 frame at that width has room for
+   * about five rows — and five is about how much of a trace a viewer can hold at once. At the
+   * first value tried, 132, the same frame held nine, which made the early shots of every protocol
+   * two thirds empty (nothing has happened yet) and the late ones a wall.
+   */
+  rowMin: 200,
+
+  /** How far a label may hang past the arrow it belongs to, into the lane gap either side. */
+  labelOverhang: 0.34,
+  /** ...and the narrowest measure it will ever be wrapped to, whatever the arrow is doing. */
+  labelMinMeasure: 250,
+
+  /** A message an actor sends to itself: out to the right, down, and back. */
+  selfWidth: 200,
+  selfDrop: 84,
+
+  /** Lifeline above the first row and below the last. */
+  headroom: 96,
+  tail: 120,
+
+  plateRadius: 10,
+  plateStroke: 2.5,
+  lifeline: 2,
+  arrow: 4.5,
+  arrowHead: 26,
+  /** The bar on a lifeline while that actor is holding a call it has not answered. */
+  activation: 20,
+
+  /** The blueprint field behind it, as the atlas has. */
+  gridStep: 130,
+  gridParallax: 0.55,
+
+  /* ---- what the camera is told about the space, rather than about the graph ---- */
+
+  /**
+   * The least of the cast a shot may contain, in lane pitches.
+   *
+   * Framing exactly two lanes is the correct answer to "what is this message" and the wrong answer
+   * to "where does this happen". A viewer who cannot see a neighbour has lost the one thing a
+   * sequence diagram gives them for free, which is that the parties are laid out in a fixed order.
+   * So a shot is widened to hold this much of the cast before the camera is consulted at all —
+   * which keeps the policy in the layout, where it is about *this space*, rather than in
+   * `./camera.ts`, where it would be about every space.
+   */
+  minLanesInShot: 3.4,
+  /**
+   * Breathing room around a shot, and the widest one the camera will take.
+   *
+   * `shotPad` is much smaller than the world's, because a protocol's shot is not a subject in a
+   * field — it is a band, and the bounds handed to the camera already contain their own margins:
+   * a minimum span of the cast either side, and a row of unhappened traffic below. Padding that
+   * again pads it twice, and the first render of `examples/tap.yaml` spent about a quarter of
+   * every frame on it.
+   *
+   * `widest` is derived from typography rather than picked. An actor's name is set at `actor`
+   * world units; below about nineteen screen pixels a name stops being readable at 1080p; so the
+   * widest legible shot is `1920 * actor / 19`, and that is the number. A cast wider than this
+   * cannot be shown whole, and the rail is the answer to that rather than a smaller type size.
+   */
+  shotPad: 0.1,
+  widest: 4650,
+  /**
+   * Rows of already-happened traffic a shot always keeps, and how far it will go beyond that when
+   * the frame has room going spare. `lookaheadRows` is the space left *below* the active row, so
+   * the moment sits above the middle of the picture rather than clinging to its lower edge.
+   *
+   * One is forced, and the rest is the room's to give. Forcing more turned out to fight the room
+   * rather than add to it: on a short protocol three forced rows reach the cast, the subject
+   * becomes taller than the width called for, and the shot silently widens to hold it — which
+   * showed up as the framing changing during an exchange that had not moved anywhere.
+   */
+  historyRows: 1,
+  maxHistoryRows: 9,
+  lookaheadRows: 1,
+  /**
+   * How long the establishing shot is held before the camera may start moving.
+   *
+   * A protocol opens on its cast, and a cast a viewer never got to look at is a cast they will be
+   * tracking blind for the rest of the film. Nine tenths of a second is the floor; a deck that
+   * writes a prologue gets however long the prologue takes, which is the right way to ask for more.
+   */
+  establish: 27,
+} as const;
+
+/**
  * How the compilation's own facts are set.
  *
  * Two colours carry the whole argument and neither is decorative: **authored** is the cool of a

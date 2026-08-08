@@ -46,6 +46,16 @@ import {
   type WorldLayout,
   type WorldNode,
 } from "./world.ts";
+import { smootherstep, viewRect, type Viewport } from "./camera.ts";
+import {
+  layoutProtocol,
+  protocolOf,
+  transcriptPlan,
+  type Activation,
+  type Lane,
+  type Message,
+  type ProtocolLayout,
+} from "./protocol.ts";
 import {
   CODE,
   CODE_COLORS,
@@ -58,6 +68,7 @@ import {
   MONO_STACK,
   MOTION,
   SPACE,
+  TRANSCRIPT,
   TYPE,
   WORLD,
   codeBox,
@@ -2183,6 +2194,641 @@ function Interior({
  * the wrong scale — at the sizes this plate actually appears at, an eleven-node schematic inside
  * it is indistinguishable from a compression artifact. The recursion is parked, not abandoned.
  */
+/* ------------------------------------------------------------- transcript */
+
+/**
+ * How an exchange behaves over time.
+ *
+ * The atlas activates things a viewer is already looking at, and the world stretches that envelope
+ * because the camera is still travelling when a plate ignites. A transcript needs a third shape
+ * again, and the reason is the one thing this composition has that neither of the others does: an
+ * event here is not an *arrival*, it is a *current step*, and it stays current until the next one
+ * starts — however long the sentence over it runs.
+ *
+ * So the envelope below covers only the arrival, and everything about "is this the thing happening
+ * now" is read off the beat instead (`Beat.durationInFrames`). `sweep` is the arrow crossing, which
+ * is the one number a viewer times their reading against, and it is deliberately quick: an arrow
+ * that takes a second to cross is a diagram animating itself, and an arrow that snaps is an edit.
+ */
+const TRANSCRIPT_TIMING: AnchorTiming = {
+  establish: 14,
+  heatRise: 4,
+  heatHold: 11,
+  heatFall: 26,
+  sweep: 13,
+} as const;
+
+/**
+ * How much of its presence a message keeps once the explanation has moved on.
+ *
+ * A protocol accumulates, which is the problem this composition has and the atlas does not: after
+ * twenty messages a frame drawn at one contrast is a wall of arrows, and the twenty-first has to
+ * be findable in it without anything having been thrown away. decision:23 already settled the
+ * principle — spend the contrast on the moment, and let established be normal — and this is that
+ * principle applied to a *sequence* rather than a set, where "established" has a depth.
+ *
+ * Two floors rather than one, and the gap between them is the whole policy. The **arrow** keeps
+ * more, because the shape of what has happened is the causal chain and a viewer glancing back
+ * needs to see it. The **label** keeps less, because the words are detail: nobody re-reads message
+ * four while message twelve is being explained, and a frame of twenty legible labels competes with
+ * the one being spoken about. Halving per step reaches the floor after three, which is about how
+ * far back a viewer's working memory of a trace actually goes.
+ */
+const HISTORY = {
+  arrow: 0.28,
+  label: 0.15,
+  decay: 0.5,
+} as const;
+
+function presence(age: number, floor: number): number {
+  if (age <= 0) return 1;
+  return floor + (1 - floor) * HISTORY.decay ** age;
+}
+
+/**
+ * An ordered exchange, as a place the camera moves down through.
+ *
+ * Two things distinguish it from the atlas, and both are consequences of time being an axis.
+ *
+ * **What has not happened is not drawn.** A world is a structure that exists before anything is
+ * said about it, so the atlas draws all of it faintly from the first frame and lets narration light
+ * it. A protocol is not like that: a message that has not been sent is not context, it is a
+ * spoiler, and `targetBounds` already refuses to frame one for exactly this reason. So the lanes
+ * and the lifelines are there from the start — that is the cast and the running time, and both are
+ * facts before the film begins — and the traffic arrives as it happens.
+ *
+ * **The camera scrolls rather than tours.** `shotFor` is doing all of the work and no rule was
+ * added for it: a step whose lanes are already well inside the frame produces no key at all, which
+ * is why repeated traffic between two services sits perfectly still, and a step that leaves the
+ * frame produces one, which is why the picture descends in deliberate moves rather than creeping.
+ */
+function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const protocol = protocolOf(scene.body);
+  const layout = useMemo(
+    () => (protocol === undefined ? undefined : layoutProtocol(protocol)),
+    [protocol],
+  );
+  const plan = useMemo(
+    () =>
+      layout === undefined
+        ? undefined
+        : transcriptPlan(layout, scene.beats, {
+            from: scene.from,
+            until: scene.from + scene.durationInFrames,
+          }),
+    [layout, scene],
+  );
+
+  if (layout === undefined || plan === undefined) return null;
+
+  const view = cameraAt(plan.track, absoluteFrame);
+  const viewport = { width: 1920, height: 1080 };
+  const scale = viewport.width / view.width;
+
+  // Which step the film is on, and therefore how far back every other one is. One number, read
+  // off the beats, and the only piece of state this composition has.
+  const current = scene.beats.reduce(
+    (latest, beat) => (beat.from <= absoluteFrame ? beat.index : latest),
+    -1,
+  );
+  const active = layout.messages[current];
+  const involved = new Set(active === undefined ? [] : [active.from, active.to]);
+
+  // An actor is an ordinary element, so a prologue may reach one by name exactly as it reaches a
+  // bullet — and when it does, the lane lights up. The camera is deliberately *not* told: before
+  // any traffic there is nothing to frame but the cast, and a shot that chased a mentioned name
+  // would be leaving the establishing shot to look at a column.
+  const laneStates = anchorStatesFor(scene, absoluteFrame, TRANSCRIPT_TIMING);
+  const lit = (lane: Lane): boolean =>
+    involved.has(lane.id) || laneStates(lane.index).heat > 0.12;
+
+  const stateOf = (index: number): AnchorState => {
+    const beat = scene.beats.find((entry) => entry.index === index);
+    return beat === undefined
+      ? { degree: 0, heat: 0, sweep: 0 }
+      : anchorState(absoluteFrame, beat.from, TRANSCRIPT_TIMING);
+  };
+
+  const place = (factor: number): CSSProperties => {
+    const put = viewportTransform(view, viewport, factor);
+    return {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      transformOrigin: "0 0",
+      transform: `translate(${put.x}px, ${put.y}px) scale(${put.scale})`,
+    };
+  };
+
+  const opening = interpolate(frame, [0, MOTION.opener * 2], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: ease,
+  });
+
+  // The deck's title labels the exchange, and it is only wanted while the exchange has not started
+  // — after that the rail is at the top of the frame and two things there is one too many. Derived
+  // from the first beat rather than scheduled: the title is present exactly while nothing has
+  // happened yet, which is what an establishing shot is.
+  const opened = scene.beats[0]?.from ?? Number.POSITIVE_INFINITY;
+  const titling = interpolate(absoluteFrame, [opened - 10, opened + 8], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: COLORS.ink, overflow: "hidden" }}>
+      <div style={place(TRANSCRIPT.gridParallax)}>
+        <Field
+          opacity={0.42 * opening}
+          step={TRANSCRIPT.gridStep * 3}
+          scale={scale * TRANSCRIPT.gridParallax}
+        />
+      </div>
+      <div style={place(1)}>
+        <Field opacity={0.7 * opening} step={TRANSCRIPT.gridStep} scale={scale} />
+        <Traffic
+          layout={layout}
+          current={current}
+          stateOf={stateOf}
+          lit={lit}
+          opening={opening}
+        />
+        {layout.lanes.map((lane) => (
+          <LanePlate key={lane.id} lane={lane} live={lit(lane)} opening={opening} />
+        ))}
+        {layout.messages.map((message) => (
+          <MessageLabel
+            key={message.index}
+            message={message}
+            lane={layout.byId.get(message.from) as Lane}
+            age={current - message.index}
+            state={stateOf(message.index)}
+          />
+        ))}
+      </div>
+
+      {/* Screen space: the horizon the descending exchange is seen against, and the reason the
+          edges of the frame do not read as the edges of the diagram. */}
+      <AbsoluteFill
+        style={{
+          background:
+            `radial-gradient(ellipse 80% 76% at 50% 46%, ${withAlpha("#05070B", 0)} 0%, ` +
+            `${withAlpha("#05070B", 0.2)} 60%, ${withAlpha("#04060A", 0.66)} 100%)`,
+          pointerEvents: "none",
+        }}
+      />
+
+      <Rail layout={layout} view={view} lit={lit} opening={opening} />
+
+      <div
+        style={{
+          position: "absolute",
+          left: FRAME.marginX,
+          top: FRAME.marginY,
+          ...reveal(frame, 0),
+          opacity: (reveal(frame, 0).opacity as number) * titling,
+        }}
+      >
+        <Rule frame={frame} width={72} />
+        <h1
+          style={{
+            ...heading,
+            marginTop: SPACE.md,
+            fontSize: TYPE.row,
+            lineHeight: 1.08,
+            maxWidth: 1220,
+            textShadow: `0 2px 34px ${withAlpha("#05070B", 0.9)}`,
+          }}
+        >
+          {scene.title}
+        </h1>
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * The lifelines, the arrows, and the bars that say who is holding what.
+ *
+ * One SVG in world coordinates, exactly as `Relations` is, because these are strokes rather than
+ * text and a stroke wants to be in the coordinate system it is measured in.
+ *
+ * Three pieces of notation here were derived rather than authored, and none of them has a key:
+ * a **reply** is dashed, because the stack the message order implies already knows which messages
+ * answer which; an actor **holding an unanswered call** carries a bar for exactly as long as it is
+ * holding it; and the arrow takes its **colour from the sender's lane**, so a message's origin is
+ * legible even where the tail of it is off the frame.
+ */
+function Traffic({
+  layout,
+  current,
+  stateOf,
+  lit,
+  opening,
+}: {
+  layout: ProtocolLayout;
+  current: number;
+  stateOf: (index: number) => AnchorState;
+  lit: (lane: Lane) => boolean;
+  opening: number;
+}) {
+  const { bounds } = layout;
+  return (
+    <svg
+      width={bounds.width}
+      height={bounds.height}
+      viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
+      style={{ position: "absolute", left: bounds.x, top: bounds.y, overflow: "visible" }}
+    >
+      {layout.lanes.map((lane) => (
+        <line
+          key={lane.id}
+          x1={lane.x}
+          y1={layout.lifelineTop}
+          x2={lane.x}
+          y2={layout.lifelineBottom}
+          stroke={withAlpha(flowColor(lane.depth), (lit(lane) ? 0.5 : 0.19) * opening)}
+          strokeWidth={TRANSCRIPT.lifeline}
+          strokeDasharray={`${TRANSCRIPT.lifeline * 5} ${TRANSCRIPT.lifeline * 7}`}
+        />
+      ))}
+
+      {layout.activations.map((bar, index) => (
+        <ActivationBar
+          key={index}
+          bar={bar}
+          layout={layout}
+          current={current}
+          stateOf={stateOf}
+        />
+      ))}
+
+      {layout.messages.map((message) => (
+        <Arrow
+          key={message.index}
+          message={message}
+          hue={flowColor((layout.byId.get(message.from) as Lane).depth)}
+          age={current - message.index}
+          state={stateOf(message.index)}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * One message, drawn as it crosses.
+ *
+ * The stroke is dashed onto the path rather than animated as a length, so a self-message's hook
+ * draws itself in the same gesture and with the same code as a straight arrow — direction and
+ * shape are the path's problem, and crossing is this function's.
+ */
+function Arrow({
+  message,
+  hue,
+  age,
+  state,
+}: {
+  message: Message;
+  hue: string;
+  age: number;
+  state: AnchorState;
+}) {
+  if (state.sweep <= 0) return null;
+
+  const strength = presence(age, HISTORY.arrow);
+  const color = mix(hue, COLORS.flare, 0.7 * state.heat);
+  const opacity = Math.min(1, strength + 0.4 * state.heat);
+  const drawn = state.sweep;
+
+  const path = message.self
+    ? `M ${message.x1} ${message.y} ` +
+      `L ${message.x1 + TRANSCRIPT.selfWidth} ${message.y} ` +
+      `L ${message.x1 + TRANSCRIPT.selfWidth} ${message.y + TRANSCRIPT.selfDrop} ` +
+      `L ${message.x1} ${message.y + TRANSCRIPT.selfDrop}`
+    : `M ${message.x1} ${message.y} L ${message.x2} ${message.y}`;
+  const length = message.self
+    ? TRANSCRIPT.selfWidth * 2 + TRANSCRIPT.selfDrop
+    : Math.abs(message.x2 - message.x1);
+
+  // Where the head sits, and which way it points. Both are the path's last leg, which is
+  // horizontal in every case this composition can produce.
+  const tipX = message.self ? message.x1 : message.x2;
+  const tipY = message.self ? message.y + TRANSCRIPT.selfDrop : message.y;
+  const leftward = message.self || message.x2 < message.x1;
+
+  return (
+    <g opacity={opacity}>
+      <path
+        d={path}
+        fill="none"
+        stroke={color}
+        strokeWidth={TRANSCRIPT.arrow}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={
+          message.reply
+            ? `${TRANSCRIPT.arrow * 3.4} ${TRANSCRIPT.arrow * 2.6}`
+            : `${length} ${length}`
+        }
+        strokeDashoffset={message.reply ? 0 : length * (1 - drawn)}
+        // A dashed reply cannot also be dashed *on*, so it wipes with a clip instead.
+        clipPath={message.reply ? `url(#reply-${message.index})` : undefined}
+      />
+      {message.reply ? (
+        <defs>
+          <clipPath id={`reply-${message.index}`}>
+            <rect
+              x={Math.min(message.x1, message.x2) - TRANSCRIPT.arrow}
+              y={message.y - TRANSCRIPT.arrow * 3}
+              width={Math.abs(message.x2 - message.x1) * drawn + TRANSCRIPT.arrow * 2}
+              height={TRANSCRIPT.arrow * 6}
+              transform={
+                leftward
+                  ? `translate(${Math.abs(message.x2 - message.x1) * (1 - drawn)}, 0)`
+                  : undefined
+              }
+            />
+          </clipPath>
+        </defs>
+      ) : null}
+      <polygon
+        points={headPoints(tipX, tipY, leftward)}
+        fill={color}
+        opacity={interpolate(drawn, [0.72, 1], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })}
+      />
+    </g>
+  );
+}
+
+/** A horizontal arrow head. Every arrow this composition draws ends on a horizontal leg. */
+function headPoints(x: number, y: number, leftward: boolean): string {
+  const size = TRANSCRIPT.arrowHead;
+  const back = leftward ? x + size : x - size;
+  const spread = size * 0.42;
+  return `${x},${y} ${back},${y - spread} ${back},${y + spread}`;
+}
+
+/**
+ * The bar an actor carries while it is holding a call it has not answered.
+ *
+ * It grows at the rate the film runs rather than appearing whole: its bottom edge is wherever the
+ * exchange currently is, so a bar that is still open reads as *still open* rather than as a
+ * rectangle that was drawn in advance.
+ */
+function ActivationBar({
+  bar,
+  layout,
+  current,
+  stateOf,
+}: {
+  bar: Activation;
+  layout: ProtocolLayout;
+  current: number;
+  stateOf: (index: number) => AnchorState;
+}) {
+  const lane = layout.byId.get(bar.lane);
+  if (lane === undefined || current < bar.from) return null;
+
+  const closes = bar.to;
+  const settled =
+    closes !== undefined && current >= closes ? 1 : stateOf(bar.from).degree * 0.001;
+  // Reaching: while the call is open the bar follows the current row down.
+  const reached =
+    closes !== undefined && current >= closes
+      ? bar.y + bar.height
+      : Math.min(
+          bar.y + bar.height,
+          (layout.messages[Math.max(bar.from, current)] as Message).y,
+        );
+  // Never a square: a bar that begins as a dot on the lifeline reads as an artifact rather
+  // than as work starting.
+  const height = Math.max(TRANSCRIPT.activation * 2.2, reached - bar.y + settled);
+
+  const width = TRANSCRIPT.activation;
+  return (
+    <rect
+      x={lane.x - width / 2 + bar.depth * width * 0.62}
+      y={bar.y}
+      width={width}
+      height={height}
+      rx={3}
+      fill={withAlpha(flowColor(lane.depth), 0.17)}
+      stroke={withAlpha(flowColor(lane.depth), 0.4)}
+      strokeWidth={1.5}
+    />
+  );
+}
+
+/** One actor, as a plate at the head of its lane. */
+function LanePlate({
+  lane,
+  live,
+  opening,
+}: {
+  lane: Lane;
+  live: boolean;
+  opening: number;
+}) {
+  const hue = flowColor(lane.depth);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: lane.plate.x,
+        top: lane.plate.y,
+        width: lane.plate.width,
+        height: lane.plate.height,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        borderRadius: TRANSCRIPT.plateRadius,
+        border: `${TRANSCRIPT.plateStroke}px solid ${withAlpha(hue, live ? 0.85 : 0.42)}`,
+        backgroundColor: withAlpha(hue, live ? 0.14 : 0.06),
+        boxShadow: live ? `0 0 ${64}px ${withAlpha(hue, 0.22)}` : undefined,
+        opacity: opening,
+        fontSize: TRANSCRIPT.actor,
+        lineHeight: TRANSCRIPT.actorLineHeight,
+        fontWeight: 600,
+        letterSpacing: "-0.01em",
+        color: live ? COLORS.paper : COLORS.muted,
+        padding: `0 ${TRANSCRIPT.actorPadX}px`,
+      }}
+    >
+      <span>
+        {lane.lines.map((line, index) => (
+          <span key={index} style={{ display: "block" }}>
+            {line}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A message's label.
+ *
+ * Set on a chip of the deck background, which is the whole of the collision policy: a label is
+ * centred on its arrow, an arrow between distant lanes crosses every lifeline in between, and text
+ * laid straight over a hairline is the one thing that makes a diagram look uncomposed. The chip is
+ * the background rather than a card — no border, no radius worth noticing — so what it reads as is
+ * the label having priority over the line, which is true.
+ */
+function MessageLabel({
+  message,
+  lane,
+  age,
+  state,
+}: {
+  message: Message;
+  lane: Lane;
+  age: number;
+  state: AnchorState;
+}) {
+  if (state.sweep <= 0) return null;
+  const strength = presence(age, HISTORY.label);
+  const arriving = interpolate(state.sweep, [0.15, 0.75], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        // Positioned by its centre and sized to its content, so what the layout measured and what
+        // the browser draws cannot disagree. Letting CSS re-wrap would put a second break in a
+        // label the layout had already decided was one line — which is how a sixty-character
+        // digest came out as a full line and an orphaned `c1d2` underneath it.
+        left: message.self ? message.label.x : message.label.x + message.label.width / 2,
+        top: message.label.y - TRANSCRIPT.messageGap * 0.4,
+        transform: message.self ? undefined : "translateX(-50%)",
+        width: "max-content",
+        maxWidth: "none",
+        whiteSpace: "nowrap",
+        padding: `${TRANSCRIPT.messageGap * 0.4}px ${TRANSCRIPT.messageGap}px`,
+        textAlign: message.self ? "left" : "center",
+        fontSize: TRANSCRIPT.message,
+        lineHeight: TRANSCRIPT.messageLineHeight,
+        fontWeight: 500,
+        letterSpacing: "-0.005em",
+        color: mix(COLORS.dormant, age <= 0 ? COLORS.paper : COLORS.muted, strength),
+        opacity: arriving * Math.min(1, strength + 0.5 * state.heat),
+        backgroundColor: withAlpha(COLORS.ink, 0.82),
+        borderRadius: 5,
+        textShadow:
+          age <= 0 ? `0 0 26px ${withAlpha(flowColor(lane.depth), 0.5)}` : undefined,
+      }}
+    >
+      {message.lines.map((line, index) => (
+        <div key={index}>{line}</div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Who is in which lane, pinned to the top of the frame.
+ *
+ * The one piece of screen-space chrome in this composition, and the defect it fixes is specific:
+ * a protocol is *tall*, so within four or five messages the camera has scrolled the plates off the
+ * top, and from then on a viewer looking at an arrow between the third and sixth columns has no
+ * way to find out who those are. Every other answer is worse — drawing the names again further
+ * down would put the cast list inside the traffic, and refusing to scroll would mean either a
+ * shot too wide to read or a protocol of five messages.
+ *
+ * Nothing here is authored and nothing is scheduled. Positions are the lanes' own, through the
+ * same camera transform the world uses, so a name is always exactly above its lifeline; the band
+ * appears in proportion to how much of the real cast has left the frame, so on a short protocol
+ * that never scrolls it never appears at all; and the active pair is lit the same way their plates
+ * would have been. It is the plates, seen from where the camera now is.
+ */
+function Rail({
+  layout,
+  view,
+  lit,
+  opening,
+}: {
+  layout: ProtocolLayout;
+  view: Viewport;
+  lit: (lane: Lane) => boolean;
+  opening: number;
+}) {
+  const shown = viewRect(view);
+  const cast = layout.cast;
+  const visible =
+    Math.max(
+      0,
+      Math.min(shown.y + shown.height, cast.y + cast.height) - Math.max(shown.y, cast.y),
+    ) / Math.max(1, cast.height);
+  const strength = 1 - smootherstep(Math.min(1, Math.max(0, visible)));
+  if (strength <= 0.01) return null;
+
+  const scale = 1920 / view.width;
+  const pitch = layout.lanePitch * scale;
+  const size = Math.min(30, Math.max(17, pitch * 0.1));
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        right: 0,
+        height: 152,
+        opacity: strength * opening,
+        pointerEvents: "none",
+        background:
+          `linear-gradient(${withAlpha(COLORS.ink, 0.94)} 0%, ` +
+          `${withAlpha(COLORS.ink, 0.86)} 52%, ${withAlpha(COLORS.ink, 0)} 100%)`,
+      }}
+    >
+      {layout.lanes.map((lane) => {
+        const x = (lane.x - view.cx) * scale + 960;
+        if (x < -pitch * 0.5 || x > 1920 + pitch * 0.5) return null;
+        const live = lit(lane);
+        const hue = flowColor(lane.depth);
+        return (
+          <div
+            key={lane.id}
+            style={{
+              position: "absolute",
+              left: x - pitch / 2,
+              top: 34,
+              width: pitch,
+              textAlign: "center",
+              fontSize: size,
+              lineHeight: 1.16,
+              fontWeight: 600,
+              letterSpacing: "0.045em",
+              textTransform: "uppercase",
+              color: live ? COLORS.paper : COLORS.dim,
+              textShadow: live ? `0 0 22px ${withAlpha(hue, 0.7)}` : undefined,
+            }}
+          >
+            {lane.label}
+            <div
+              style={{
+                margin: `${size * 0.42}px auto 0`,
+                width: live ? 3 : 2,
+                height: live ? 22 : 13,
+                backgroundColor: withAlpha(hue, live ? 0.95 : 0.4),
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Gate({ hue, degree }: { hue: string; degree: number }) {
   return (
     <div
@@ -2211,7 +2857,11 @@ export function Slide({
   absoluteFrame: number;
 }) {
   return (
-    <Frame scene={scene} slideCount={slideCount} bleed={scene.layout === "atlas"}>
+    <Frame
+      scene={scene}
+      slideCount={slideCount}
+      bleed={scene.layout === "atlas" || scene.layout === "transcript"}
+    >
       <Composition scene={scene} absoluteFrame={absoluteFrame} />
     </Frame>
   );
@@ -2249,6 +2899,8 @@ function Composition({
       trail={trail}
       {...(span === undefined ? {} : { span })}
     />
+  ) : scene.layout === "transcript" ? (
+    <Transcript scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "figure" ? (
     <>
       <Heading scene={scene} frame={frame} />
