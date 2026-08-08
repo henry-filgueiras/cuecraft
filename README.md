@@ -16,18 +16,71 @@ downstream is a consequence of that measurement.
 
 ## Showpieces
 
-Five videos, in the order that makes the argument. Each was compiled from the YAML file linked
+Six videos, in the order that makes the argument. Each was compiled from the YAML file linked
 beside it, by `cuecraft render`, with nothing hand-placed and nothing edited afterwards.
 
-### 1. Anatomy of an online order — three scales, one unbroken explanation
+### 1. What happens when you tap your card — a protocol, explained
+
+<!-- VIDEO: tap -->
+
+<!-- Not yet attached. See runme/upload-tap.md — drop out/upload/tap.mp4 on the blank line above
+     this comment using GitHub's web editor, then delete this comment. -->
+
+**Source: [`examples/tap.yaml`](examples/tap.yaml)** — 5 actors and 13 messages, for 1:13 of video.
+
+Five parties, thirteen arrows, and the surprise at the end that the two seconds you waited were a
+promise and the money moved two days later. It is the kind of thing people build by hand in Keynote
+for an afternoon. This is the whole of what produced it — the file has thirteen of these, and
+nothing else:
+
+```yaml
+protocol:
+  actors:
+    you: You
+    terminal: The terminal
+    acquirer: The shop's bank
+    network: The card network
+    issuer: Your bank
+
+  steps:
+    - from: you
+      to: terminal
+      message: tap
+      say: "You tap. That is the entire part of this that you are present for."
+
+    - from: network
+      to: issuer
+      message: authorise £42.60 # no `say:` — it happens anyway, at a pace nobody wrote
+```
+
+There is no identity, no anchor, no target, no coordinate, no duration and no camera instruction
+anywhere in that file, and no key that could become one. What cuecraft works out for itself: the
+lane order and spacing, how a label wraps and how tall that makes its row, **which messages are
+replies** — read off the call stack the message order implies — who is holding an unanswered call
+at any moment, when each step happens, how long a step nobody narrates should last, and where the
+camera stands and when it should decline to move.
+
+`say:` is optional per step, which is the part that made this a research round rather than an
+archetype. Five of the thirteen steps are silent, and they are the passage where the answer comes
+back the way the question went — a run that needs no commentary and still has to happen at a speed
+a person can watch. That pace is derived from the label and from the step's place in the run
+([`decision:35`](archaeology/decisions/)); there is no key an author could set.
+
+[`examples/deploy.yaml`](examples/deploy.yaml) is the same grammar pointed at something hostile —
+eight actors, twenty-two messages, sixty-character digests, runs of three silent steps and traffic
+across the whole cast. It exists to break the automatic policies rather than to flatter them, and
+one of them broke ([`decision:37`](archaeology/decisions/)).
+
+### 2. Anatomy of an online order — three scales, one unbroken explanation
 
 <!-- VIDEO: order -->
+
 https://github.com/user-attachments/assets/2c4d7874-b76c-4ed8-965d-95982b9d0a75
 
 **Source: [`examples/order/`](examples/order/)** — 198 lines across three files, for 1:38 of video.
 
-The shortest complete statement of what cuecraft is claiming, which is why it goes first. One
-slide, and the camera never cuts. It opens on four boxes — you press Buy, paying, packing, it turns
+The shortest complete statement of the _other_ thing cuecraft is claiming: that a presentation can
+have a call stack. One slide, and the camera never cuts. It opens on four boxes — you press Buy, paying, packing, it turns
 up — descends into `paying`, descends again into the check inside _that_, and unwinds back through
 both to finish the sentence it started at the top.
 
@@ -52,7 +105,7 @@ currently is, not written anywhere.
 [`examples/order-flat.yaml`](examples/order-flat.yaml) says the same thing as three ordinary slides,
 in 137 lines. It exists so that the comparison can be made rather than asserted.
 
-### 2. SHA-256 — one round, then sixty-four of them
+### 3. SHA-256 — one round, then sixty-four of them
 
 <!-- VIDEO: sha256 -->
 
@@ -86,7 +139,7 @@ the arrangement comes from the count, the pace from the audio, and the camera fr
 Every formula on screen is verified against `node:crypto` by a test that reads the rotation amounts
 out of the deck's own TeX — so a film that misstated the algorithm would fail the suite.
 
-### 3. Observatory — a presentation that reads its own compiler
+### 4. Observatory — a presentation that reads its own compiler
 
 <!-- VIDEO: observatory -->
 
@@ -105,7 +158,7 @@ is the whole of the vocabulary — a kind, from a closed set of two. There is no
 expression, and no way for a presentation to read a derived value, which is what makes it
 impossible to write narration that changes the measurements it is describing.
 
-### 4. Cathedral v2 — a world you walk through, and go inside
+### 5. Cathedral v2 — a world you walk through, and go inside
 
 <!-- VIDEO: cathedral-v2 -->
 
@@ -126,7 +179,7 @@ narration talks about something else again, it closes.
 Nothing in the source asks for a zoom, a transition, a duration, or a camera move. The one thing
 the author says is that this concept has an inside.
 
-### 5. Self-demo — the practical core
+### 6. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 
@@ -150,13 +203,16 @@ authored                      derived
 ────────────────────────      ──────────────────────────────
 entities                      speech, and its measured duration
 relationships                 when every event happens
-narration cues                graph layout, and every edge route
-which cue is about what       which composition each slide gets
-                              type size, position, colour
+actors, and who sends what    graph layout, and every edge route
+narration cues                which composition each slide gets
+which cue is about what       type size, position, colour
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
                               how a population is arranged, and how fast it fills
+                              lane order, row height, and how a message label wraps
+                              which messages are replies, and who is waiting on what
+                              how long a step nobody narrates should last
                               the video
 ```
 
@@ -226,7 +282,7 @@ authored presentation
    v
 compiled presentation
    |  seconds -> frames          one rule, one function, rounding up
-   |  content -> composition     deterministic, eleven archetypes
+   |  content -> composition     deterministic, twelve archetypes
    |  narration -> events        which element becomes true, on which frame
    v
 frame timeline                   + the compilation's own facts, frozen
@@ -328,6 +384,7 @@ content _means_. The body picks the composition; shape decides only within the l
 | body                                   | composition                                              |
 | -------------------------------------- | -------------------------------------------------------- |
 | `world` — entities and relations       | **atlas** — a laid-out graph, larger than the frame      |
+| `protocol` — actors and messages       | **transcript** — lanes across, time down, a camera       |
 | `figure` — `timing` or `anchors`       | **figure** — what this compilation derived               |
 | `code` — a specimen                    | **specimen** — the source full width, monospace, sized   |
 | `formula` — lines of mathematics       | **formula** — set by KaTeX, centred, sized to fit        |
@@ -390,6 +447,59 @@ slides for comparison. `examples/sha256/` is the harder one: SHA-256 is a call s
 is how its specification is written, so it exercises the feature on a subject that was not chosen
 to suit it. See [`decision:31`](archaeology/decisions/) for the reasoning and
 [`dragon:11`](archaeology/dragons/)–[`dragon:13`](archaeology/dragons/) for what is still open.
+
+**Protocols — experimental.** A body can be an ordered _exchange_: who the parties are, and what
+they say to each other.
+
+```yaml
+protocol:
+  actors:
+    client: Client
+    gateway: API gateway
+    auth: Auth service
+  steps:
+    - from: client
+      to: gateway
+      message: POST /orders
+      say: The client begins by sending its request to the gateway.
+    - from: gateway
+      to: auth
+      message: validate token
+```
+
+This is the one body whose narration lives _inside_ it, and that is the whole of what it is
+testing. Everywhere else an element declares an identity and a separate `say:` reaches it by name;
+here the step and the sentence about it are one thing said twice, and the coupling between them is
+**position in a list** rather than an identity typed on both halves
+([`decision:34`](archaeology/decisions/)).
+
+- **`message:` is required, `say:` is not.** The message is what the diagram shows — an arrow with
+  no label is a line. The narration is what the film adds, and a protocol is allowed to have
+  stretches nobody talks over.
+- **A silent step still happens, at a derived pace.** How long it gets comes from its label's
+  length and its position in a run of silent steps, floored so two arrows never read as one event
+  and capped so a silence never reads as a fault ([`decision:35`](archaeology/decisions/)). There is
+  no `dwell:`, and adding one would be admitting the pacing cannot be derived.
+- **An entry's own `say:` becomes a prologue**, spoken over the cast before anything is sent, and is
+  the one place `activates:` appears — an actor is an ordinary element, so a prologue reaches one
+  exactly as it reaches a bullet. A protocol that needs no prologue writes no `say` at all, and it
+  is the only body that may.
+- **Lane order is the written order and nothing reorders it.** A party stays where it was put, which
+  is the one thing this notation gives a viewer for free and the reason no layout engine is
+  involved.
+- **Replies are derived, or they are withheld.** The message order implies a call stack, and reading
+  it gives dashed returns and a bar on the lifeline of whoever is holding an unanswered call — for
+  nothing, and correctly, on a request/response protocol. It is _silently wrong_ on a
+  notification-driven one, and no structural test separates the two. So the notation is applied only
+  where the whole exchange provably balances, and withheld entirely otherwise
+  ([`decision:37`](archaeology/decisions/)). `examples/tap.yaml` gets it; `examples/deploy.yaml`
+  does not, and every arrow there carries its meaning in its direction alone.
+- **Nothing is authored about the picture.** No lane position, no colour, no note, no divider, no
+  guard, no duration, no camera instruction — and **no `parallel:`**. Two things happening at once
+  is a real gap and it is deliberately unbuilt ([`idea:17`](archaeology/ideas/)).
+
+`examples/tap.yaml` is the friendly one and `examples/deploy.yaml` is the hostile one; the second
+exists to break the automatic policies, and the archaeology records where it did.
 
 **Mathematics.** A body can be a definition, spelled in TeX and set by KaTeX:
 
@@ -484,15 +594,17 @@ Early, opinionated, and honest about it.
 - **The specimens in `examples/` shaped the implementation.** Every archetype and every camera rule
   exists because a real rendered minute looked wrong without it. That makes them well-tuned for the
   worlds they were tuned against, and untested against yours.
-- **Child modules and `series` are experiments, not supported features.** A handful of artifacts and
-  one pair of eyes. The compiler recurses; the demonstrated contract is a child and a grandchild,
-  and no claim is made about anything deeper ([`decision:31`](archaeology/decisions/)). `series` is
-  a quantifier and will not be grown into control flow ([`decision:33`](archaeology/decisions/)).
+- **Child modules, `series` and `protocol` are experiments, not supported features.** A handful of
+  artifacts and one pair of eyes. The compiler recurses; the demonstrated contract is a child and a
+  grandchild, and no claim is made about anything deeper
+  ([`decision:31`](archaeology/decisions/)). `series` is a quantifier and will not be grown into
+  control flow ([`decision:33`](archaeology/decisions/)). `protocol` is sequential and will not be
+  grown into concurrency without a decision saying so.
 - **Not a PowerPoint replacement.** No import, no export, no editing surface.
 - **Not a general motion-graphics DSL.** You cannot express an arbitrary animation, and adding a
   way to would defeat the point.
 - **What it is for:** finding out how far semantic authoring goes before mechanical authoring
-  becomes necessary. Feature expansion is deliberately paused while these three artifacts are
+  becomes necessary. Feature expansion is deliberately paused while these artifacts are
   looked at ([`decision:30`](archaeology/decisions/)).
 
 Known open questions live in [`archaeology/dragons/`](archaeology/dragons/) — including typography
