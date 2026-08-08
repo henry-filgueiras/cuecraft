@@ -1,0 +1,312 @@
+# Two narrators review an ordinary regional failover exercise. The exercise has already
+# submitted its own postmortem, eleven minutes before it begins.
+#
+#   npm run render -- examples/orpheus-failover.yaml -o out/orpheus-failover.mp4
+#
+# Besides its unimpeachably serious operational purpose, this is an adversarial subtitle/layout
+# specimen: wrapped headings over index and cascade compositions, one- and two-line subtitle cues,
+# and both full-bleed camera archetypes. Lena is the continuity director. Owen is the reliability
+# engineer who has read the report from tomorrow and would like it amended before yesterday.
+
+title: "Project Orpheus: Regional Failover Validation"
+
+narrators:
+  lena: { voice: af_sarah, speed: 1.02 }
+  owen: { voice: bm_lewis, speed: 1.0 }
+
+defaults:
+  narrator: lena
+  subtitles: true
+  pre_say: 700ms
+  post_say: 1400ms
+
+slides:
+  - slide:
+      title: "Project Orpheus: Regional Failover Validation"
+
+    say:
+      - >-
+        Good morning. Today's exercise will validate that customer traffic can move from the West
+        region to the East region without data loss or an extended interruption.
+
+      - speech: >-
+          Before we start, why did East submit a successful exercise result eleven minutes ago?
+        narrator: owen
+
+      - "Preliminary telemetry indicates a small amount of clock skew."
+
+      - speech: "The telemetry included a postmortem. It named me."
+        narrator: owen
+
+      - "We will address timing in the approved sequence."
+
+      - speech: "According to the postmortem, we already did."
+        narrator: owen
+
+  - slide:
+      title: "The decision the exercise is supposed to inform"
+      bullets:
+        - id: writes
+          text: Preserve customer writes
+        - id: recovery
+          text: Meet the recovery objective
+        - id: primary
+          text: Verify one primary region
+        - id: automation
+          text: Authorize automated failover
+
+    say:
+      - speech: "First, customer writes must survive the transfer without duplication or loss."
+        activates: writes
+
+      - speech: "Second, service must recover inside the approved objective."
+        activates: recovery
+
+      - speech: "Third, we confirm that exactly one region believes it is primary."
+        activates: primary
+
+      - speech: "Both regions currently satisfy that requirement individually."
+        narrator: owen
+
+      - "That is not what exactly one means."
+
+      - speech: "I agree. West does not."
+        narrator: owen
+
+      - speech: "Finally, a clean result would authorize automated failover."
+        activates: automation
+
+      - speech: "The automation has asked whether it may attend with counsel."
+        narrator: owen
+
+  - slide:
+      title: "Approved recovery sequence and one unauthorized event"
+      steps:
+        - id: freeze
+          text: Freeze writes in West
+        - id: promote
+          text: Promote the East replica
+        - id: shift
+          text: Shift customer traffic east
+        - id: reconcile
+          text: Reconcile and fail back
+
+    say:
+      - speech: "At time zero, the controller freezes new writes in West."
+        activates: freeze
+
+      - speech: "East acknowledged the freeze at time minus eleven minutes."
+        narrator: owen
+
+      - speech: "The controller then promotes the East replica."
+        activates: promote
+
+      - speech: "It declined, on the basis that it had been primary since Tuesday."
+        narrator: owen
+
+      - speech: "Once promotion is confirmed, customer traffic moves east."
+        activates: shift
+
+      - speech: "Customer traffic was already there, filing a complaint about West."
+        narrator: owen
+
+      - speech: "After the validation window, we reconcile state and fail back."
+        activates: reconcile
+
+      - speech: "To which Tuesday?"
+        narrator: owen
+
+  - slide:
+      title: "The topology is ordinary; the timestamps are not"
+      world:
+        entities:
+          clients: Customer traffic
+          west: West region
+          stream: Replication stream
+          east: East region
+          clock: Time service
+          audit: Audit archive
+        relations:
+          - clients -> west
+          - west -> stream
+          - stream -> east
+          - clock -> west
+          - clock -> east
+          - west -> audit
+          - east -> audit
+
+    say:
+      - speech: "The intended topology is conventional. Customer traffic begins in West."
+        activates: clients
+
+      - speech: "West emits an ordered replication stream toward East."
+        activates: west
+
+      - speech: "East applies that stream and remains passive until promotion."
+        activates: stream
+
+      - speech: >-
+          The time service informs both regions that now is Tuesday, although it has declined to
+          specify the same Tuesday to each of them.
+        narrator: owen
+        activates: clock
+
+      - speech: "Both regions write immutable evidence to the audit archive."
+        activates: audit
+
+      - speech: >-
+          The archive has therefore preserved two mutually exclusive histories with excellent
+          durability.
+        narrator: owen
+
+  # A protocol's step narration inherits the slide narrator. Lena can object in the prologue;
+  # Owen then owns the reconstruction, which is a useful lexical-scope specimen of its own.
+  - slide:
+      title: "The incident reconstructed from signed logs"
+      protocol:
+        actors:
+          controller: Failover controller
+          west: West region
+          east: East region
+          clock: Time service
+          audit: Audit archive
+
+        steps:
+          - from: controller
+            to: west
+            message: freeze writes
+            say: "The controller asks West to freeze writes."
+
+          - from: east
+            to: controller
+            message: promotion complete
+            say: "East reports that promotion completed eleven minutes earlier."
+
+          - from: controller
+            to: east
+            message: promote replica
+            say: "The promotion command arrives after its successful result."
+
+          - from: west
+            to: east
+            message: who is primary?
+            say: "West asks the question our control plane was designed to prevent."
+
+          - from: east
+            to: west
+            message: you are, yesterday
+            say: "East gives a technically complete and operationally hostile answer."
+
+          - from: clock
+            to: clock
+            message: correct offset −11m
+            say: "The time service corrects itself and makes the evidence chronologically worse."
+
+          - from: audit
+            to: controller
+            message: postmortem published
+            say: "Finally, the archive publishes the report we are presently trying not to earn."
+
+    narrator: owen
+
+    say:
+      - speech: "For the record, this diagram is an interpretation of incomplete telemetry."
+        narrator: lena
+
+      - "For the record, every arrow below is signed."
+
+  - slide:
+      title: "Reconciliation findings at 14:30, 14:19, and Tuesday"
+      bullets:
+        - id: balances
+          text: Customer balances — consistent
+        - id: orders
+          text: Order identifiers — mostly unique
+        - id: commander
+          text: Incident commander — active in both regions
+        - id: lunch
+          text: Lunch — consumed twice
+
+    say:
+      - speech: "Customer balances reconcile exactly across both histories."
+        activates: balances
+
+      - speech: "That is the first reassuring sentence in this deck."
+        narrator: owen
+
+      - speech: "Order identifiers are unique within each region."
+        activates: orders
+
+      - speech: "Mostly unique is not a kind of unique available to databases."
+        narrator: owen
+
+      - speech: "The incident commander appears active in both control rooms."
+        activates: commander
+
+      - speech: "Both incident commanders are me, and we have filed conflicting status reports."
+        narrator: owen
+
+      - speech: "Catering records also show one lunch delivered to each region."
+        activates: lunch
+
+      - speech: "At last, redundancy with a defensible business case."
+        narrator: owen
+
+  - slide:
+      title: "Risk posture after consulting the version of us from tomorrow"
+      steps:
+        - id: data
+          text: Data loss remains low
+        - id: causality
+          text: Causality loss is unquantified
+        - id: rollback
+          text: Rollback may create another Wednesday
+        - id: fatigue
+          text: Operator fatigue has achieved replication
+
+    say:
+      - speech: "Data-loss risk remains low because every committed write exists in both histories."
+        activates: data
+
+      - speech: "Some of them exist before the customer made them, but yes, they exist."
+        narrator: owen
+
+      - speech: "Causality loss is not covered by the current risk taxonomy."
+        activates: causality
+
+      - speech: "I have opened a request for a dropdown option."
+        narrator: owen
+
+      - speech: "Rollback may create an additional Wednesday between Tuesday and Thursday."
+        activates: rollback
+
+      - speech: "Change management has tentatively approved it as a maintenance window."
+        narrator: owen
+
+      - speech: "Operator fatigue is now present in both regions."
+        activates: fatigue
+
+      - speech: "Mine are arguing over who gets to sleep first."
+        narrator: owen
+
+  - slide:
+      title: "Decision: hold traffic until time leaves the change window"
+
+    post_say: 2000ms
+    say:
+      - >-
+        Automated failover remains disabled. We will isolate both histories, reconcile the order
+        stream, and establish which region is presently present.
+
+      - speech: "Reliability approves."
+        narrator: owen
+
+      - "Which reliability engineer is approving?"
+
+      - speech: "The one still on this call."
+        narrator: owen
+
+      - "Both of you are still on this call."
+
+      - speech: "Then please record one approval and one principled abstention."
+        narrator: owen
