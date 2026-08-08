@@ -2,9 +2,10 @@
 id: tsk_01KZHRVYY5KV3C05SE4YQP7CC8
 sequence: 66
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZHRVYW57XJRGBFQYN90SGCS
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Render both decks against their before cuts, and record the round

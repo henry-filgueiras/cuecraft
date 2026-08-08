@@ -2,8 +2,9 @@
 id: spr_01KZHRVYW57XJRGBFQYN90SGCS
 sequence: 14
 kind: sprint
-status: active
+status: closed
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Make the room the band took be room the composition respects
@@ -76,3 +77,56 @@ titles, dense slides. The Retry explainer will be one of them.
 - **Any authored knob.** No `padding:`, no `rows:`, no `density:`. Composition remains derived.
 - **Re-timing anything.** No clip offset, measured duration, scene length, anchor frame or camera
   key may move. The camera may be told about a smaller viewport; it may not be told about time.
+
+## Outcome
+
+Every success criterion met, and the round found three defects it was not looking for.
+
+Both adversarial decks are clean end to end — every `index`, `cascade` and `atlas` slide clears the
+narration — and their timelines are identical to the frame before and after (302.357333s,
+308.416000s). `witnessglass` without subtitles renders byte-identical, which is the acceptance
+artifact decision:7 keeps for exactly this. `index` and `cascade` now derive type and spacing from
+`bodyBox(title, band)` in the same shape as every other fitter, backed by an invariant test that
+does the arithmetic across every band the decks produce. dragon:21 is closed; dragon:23 is the
+subtitle type tax, recorded rather than solved as the sprint said it would be.
+
+### The diagnosis that was offered, and the one the measurement gave
+
+An independent audit proposed that `AbsoluteFill`'s `width/height: 100%` with content-box sizing was
+expanding the element rather than shrinking its usable area, and that `Frame` needed
+`box-sizing: border-box`. It is a good hypothesis and it is wrong, and one measurement settled it:
+with subtitles off the closing hairline lands at y=971 against a content box ending at 972 —
+exactly right. Content-box sizing would have broken that case too. The padding was always honoured;
+what was not honoured was the box, because a `flex: 1` container's `min-height` resolves to `auto`
+and it refuses to shrink below its intrinsic height.
+
+The distinction mattered for the fix. `border-box` would have changed nothing, and the archetypes
+would still have been sizing themselves from constants.
+
+### Three defects found by arithmetic rather than by frames
+
+- **The bottom of the frame was paid for twice.** `Frame` padded `marginY + band` over a band that
+  already ends in `SUBTITLE.gap`, so every subtitled composition since decision:40 gave up 148px of
+  air where 40 was designed. Invisible while nothing was laid out against what was left.
+- **`HEADING_CHAR_WIDTH` was a guess that rounded the wrong way at one boundary.** 29 characters at
+  104px came out one character over the measure, so a title that renders on one line was reported as
+  two and the composition beneath it lost 110px. Measured: 0.489, not 0.5.
+- **`atlas` failed worse than dragon:21 described.** Not occlusion — mutual destruction. `HALO` is
+  tuned for text over a field and a world node is a filled plate with a glow, so neither text wins.
+
+### What dragon:21 got wrong, and why it is worth saying
+
+dragon:21 costed a band-aware camera as "a two-line change with a large blast radius: every shot on
+every world deck reframes". The first half was right and the second half was not, for a reason the
+dragon had in front of it: `band` is zero for every deck that never asked for subtitles. The blast
+radius was exactly the decks the feature was built for. A cost estimate that does not check its own
+zero case can keep a dragon open for a round longer than it deserves.
+
+### Where it stopped
+
+Exactly where it aimed. A slide can still be over-full, and the answer is the readable floor rather
+than an invention: continuation slides were refused because the renderer inventing a scene changes
+the number of scenes, and decision:9 forbids anything downstream of compilation touching derived
+timing. dragon:14's title-grazing is unchanged in the frames checked, but a world centred in a
+shorter box sits closer to the title by construction and that dragon has one more source of pressure
+than it did.
