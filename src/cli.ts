@@ -7,6 +7,8 @@ import { narrativeStack, stackProblem, type Timeline } from "./compile/timeline.
 import { formatTimecode } from "./presentation/duration.ts";
 import { PresentationError } from "./presentation/parse.ts";
 import { renderPresentationFile, StageError } from "./pipeline.ts";
+import { protocolOf } from "./render/protocol.ts";
+import { allocateLanes } from "./render/tenancy.ts";
 import { SynthesisError, synthesize } from "./tts/kokoro.ts";
 import { KOKORO_VOICES } from "./tts/voices.ts";
 
@@ -170,6 +172,7 @@ async function runRender(
         `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
         `  narration kept in ${summary.workspace}\n` +
+        describeLanes(timeline) +
         describeDescent(timeline),
     );
     return 0;
@@ -230,6 +233,35 @@ function describeDescent(timeline: Timeline): string {
     flush();
   }
   return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
+}
+
+/**
+ * How much width each protocol actually cost, and why.
+ *
+ * Printed for the same reason the layouts are: the allocation is derived, an author cannot reach
+ * it, and a derived decision nobody can see is a decision nobody can argue with. Four numbers say
+ * the whole thing — how many parties there are, how many columns they came to, how many were ever
+ * live at once (the floor no allocation can beat), and how many times a column changed hands.
+ *
+ * The distance between `peak` and `slots` is the price of `COOLING_ROWS`: columns that were
+ * semantically free and were left alone anyway, because reclaiming them would have let the film
+ * imply that one party continued another. That price is meant to be visible.
+ *
+ * Silent on every deck with no protocol in it, which is most of them.
+ */
+function describeLanes(timeline: Timeline): string {
+  const lines: string[] = [];
+  for (const scene of timeline.scenes) {
+    const protocol = protocolOf(scene.body);
+    if (protocol === undefined) continue;
+    const { slots, peak, reuses } = allocateLanes(protocol.actors, protocol.steps);
+    lines.push(
+      `  slide ${scene.ordinal}: ${protocol.actors.length} actors in ${slots} ` +
+        `lane${slots === 1 ? "" : "s"} ` +
+        `(${peak} live at once, ${reuses} reuse${reuses === 1 ? "" : "s"})`,
+    );
+  }
+  return lines.length === 0 ? "" : `  lanes\n${lines.join("\n")}\n`;
 }
 
 function parseSpeed(raw: string): number {

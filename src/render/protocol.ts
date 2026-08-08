@@ -11,6 +11,7 @@ import {
   type Rect,
   type Viewport,
 } from "./camera.ts";
+import { allocateLanes, type LaneAllocation, type Tenancy } from "./tenancy.ts";
 import { TRANSCRIPT } from "./theme.ts";
 import { wrapLabel } from "./world.ts";
 
@@ -48,7 +49,35 @@ export interface Lane {
   /** Centre x in world coordinates: the lifeline. */
   readonly x: number;
   readonly plate: Rect;
+  /**
+   * Declaration order, and *not* the column.
+   *
+   * These were the same number until `./tenancy.ts` came along, and prising them apart is the
+   * round's main structural result: an actor's **identity** is what a prologue reaches by name and
+   * what the anchor model addresses, and its **slot** is where the picture happens to put it. The
+   * first is the author's; the second is the compiler's, and the compiler is now allowed to give
+   * the same one to two actors that are never alive at the same time.
+   */
   readonly index: number;
+  /** The physical column, and which turn in it — 0 is the tenant the film opens with. */
+  readonly slot: number;
+  readonly ordinal: number;
+  /** The steps this actor is live for, inclusive. */
+  readonly first: number;
+  readonly last: number;
+  /** The stretch of world this lane's lifeline is drawn over: its tenancy, not its lifetime. */
+  readonly lifelineTop: number;
+  readonly lifelineBottom: number;
+  /**
+   * Whether this lifeline ends because the column changes hands, rather than because the film does.
+   *
+   * The terminator is a fact about the **slot** and never about the actor. "This column stops being
+   * this party" is something the layout knows for certain; "this party is finished" is a claim
+   * about the protocol, and an actor that keeps its column to the end keeps its lifeline to the end
+   * rather than being quietly declared dead at its last message. It is also why
+   * `examples/tap.yaml`, which reclaims nothing, draws exactly what it drew before.
+   */
+  readonly handsOver: boolean;
   /**
    * Where this lane sits across the cast, 0 at the left and 1 at the right.
    *
@@ -57,6 +86,12 @@ export interface Lane {
    * encoding of the one thing the composition most needs a viewer to hold on to. Two lanes far
    * apart are far apart in colour as well as in space, and an arrow between them carries the
    * sender's.
+   *
+   * It is a fact about the **column**, so two tenants of one column share a hue. That is deliberate
+   * and it is the weaker half of the handover notation: hue answers "who sent this arrow whose tail
+   * is off the frame", which is a question about the present, and no two tenants are ever present
+   * together. What it cannot do is distinguish them in memory, which is what the terminator, the
+   * arrival plate and the rail are for.
    */
   readonly depth: number;
 }
@@ -103,13 +138,24 @@ export interface Activation {
 }
 
 export interface ProtocolLayout {
+  /** Every actor, in declaration order — so `lanes[i].index === i`, whatever column it holds. */
   readonly lanes: readonly Lane[];
   readonly byId: ReadonlyMap<string, Lane>;
+  /** Who holds each column, earliest first. `bySlot[s]` has more than one entry only on a reuse. */
+  readonly bySlot: readonly (readonly Lane[])[];
+  readonly allocation: LaneAllocation;
   readonly messages: readonly Message[];
   readonly activations: readonly Activation[];
   /** Everything: plates, lifelines, labels, arrows. */
   readonly bounds: Rect;
-  /** The row of plates alone — the establishing shot's subject. */
+  /**
+   * The opening row of plates — the establishing shot's subject.
+   *
+   * The **first** tenant of every column, which is the same thing as "every actor" whenever nothing
+   * is reclaimed. A later tenant is not part of the establishing shot on purpose: it has not
+   * arrived yet, and a cast row containing a party the exchange will not reach for forty seconds is
+   * the cost this round exists to stop paying.
+   */
   readonly cast: Rect;
   readonly lanePitch: number;
   readonly lifelineTop: number;
@@ -138,46 +184,55 @@ export function layoutProtocol(protocol: {
   actors: readonly AuthoredActor[];
   steps: readonly AuthoredStep[];
 }): ProtocolLayout {
+  // Which column each actor holds, decided offline and never revised. See `./tenancy.ts` — nothing
+  // below may consult a frame, and nothing below may move an actor.
+  const allocation = allocateLanes(protocol.actors, protocol.steps);
+
   const plates = protocol.actors.map((actor) => {
     const lines = wrapLabel(actor.text, TRANSCRIPT.actorMaxLines);
     return { actor, lines, size: plateSize(lines) };
   });
 
-  // One pitch for the whole cast. The widest name sets it and nobody else's does, so an unequal
-  // gap can never look like a claim about the protocol.
+  // One pitch for the whole cast, still measured over every actor and not merely the ones in the
+  // opening row: a party that arrives on row fourteen has to fit its column too, and a pitch that
+  // widened when it got there would be the lanes moving by another name.
   const lanePitch =
     Math.max(...plates.map((plate) => plate.size.width)) + TRANSCRIPT.laneGap;
   const plateHeight = Math.max(...plates.map((plate) => plate.size.height));
+  const xOf = (id: string): number =>
+    (allocation.byActor.get(id) as Tenancy).slot * lanePitch;
 
-  const lanes = plates.map((plate, index): Lane => {
-    const x = index * lanePitch;
-    return {
-      id: plate.actor.id,
-      label: plate.actor.text,
-      lines: plate.lines,
-      x,
-      plate: {
-        x: x - plate.size.width / 2,
-        y: (plateHeight - plate.size.height) / 2,
-        width: plate.size.width,
-        height: plate.size.height,
-      },
-      index,
-      depth: plates.length <= 1 ? 0 : index / (plates.length - 1),
-    };
-  });
-  const byId = new Map(lanes.map((lane) => [lane.id, lane] as const));
+  // Where a column changes hands, keyed by the row the incoming actor arrives on. A handover gets
+  // **reserved vertical room of its own**, so an arrival plate can never land on a crossing arrow
+  // or somebody else's label — the collision policy for a plate dropped into the middle of the
+  // traffic is to make sure there is no traffic there.
+  const arrivals = new Map<number, Tenancy[]>();
+  for (const tenancy of allocation.tenancies) {
+    if (tenancy.ordinal === 0) continue;
+    arrivals.set(tenancy.first, [...(arrivals.get(tenancy.first) ?? []), tenancy]);
+  }
+  const entrances = new Map<number, number>();
 
   const replies = readReplies(protocol.steps);
 
   const lifelineTop = plateHeight;
   let cursor = lifelineTop + TRANSCRIPT.headroom;
   const messages = protocol.steps.map((step, index): Message => {
-    const source = byId.get(step.from) as Lane;
-    const target = byId.get(step.to) as Lane;
     const self = step.from === step.to;
+    const sourceX = xOf(step.from);
+    const targetX = xOf(step.to);
 
-    const measure = measureFor(source, target, self, lanePitch);
+    // The reserved band, if anybody takes possession of a column on this row. `headroom` is used
+    // at both ends of it because that is already the name for "room between a plate and the first
+    // message under it" — an arrival is the cast row happening again, later and for one party.
+    const bandTop = cursor;
+    if (arrivals.has(index)) {
+      const plateTop = cursor + TRANSCRIPT.headroom;
+      entrances.set(index, plateTop);
+      cursor = plateTop + plateHeight + TRANSCRIPT.headroom;
+    }
+
+    const measure = measureFor(sourceX, targetX, self, lanePitch);
     const lines = wrapToMeasure(step.message, measure);
     const labelHeight = lines.length * TRANSCRIPT.message * TRANSCRIPT.messageLineHeight;
     const labelWidth = Math.max(...lines.map(textWidth));
@@ -192,28 +247,31 @@ export function layoutProtocol(protocol: {
       : labelTop + labelHeight + TRANSCRIPT.messageGap;
     const label = {
       x: self
-        ? source.x + TRANSCRIPT.selfWidth + TRANSCRIPT.messageGap
-        : (source.x + target.x) / 2 - labelWidth / 2,
+        ? sourceX + TRANSCRIPT.selfWidth + TRANSCRIPT.messageGap
+        : (sourceX + targetX) / 2 - labelWidth / 2,
       y: self ? y + drop / 2 - labelHeight / 2 : labelTop,
       width: labelWidth,
       height: labelHeight,
     };
 
-    const left = Math.min(source.x, target.x, label.x);
+    const left = Math.min(sourceX, targetX, label.x);
     const right = Math.max(
-      source.x,
-      target.x,
+      sourceX,
+      targetX,
       label.x + label.width,
-      self ? source.x + TRANSCRIPT.selfWidth : -Infinity,
+      self ? sourceX + TRANSCRIPT.selfWidth : -Infinity,
     );
+    // The reserved band belongs to the row it precedes, so the camera frames an arrival with the
+    // message that caused it rather than scrolling past an introduction.
     const band = {
       x: left,
-      y: labelTop,
+      y: bandTop,
       width: right - left,
-      height: Math.max(y + drop, label.y + label.height) - labelTop,
+      height: Math.max(y + drop, label.y + label.height) - bandTop,
     };
 
-    cursor = labelTop + Math.max(TRANSCRIPT.rowMin, band.height + TRANSCRIPT.rowGap);
+    const occupied = band.y + band.height - labelTop;
+    cursor = labelTop + Math.max(TRANSCRIPT.rowMin, occupied + TRANSCRIPT.rowGap);
 
     return {
       index,
@@ -221,8 +279,8 @@ export function layoutProtocol(protocol: {
       to: step.to,
       lines,
       y,
-      x1: source.x,
-      x2: target.x,
+      x1: sourceX,
+      x2: targetX,
       self,
       reply: replies.reply[index] ?? false,
       label,
@@ -231,6 +289,53 @@ export function layoutProtocol(protocol: {
   });
 
   const lifelineBottom = (messages.at(-1)?.band.y ?? lifelineTop) + TRANSCRIPT.tail;
+
+  const lanes = plates.map((plate, index): Lane => {
+    const tenancy = allocation.byActor.get(plate.actor.id) as Tenancy;
+    const x = tenancy.slot * lanePitch;
+    const held = allocation.bySlot[tenancy.slot] as readonly Tenancy[];
+    const successor = held[tenancy.ordinal + 1];
+
+    // A first tenant has held its column since before the film began, so its plate is in the cast
+    // row and nothing needs establishing. A later one takes possession where the previous tenant
+    // let go, and its plate is drawn there.
+    const plateTop = tenancy.ordinal === 0 ? 0 : (entrances.get(tenancy.first) as number);
+    const top = tenancy.ordinal === 0 ? lifelineTop : plateTop + plateHeight;
+    // The outgoing lifeline stops halfway up the room reserved for its successor's plate, so the
+    // terminator and the new name are one legible event rather than two things that happen to be
+    // in the same column.
+    const bottom =
+      successor === undefined
+        ? lifelineBottom
+        : (entrances.get(successor.first) as number) - TRANSCRIPT.headroom / 2;
+
+    return {
+      id: plate.actor.id,
+      label: plate.actor.text,
+      lines: plate.lines,
+      x,
+      plate: {
+        x: x - plate.size.width / 2,
+        y: plateTop + (plateHeight - plate.size.height) / 2,
+        width: plate.size.width,
+        height: plate.size.height,
+      },
+      index,
+      slot: tenancy.slot,
+      ordinal: tenancy.ordinal,
+      first: tenancy.first,
+      last: tenancy.last,
+      lifelineTop: top,
+      lifelineBottom: bottom,
+      handsOver: successor !== undefined,
+      depth: allocation.slots <= 1 ? 0 : tenancy.slot / (allocation.slots - 1),
+    };
+  });
+  const byId = new Map(lanes.map((lane) => [lane.id, lane] as const));
+  const bySlot = allocation.bySlot.map((held) =>
+    held.map((tenancy) => byId.get(tenancy.id) as Lane),
+  );
+
   const activations = replies.calls.map((call): Activation => {
     const opened = messages[call.from] as Message;
     const closed = call.to === undefined ? undefined : (messages[call.to] as Message);
@@ -244,9 +349,12 @@ export function layoutProtocol(protocol: {
     };
   });
 
-  const cast = union(lanes.map((lane) => lane.plate));
+  const cast = union(
+    lanes.filter((lane) => lane.ordinal === 0).map((lane) => lane.plate),
+  );
   const bounds = union([
     cast,
+    ...lanes.map((lane) => lane.plate),
     ...messages.map((message) => message.band),
     // The lifelines themselves, so the space does not end at the last label.
     {
@@ -260,6 +368,8 @@ export function layoutProtocol(protocol: {
   return {
     lanes,
     byId,
+    bySlot,
+    allocation,
     messages,
     activations,
     bounds,
@@ -304,13 +414,13 @@ function textWidth(line: string): number {
  * one word per line.
  */
 function measureFor(
-  source: Lane,
-  target: Lane,
+  sourceX: number,
+  targetX: number,
   self: boolean,
   lanePitch: number,
 ): number {
   if (self) return lanePitch * 0.9;
-  const span = Math.abs(target.x - source.x);
+  const span = Math.abs(targetX - sourceX);
   return Math.max(
     TRANSCRIPT.labelMinMeasure,
     span + 2 * TRANSCRIPT.labelOverhang * TRANSCRIPT.laneGap,

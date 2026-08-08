@@ -429,6 +429,21 @@ export const TRANSCRIPT = {
   arrowHead: 26,
   /** The bar on a lifeline while that actor is holding a call it has not answered. */
   activation: 20,
+  /**
+   * Half-width of the cap that closes a lifeline where its column changes hands, and how far above
+   * it the line stops being dashed.
+   *
+   * The one piece of notation this composition draws that is about the *picture* rather than about
+   * the protocol: it says "this column stops being this party here", which is true of the layout
+   * and makes no claim about the exchange. It carries most of the weight of the reuse policy, so it
+   * is sized to be read at the scale a whole cast is framed at rather than at the scale a label is
+   * — the first attempt was half this and read as a stray tick in the grid. The run-in is solid
+   * where the lifeline is dashed, so the column visibly *closes* rather than merely stopping.
+   *
+   * It appears only where a slot is actually reclaimed — see `./tenancy.ts`.
+   */
+  terminator: 76,
+  terminatorRun: 150,
 
   /** The blueprint field behind it, as the atlas has. */
   gridStep: 130,

@@ -10,7 +10,9 @@ import {
   stepBounds,
   transcriptPlan,
   wrapToMeasure,
+  type Lane,
 } from "./protocol.ts";
+import { COOLING_ROWS } from "./tenancy.ts";
 import { TRANSCRIPT } from "./theme.ts";
 
 /**
@@ -176,6 +178,121 @@ test("a self-message is a hook beside its own lane, not a zero-length arrow", ()
   assert.equal(hook.x1, hook.x2);
   assert.ok(hook.band.width >= TRANSCRIPT.selfWidth, "the hook needs room of its own");
   assert.ok(hook.label.x > hook.x1, "its label hangs to the side");
+});
+
+/* --------------------------------------------------------------- tenancy */
+
+/** Enough back-and-forth between two actors to push everything after it out of any one shot. */
+function filler(from: string, to: string, rows: number): readonly AuthoredStep[] {
+  return Array.from({ length: rows }, (_unused, index) =>
+    index % 2 === 0 ? send(from, to, "tick") : send(to, from, "tock"),
+  );
+}
+
+const RECLAIMING = {
+  actors: cast("A", "B", "Early", "Late"),
+  steps: [
+    send("early", "a", "hello"),
+    send("a", "early", "hello back"),
+    ...filler("a", "b", COOLING_ROWS + 1),
+    send("late", "a", "and now me"),
+    send("a", "late", "and you"),
+  ],
+};
+
+test("a protocol that reclaims nothing lays out exactly as it always did", () => {
+  // The licence the whole experiment runs under: the healthy case pays nothing. Positions are the
+  // written order, lifelines run the length of the film, and no column is ever terminated.
+  const layout = layoutProtocol(SIMPLE);
+  assert.equal(layout.allocation.reuses, 0);
+  layout.lanes.forEach((lane, index) => {
+    assert.equal(
+      lane.x,
+      index * layout.lanePitch,
+      `${lane.id} is not where it was written`,
+    );
+    assert.equal(lane.slot, index);
+    assert.equal(lane.ordinal, 0);
+    assert.equal(lane.handsOver, false);
+    assert.equal(lane.lifelineTop, layout.lifelineTop);
+    assert.equal(lane.lifelineBottom, layout.lifelineBottom);
+    assert.equal(lane.plate.y, 0);
+  });
+  assert.deepEqual(
+    layout.bySlot.map((held) => held.length),
+    layout.lanes.map(() => 1),
+  );
+});
+
+test("a reclaimed column is the same column, and the newcomer is below the terminator", () => {
+  const layout = layoutProtocol(RECLAIMING);
+  const early = layout.byId.get("early") as Lane;
+  const late = layout.byId.get("late") as Lane;
+
+  assert.equal(late.x, early.x, "the newcomer should inherit the column, not a new one");
+  assert.equal(early.handsOver, true, "the outgoing lifeline should be terminated");
+  assert.equal(late.ordinal, 1);
+  assert.ok(
+    late.plate.y > early.lifelineBottom,
+    "the arrival plate must sit below the terminator that freed the column",
+  );
+  assert.equal(late.lifelineTop, late.plate.y + early.plate.height);
+  assert.equal(late.lifelineBottom, layout.lifelineBottom);
+  assert.equal(early.lifelineTop, layout.lifelineTop);
+});
+
+test("an arrival is not part of the establishing shot", () => {
+  const layout = layoutProtocol(RECLAIMING);
+  const late = layout.byId.get("late") as Lane;
+  assert.ok(
+    late.plate.y > layout.cast.y + layout.cast.height,
+    "a party that has not arrived yet has no business in the cast row",
+  );
+  // ...but the world still contains it, or the camera could clamp it away.
+  assert.ok(layout.bounds.y + layout.bounds.height >= late.plate.y + late.plate.height);
+});
+
+test("an arrival gets room of its own, and no row lands in it", () => {
+  const layout = layoutProtocol(RECLAIMING);
+  const late = layout.byId.get("late") as Lane;
+  for (const message of layout.messages) {
+    const clear =
+      message.band.y + message.band.height <= late.plate.y ||
+      message.band.y >= late.plate.y + late.plate.height;
+    // The row that *causes* the arrival owns the reserved band, so its own band legitimately
+    // contains the plate — everything else must be clear of it.
+    if (message.index === late.first) continue;
+    assert.ok(clear, `row ${message.index + 1} lands on an arrival plate`);
+  }
+  // The causing row's band reaches up over the plate, so the camera frames the two together.
+  const causing = layout.messages[late.first] as { band: Rect };
+  assert.ok(causing.band.y <= late.plate.y);
+});
+
+test("rows still descend and never overlap once a handover is reserving room", () => {
+  const layout = layoutProtocol(RECLAIMING);
+  layout.messages.slice(1).forEach((message, index) => {
+    const previous = layout.messages[index] as { band: Rect; y: number };
+    assert.ok(
+      message.band.y >= previous.band.y + previous.band.height,
+      `row ${index + 2} starts before row ${index + 1} finished`,
+    );
+    assert.ok(message.y > previous.y, `row ${index + 2} is not below row ${index + 1}`);
+  });
+});
+
+test("reuse narrows the world without narrowing the pitch", () => {
+  const reused = layoutProtocol(RECLAIMING);
+  const spread = layoutProtocol({
+    ...RECLAIMING,
+    // The same protocol with the reuse made impossible: `late` now speaks early too, so its
+    // interval overlaps `early`'s and the two cannot share a column.
+    steps: [send("late", "b", "a word first"), ...RECLAIMING.steps],
+  });
+  assert.equal(reused.allocation.slots, 3);
+  assert.equal(spread.allocation.slots, 4);
+  assert.equal(reused.lanePitch, spread.lanePitch, "the pitch is not what changed");
+  assert.ok(reused.cast.width < spread.cast.width, "the opening row should be narrower");
 });
 
 /* --------------------------------------------------------------- replies */

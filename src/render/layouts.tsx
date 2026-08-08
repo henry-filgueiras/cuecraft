@@ -56,6 +56,7 @@ import {
   type Message,
   type ProtocolLayout,
 } from "./protocol.ts";
+import { tenantAt } from "./tenancy.ts";
 import {
   CODE,
   CODE_COLORS,
@@ -2310,6 +2311,28 @@ function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: num
       : anchorState(absoluteFrame, beat.from, TRANSCRIPT_TIMING);
   };
 
+  /**
+   * How far a lane has arrived, 0 to 1.
+   *
+   * A column's **first** tenant has held it since before the film began, so it is simply there —
+   * that is the cast, and the cast is a fact before anything is sent. A **later** tenant is not:
+   * the column belonged to somebody else until the terminator above it, and a plate that had merely
+   * always been sitting there would read as the previous party's name changing, which is the one
+   * thing this round is not allowed to let happen. So a reclaiming actor is *established*, on the
+   * approach to the step that brings it into the story, and the camera is already travelling
+   * towards that step when it lands.
+   */
+  const arrivedAt = (lane: Lane): number => {
+    if (lane.ordinal === 0) return 1;
+    const beat = scene.beats.find((entry) => entry.index === lane.first);
+    if (beat === undefined) return 1;
+    return interpolate(absoluteFrame, [beat.from - 20, beat.from - 2], [0, 1], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: ease,
+    });
+  };
+
   const place = (factor: number): CSSProperties => {
     const put = viewportTransform(view, viewport, factor);
     return {
@@ -2354,9 +2377,16 @@ function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: num
           stateOf={stateOf}
           lit={lit}
           opening={opening}
+          arrivedAt={arrivedAt}
         />
         {layout.lanes.map((lane) => (
-          <LanePlate key={lane.id} lane={lane} live={lit(lane)} opening={opening} />
+          <LanePlate
+            key={lane.id}
+            lane={lane}
+            live={lit(lane)}
+            opening={opening}
+            arrived={arrivedAt(lane)}
+          />
         ))}
         {layout.messages.map((message) => (
           <MessageLabel
@@ -2380,7 +2410,7 @@ function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: num
         }}
       />
 
-      <Rail layout={layout} view={view} lit={lit} opening={opening} />
+      <Rail layout={layout} view={view} lit={lit} opening={opening} current={current} />
 
       <div
         style={{
@@ -2427,12 +2457,14 @@ function Traffic({
   stateOf,
   lit,
   opening,
+  arrivedAt,
 }: {
   layout: ProtocolLayout;
   current: number;
   stateOf: (index: number) => AnchorState;
   lit: (lane: Lane) => boolean;
   opening: number;
+  arrivedAt: (lane: Lane) => number;
 }) {
   const { bounds } = layout;
   return (
@@ -2442,18 +2474,50 @@ function Traffic({
       viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
       style={{ position: "absolute", left: bounds.x, top: bounds.y, overflow: "visible" }}
     >
-      {layout.lanes.map((lane) => (
-        <line
-          key={lane.id}
-          x1={lane.x}
-          y1={layout.lifelineTop}
-          x2={lane.x}
-          y2={layout.lifelineBottom}
-          stroke={withAlpha(flowColor(lane.depth), (lit(lane) ? 0.5 : 0.19) * opening)}
-          strokeWidth={TRANSCRIPT.lifeline}
-          strokeDasharray={`${TRANSCRIPT.lifeline * 5} ${TRANSCRIPT.lifeline * 7}`}
-        />
-      ))}
+      {/* A lifeline is drawn over its **tenancy**, not over the whole film. On every protocol that
+          reclaims nothing that is the whole film, and the picture is the one it always was. Where a
+          column does change hands, the outgoing line stops in a cap — a fact about the slot, and
+          never a claim that the party is finished — and the incoming one starts under its own new
+          plate, with a stretch of empty column between them that reads as what it is. */}
+      {layout.lanes.map((lane) => {
+        const arrived = arrivedAt(lane);
+        if (arrived <= 0) return null;
+        const hue = flowColor(lane.depth);
+        return (
+          <g key={lane.id} opacity={arrived}>
+            <line
+              x1={lane.x}
+              y1={lane.lifelineTop}
+              x2={lane.x}
+              y2={lane.lifelineBottom}
+              stroke={withAlpha(hue, (lit(lane) ? 0.5 : 0.19) * opening)}
+              strokeWidth={TRANSCRIPT.lifeline}
+              strokeDasharray={`${TRANSCRIPT.lifeline * 5} ${TRANSCRIPT.lifeline * 7}`}
+            />
+            {lane.handsOver ? (
+              <>
+                <line
+                  x1={lane.x}
+                  y1={lane.lifelineBottom - TRANSCRIPT.terminatorRun}
+                  x2={lane.x}
+                  y2={lane.lifelineBottom}
+                  stroke={withAlpha(hue, 0.62 * opening)}
+                  strokeWidth={TRANSCRIPT.lifeline * 1.6}
+                />
+                <line
+                  x1={lane.x - TRANSCRIPT.terminator}
+                  y1={lane.lifelineBottom}
+                  x2={lane.x + TRANSCRIPT.terminator}
+                  y2={lane.lifelineBottom}
+                  stroke={withAlpha(hue, 0.72 * opening)}
+                  strokeWidth={TRANSCRIPT.lifeline * 3.2}
+                  strokeLinecap="round"
+                />
+              </>
+            ) : null}
+          </g>
+        );
+      })}
 
       {layout.activations.map((bar, index) => (
         <ActivationBar
@@ -2625,23 +2689,35 @@ function ActivationBar({
   );
 }
 
-/** One actor, as a plate at the head of its lane. */
+/**
+ * One actor, as a plate at the head of its tenancy.
+ *
+ * "Head of its tenancy" rather than "head of its lane" is the whole of the change: a column's first
+ * tenant has held it since before the film began, so its plate is in the cast row exactly as it
+ * always was, and a later one takes possession further down and has to be *seen* to. The arrival
+ * treatment is deliberately small — a lift and a moment of the live border — because a party
+ * entering the story is an event in the exchange, not a transition in a slide deck.
+ */
 function LanePlate({
   lane,
   live,
   opening,
+  arrived,
 }: {
   lane: Lane;
   live: boolean;
   opening: number;
+  arrived: number;
 }) {
   const hue = flowColor(lane.depth);
+  if (arrived <= 0) return null;
   return (
     <div
       style={{
         position: "absolute",
         left: lane.plate.x,
         top: lane.plate.y,
+        transform: lane.ordinal === 0 ? undefined : `translateY(${(1 - arrived) * 26}px)`,
         width: lane.plate.width,
         height: lane.plate.height,
         display: "flex",
@@ -2652,7 +2728,7 @@ function LanePlate({
         border: `${TRANSCRIPT.plateStroke}px solid ${withAlpha(hue, live ? 0.85 : 0.42)}`,
         backgroundColor: withAlpha(hue, live ? 0.14 : 0.06),
         boxShadow: live ? `0 0 ${64}px ${withAlpha(hue, 0.22)}` : undefined,
-        opacity: opening,
+        opacity: opening * arrived,
         fontSize: TRANSCRIPT.actor,
         lineHeight: TRANSCRIPT.actorLineHeight,
         fontWeight: 600,
@@ -2749,17 +2825,24 @@ function MessageLabel({
  * appears in proportion to how much of the real cast has left the frame, so on a short protocol
  * that never scrolls it never appears at all; and the active pair is lit the same way their plates
  * would have been. It is the plates, seen from where the camera now is.
+ *
+ * It names **who holds each column now**, which is why it is the safety net under lane reuse: a
+ * viewer who missed a handover — because the camera was three columns away when it happened — can
+ * still never be told the wrong name. Tenancy changes exactly where the arrival plate is drawn, so
+ * the rail and the picture cannot disagree.
  */
 function Rail({
   layout,
   view,
   lit,
   opening,
+  current,
 }: {
   layout: ProtocolLayout;
   view: Viewport;
   lit: (lane: Lane) => boolean;
   opening: number;
+  current: number;
 }) {
   const shown = viewRect(view);
   const cast = layout.cast;
@@ -2790,8 +2873,10 @@ function Rail({
           `${withAlpha(COLORS.ink, 0.86)} 52%, ${withAlpha(COLORS.ink, 0)} 100%)`,
       }}
     >
-      {layout.lanes.map((lane) => {
-        const x = (lane.x - view.cx) * scale + 960;
+      {layout.bySlot.map((held, slot) => {
+        const lane = tenantAt(held, current);
+        if (lane === undefined) return null;
+        const x = (slot * layout.lanePitch - view.cx) * scale + 960;
         if (x < -pitch * 0.5 || x > 1920 + pitch * 0.5) return null;
         const live = lit(lane);
         const hue = flowColor(lane.depth);
