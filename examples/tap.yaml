@@ -1,0 +1,130 @@
+# What happens when you tap a card — a protocol, narrated.
+#
+#   cuecraft render examples/tap.yaml -o out/tap.mp4
+#
+# The whole of the source is below: five actors and thirteen messages, in order. There is no
+# identity, no anchor, no target, no coordinate, no duration and no camera instruction anywhere in
+# this file, and there is no key that could become one.
+#
+# What cuecraft derives from it:
+#
+#   the lanes, and their fixed order        from the cast, written once
+#   how wide a lane is                      from the longest name in it
+#   how tall a row is                       from how its label wrapped
+#   how a label wraps                       from how far the arrow travels
+#   which messages are replies              from the call stack the order implies
+#   who is holding an unanswered call       from the same pass
+#   when each step happens                  from the measured narration, or from the dwell
+#   how long a silent step lasts            from its label and its place in the run
+#   where the camera stands                 from which lanes the step joins
+#   when the camera declines to move        from whether the shot it has already works
+#
+# `say:` is optional. Five of the steps below have none, and they still happen — that is the
+# passage where the answer comes back the way the question went, and nobody needs telling.
+#
+# See decision:34 (a protocol as a body, and a step that carries what is said over it),
+# decision:35 (the derived clock), decision:36 (the camera, taken out of the world) and
+# decision:37 (why the dashed returns below are applied here and withheld in examples/deploy.yaml).
+
+title: "What happens when you tap"
+
+defaults:
+  pre_say: 900ms
+  post_say: 1600ms
+
+slides:
+  - slide:
+      title: "What happens when you tap your card"
+
+      protocol:
+        actors:
+          you: You
+          terminal: The terminal
+          acquirer: The shop's bank
+          network: The card network
+          issuer: Your bank
+
+        steps:
+          - from: you
+            to: terminal
+            message: tap
+            say: "You tap. That is the entire part of this that you are present for."
+
+          - from: terminal
+            to: acquirer
+            message: authorise £42.60
+            say:
+              "The terminal decides nothing at all. It asks the shop's bank, which is the only
+              party here that the shop has ever met."
+
+          - from: acquirer
+            to: network
+            message: route by card number
+            say:
+              "And the shop's bank has never met you. So it hands the question to the network,
+              which reads the first six digits of your card and knows exactly whose customer you
+              are."
+
+          - from: network
+            to: issuer
+            message: authorise £42.60
+
+          - from: issuer
+            to: issuer
+            message: balance, limit, fraud
+            say:
+              "Only now does anybody look at your account. Your bank checks the money, the limit,
+              and whether this looks like something you would do."
+
+          - from: issuer
+            to: network
+            message: approved
+            say: "And answers."
+
+          - from: network
+            to: acquirer
+            message: approved
+
+          - from: acquirer
+            to: terminal
+            message: approved
+
+          - from: terminal
+            to: you
+            message: beep
+            say:
+              "The beep is that answer arriving back the way the question went. About two seconds,
+              five parties, and not a penny has moved."
+
+          - from: acquirer
+            to: network
+            message: end-of-day batch
+            say:
+              "That happens tonight. The shop's bank sends the whole day's approvals as one file,
+              and this is the part nobody pictures, because there is nothing to watch."
+
+          - from: network
+            to: issuer
+            message: settle 1,204 transactions
+
+          - from: issuer
+            to: network
+            message: funds
+
+          - from: network
+            to: acquirer
+            message: funds
+            say:
+              "Two days later the shop has the money. What you waited two seconds for was a
+              promise. This is the payment."
+
+    # A slide's own `say` is optional on a protocol, and when it is there it is a *prologue*:
+    # spoken over the cast, before anything is sent. It is also the only narration on this slide
+    # that reaches anything by name — an actor is an ordinary element, so `activates:` works on one
+    # exactly as it works on a bullet.
+    say:
+      - "Five parties, and about two seconds."
+      - speech:
+          "Almost all of it is one question being passed along, and the answer coming back the
+          same way."
+        activates: network

@@ -1,0 +1,171 @@
+# A deploy, end to end — the adversarial protocol.
+#
+#   cuecraft render examples/deploy.yaml -o out/deploy.mp4
+#
+# This deck exists to break things. It is a real system explained honestly, and it was chosen
+# because every property that makes it realistic is also a property the transcript composition's
+# automatic policies are worst at:
+#
+#   eight actors                    the cast is wider than any legible shot
+#   twenty-two messages             more accumulated history than is comfortable
+#   sparse, distant traffic         the node agent talks to the registry, four lanes away
+#   runs of three silent steps      nothing is said, and the film still has to move
+#   repeated A-B exchanges          the scheduler and the API, three times running
+#   payload labels of sixty chars   a digest does not wrap politely
+#   narration far longer than its   ninety words over an arrow that crosses in half a second
+#     own transition
+#   one-line narration next to it   "Now, and only now, is anything sent to it."
+#   a self-message                  the CI runner, doing the only expensive thing here
+#
+# It is not meant to be pretty. It is meant to be *useful, coherent and honest* under conditions a
+# renderer tuned on a happy path would fail. Where it does fail, that is recorded in the
+# archaeology rather than papered over with a key the author could set — see sprint:9 and the
+# dragons it opened.
+#
+# One known limit is visible in it. Replies are derived from the call stack the message order
+# implies, which is correct for a request/response protocol and wrong for a notification-driven
+# one: the webhook at step two and the clone at step three are two independent requests, and the
+# stack cannot tell them from a call and its answer. See dragon:17.
+
+title: "A deploy"
+
+defaults:
+  pre_say: 900ms
+  post_say: 1800ms
+
+slides:
+  - slide:
+      title: "What happens after you push"
+
+      protocol:
+        actors:
+          dev: Developer
+          forge: Git host
+          ci: CI runner
+          registry: Image registry
+          api: Cluster API
+          scheduler: Scheduler
+          kubelet: Node agent
+          balancer: Load balancer
+
+        steps:
+          - from: dev
+            to: forge
+            message: git push origin main
+            say: "It starts the way it always starts, and then nobody looks at it again."
+
+          - from: forge
+            to: ci
+            message: "webhook: push refs/heads/main 9f2c1ab"
+
+          - from: ci
+            to: forge
+            message: clone at 9f2c1ab
+
+          - from: forge
+            to: ci
+            message: 47 MB of history
+
+          - from: ci
+            to: ci
+            message: install, test, build
+            say:
+              "Everything expensive happens here, on a machine nobody is watching. Dependencies
+              are installed, the suite runs, an image is built — and if any part of that fails the
+              whole thing stops, quietly, and the only person who finds out is whoever reads the
+              mail."
+
+          - from: ci
+            to: registry
+            message: push orders@sha256:4f0b9c2e…c1d2
+            say:
+              "What comes out is not a version number. It is a digest of the bytes themselves,
+              which is the only name in this entire story that cannot later be pointed at
+              something else."
+
+          - from: registry
+            to: ci
+            message: 201 Created
+
+          - from: ci
+            to: api
+            message: PATCH deployment/orders image=@sha256:4f0b9c2e…c1d2
+            say: "And then the deploy itself is one line."
+
+          - from: api
+            to: api
+            message: write to etcd, bump generation
+
+          - from: api
+            to: scheduler
+            message: "3 pods pending"
+            say:
+              "Nothing has been deployed. Something has been written down. Everything from here on
+              is machinery noticing that what the cluster has and what the cluster was told to
+              want are no longer the same thing, and quietly closing the gap."
+
+          - from: scheduler
+            to: api
+            message: bind orders-7d4f to node-3
+
+          - from: scheduler
+            to: api
+            message: bind orders-9a1e to node-1
+
+          - from: scheduler
+            to: api
+            message: bind orders-2b7c to node-3
+
+          - from: api
+            to: kubelet
+            message: "pod assigned to this node"
+            say:
+              "The node agent is the first thing in this story that will actually run the code
+              that was written. It is also the eighth thing to hear about it."
+
+          - from: kubelet
+            to: registry
+            message: GET blobs sha256:4f0b9c2e…c1d2
+
+          - from: registry
+            to: kubelet
+            message: 188 MB across 14 layers
+
+          - from: kubelet
+            to: api
+            message: running, readiness probe failing
+            say:
+              "Running is not the same as ready, and the whole reason a rollout is not a restart
+              is that somebody once had to explain the difference to a room."
+
+          - from: kubelet
+            to: api
+            message: readiness probe passing
+
+          - from: api
+            to: balancer
+            message: "endpoint added: 10.4.2.19:8080"
+            say: "Now, and only now, is anything sent to it."
+
+          - from: balancer
+            to: kubelet
+            message: GET /healthz
+
+          - from: api
+            to: kubelet
+            message: terminate old pod, SIGTERM, 30s grace
+            say:
+              "And the old one is asked to stop. Asked, not killed — it may still be halfway
+              through somebody's request, and thirty seconds is how long we are prepared to wait
+              to find out."
+
+          - from: api
+            to: dev
+            message: deployment "orders" successfully rolled out
+            say:
+              "One sentence comes back to the person who pushed, about ninety seconds after they
+              stopped paying attention. Everything between the first arrow and this one happened
+              without anybody deciding anything."
+
+    say:
+      - "Eight parties, and one line of it was written by a person."
