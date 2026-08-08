@@ -2,8 +2,9 @@
 id: spr_01KZHN1D4M2KAT6HS8CB37BEEJ
 sequence: 13
 kind: sprint
-status: active
+status: closed
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Give the narration a floor, not a box
@@ -61,3 +62,43 @@ re-cutting the explainer.
 - **Per-cue or per-slide subtitle anything.** `defaults.subtitles: true` remains the entire
   configuration surface.
 - **The explainer itself.** This round ends when the treatment settles.
+
+## Outcome
+
+Every success criterion met, and the winning variant was not the one the round expected.
+
+The `index` slide's unnamed subtitle no longer reads as a fifth list row: it has the deck's own
+opening mark above it, in the one accent colour nothing near it is using, on the same screen row in
+every frame of every film. `aside` renders **byte-identical** to before — the round cost the
+pleasant specimen literally nothing, which was its condition for touching the other one. Four
+treatments were rendered against both specimens and a third deck, `subtitleTrack` and `subtitleAt`
+were not touched, and no authored knob was added. decision:41 records the argument, dragon:22 the
+one case nothing has rendered.
+
+### What the round found that source review would not have
+
+**The hypothesis was right about the mechanism and wrong about the fix.** The named form's advantage
+is a second typographic register, not identity — that held up. But the round's preferred realisation
+of it, an empty reserved row (variant C), delivers the geometry and none of the hierarchy. Rendered,
+it is a sentence floating slightly lower; on the `statement` slide, which has nothing near the bottom
+to be confused with, it is indistinguishable from doing nothing. The row had to *hold* something.
+
+**The scrim cannot work here, and the reason is structural.** Not taste, not banding — arithmetic.
+`COLORS.ink` is already the darkest colour cuecraft ever puts on a frame, so a darkening scrim is ink
+painted over ink: measured, the ramp moved the darkest pixel beneath it by one level, on
+`witnessglass` and on `tap`'s lit transcript world alike. decision:40 rejected a scrim on inherited
+evidence about a radial highlight; this round rejected it on its own measurement, which is a better
+reason and a reusable one. Any future proposal to separate a layer by darkening it in this deck is
+answered in advance.
+
+**The camera made the argument for free.** The strongest single piece of evidence was not
+`witnessglass` at all — it was `tap`, where the transcript world pans under a stationary mark and a
+stationary sentence. Narration reads as HUD *because* everything else moves. decision:36 and
+decision:40 had already bought that property; nothing here had to be built to collect it.
+
+### Where it stopped
+
+Exactly where it aimed. The band grew by one row for unlabelled subtitled decks and `witnessglass`
+absorbs it on all four archetypes; dragon:21's two bleeding compositions still overlay, one row
+taller, and teaching the camera about the band remains out. The two-narrator explainer decision:40
+was built for is now unblocked.

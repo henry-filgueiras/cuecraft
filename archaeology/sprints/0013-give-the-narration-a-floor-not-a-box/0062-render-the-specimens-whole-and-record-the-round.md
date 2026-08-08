@@ -2,9 +2,10 @@
 id: tsk_01KZHN2535EP5AC3H56XVMT7NQ
 sequence: 62
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZHN1D4M2KAT6HS8CB37BEEJ
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Render the specimens whole, and record the round
