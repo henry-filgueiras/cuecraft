@@ -24,6 +24,15 @@ are about to have to track.
 Nothing detects this. The film renders, looks fine in every later shot, and is quietly missing its
 premise.
 
+**sprint:10 loosened this without resolving it.** Lane reuse (decision:38) means the opening row is
+now the *first tenant of every column* rather than every actor, so `examples/coldstart.yaml`
+establishes nine parties in seven plates and `examples/deploy.yaml`'s eight in six — both
+comfortably legible. What has not changed is the shape of the problem: the ceiling is now on
+*simultaneously live* actors rather than on declared ones, and a protocol with nine parties all
+alive at once is exactly as unshowable as it was. What has changed is that the opening row is now a
+*derived subset*, which raises a question this dragon never had to ask — whether the right subset is
+"whoever happened to hold a column first" (dragon:19).
+
 ## Question
 
 What should a protocol with a cast too wide to establish do?

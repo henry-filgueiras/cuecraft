@@ -71,6 +71,15 @@ eight actors, twenty-two messages, sixty-character digests, runs of three silent
 across the whole cast. It exists to break the automatic policies rather than to flatter them, and
 one of them broke ([`decision:37`](archaeology/decisions/)).
 
+[`examples/coldstart.yaml`](examples/coldstart.yaml) points it at a third thing: a protocol whose
+cast **turns over**. Four parties start a service and are never heard from again; five more arrive
+afterwards and do everything the film is about. Because cuecraft reads the whole exchange before it
+draws a frame, it knows every actor's live interval, and two actors that are never alive at the same
+time can share one physical column at different times — nine actors in seven columns, with the
+handover drawn as a visible event rather than a name quietly changing
+([`decision:38`](archaeology/decisions/)). `examples/tap.yaml`, where everybody is present
+throughout, is unchanged down to the pixel.
+
 ### 2. Anatomy of an online order — three scales, one unbroken explanation
 
 <!-- VIDEO: order -->
@@ -487,6 +496,11 @@ here the step and the sentence about it are one thing said twice, and the coupli
 - **Lane order is the written order and nothing reorders it.** A party stays where it was put, which
   is the one thing this notation gives a viewer for free and the reason no layout engine is
   involved.
+- **A column may be relet, but never reassigned.** An actor's live interval is known before anything
+  is drawn, so a column whose party finished long enough ago can be given to one that has not yet
+  arrived — with the old lifeline closed by a terminator and the new party established in its own
+  right. Nothing that is still alive ever moves, and a protocol where everybody overlaps everybody
+  pays nothing at all ([`decision:38`](archaeology/decisions/)).
 - **Replies are derived, or they are withheld.** The message order implies a call stack, and reading
   it gives dashed returns and a bar on the lifeline of whoever is holding an unanswered call — for
   nothing, and correctly, on a request/response protocol. It is _silently wrong_ on a
