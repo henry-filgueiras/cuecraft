@@ -40,6 +40,25 @@ import {
  * they are showing extends past all four edges, and there is no margin to take. Those two are
  * overlaid, and that is a real cost recorded as dragon:21 rather than solved with a layout engine.
  *
+ * ## Two rows, always
+ *
+ * A subtitle is a *component*, not a line of text that happens to be near the bottom: a metadata
+ * row, then the sentence. Both rows are drawn on every cue of every subtitled deck, and the band
+ * above reserves the room for both unconditionally (`subtitleBand`).
+ *
+ * What varies is only what the metadata row holds. A film that changes speaker puts the narrator's
+ * declared name there in their colour. A film that does not puts the deck's own opening mark there
+ * — the 88x6 accent bar that `Rule` draws at the top of every slide, saying the one thing that is
+ * true when nobody was named: *a block begins here*.
+ *
+ * decision:41 records the argument; sprint:13 found it by rendering the alternative rather than by
+ * reasoning about it. When the row
+ * was charged only to decks that named a cast, `examples/witnessglass.yaml`'s `index` slide put
+ * "what it returned," at the same left edge, in the same weight and near enough the same size as
+ * the four list rows above it, directly beneath the list's own closing hairline — where it read as
+ * row 05. The named form was pleasant for a reason that had nothing to do with identity: it had a
+ * second typographic register above the sentence, and a mark in a colour the slide was not using.
+ *
  * ## What it deliberately is not
  *
  * Not centred: cuecraft has no centred text and a centred subtitle is the strongest single signal
@@ -48,11 +67,15 @@ import {
  * Not faded in or out per cue, beyond the deck's own opener and closer: a subtitle that animates is
  * a subtitle drawing attention to the machinery instead of to the sentence.
  *
- * And not gradient-scrimmed, which is what a caption over video normally does for contrast. That
- * was tried and rejected on evidence cuecraft already had: `Frame`'s background is flat because a
- * soft highlight banded into visible arcs once encoded to H.264, and eight-bit near-black has no
- * more room for a vertical ramp than it had for a radial one. Contrast is carried by a tight text
- * shadow instead, which is local to the glyphs and has nothing large enough to band.
+ * And not scrimmed, which is what a caption over video normally does for contrast. sprint:13 built
+ * one and measured it: a bottom-anchored ramp to `rgba(10, 13, 18, 0.55)` moved the darkest pixel
+ * under it by *one level*, on `witnessglass` and on `tap`'s lit transcript world alike. The reason
+ * is structural rather than a matter of taste — `COLORS.ink` is already the darkest thing cuecraft
+ * ever puts on a frame, so a darkening scrim is ink painted over ink and there is nothing below it
+ * to darken toward. A *lightening* one is visible, and looks like a smudge on the lens: the deck's
+ * background is flat by decision, and the previous round's banding evidence applies to a vertical
+ * ramp exactly as it did to a radial one. Contrast stays with the tight text shadow, which is local
+ * to the glyphs and has nothing large enough to band.
  */
 
 /**
@@ -73,14 +96,16 @@ export function useSubtitleBand(): number {
  * Fitted across every sentence the film will show — `fitQuote`'s move (decision:28), and the
  * reason is stronger here: type that resized when the narration moved on would put a change of
  * size under every full stop.
+ *
+ * It used to also report whether the deck named anybody, because the band's height depended on it.
+ * It no longer does (`subtitleBand`), so the fit is now purely a fact about the *sentences* — which
+ * is the only thing it was ever measuring.
  */
 export function subtitleFit(cues: readonly SubtitleCue[]) {
-  const labelled = cues.some((cue) => cue.speaker !== undefined);
-  const fit = fitSubtitle(
+  return fitSubtitle(
     cues.map((cue) => cue.text),
     HEADING_WIDTH,
   );
-  return { ...fit, labelled };
 }
 
 export function useSubtitleFit(cues: readonly SubtitleCue[]) {
@@ -117,10 +142,10 @@ export function Subtitles({
         position: "absolute",
         left: FRAME.marginX,
         // **Anchored by its top edge, not its bottom.** The block is given the whole band's height
-        // and fills it from the top, so the speaker's name and the first line of every sentence
-        // land on exactly the same two rows for the length of the film. Anchoring the bottom was
-        // tried first and is subtly worse: a one-line cue sits lower than a two-line one, so the
-        // text a viewer is reading moves up and down as sentences change length.
+        // and fills it from the top, so the metadata row and the first line of every sentence land
+        // on exactly the same two rows for the length of the film. Anchoring the bottom was tried
+        // first and is subtly worse: a one-line cue sits lower than a two-line one, so the text a
+        // viewer is reading moves up and down as sentences change length.
         bottom: 0,
         height: subtitleBand(fit) - SUBTITLE.gap,
         width: HEADING_WIDTH,
@@ -129,28 +154,41 @@ export function Subtitles({
         flexDirection: "column",
         justifyContent: "flex-start",
         alignItems: "flex-start",
-        gap: fit.labelled ? SUBTITLE.labelGap : 0,
+        gap: SUBTITLE.labelGap,
       }}
     >
-      {fit.labelled ? (
-        <div
-          style={{
-            height: Math.ceil(SUBTITLE.label * 1.1),
-            display: "flex",
-            alignItems: "center",
-            fontSize: SUBTITLE.label,
-            fontWeight: 700,
-            letterSpacing: SUBTITLE.labelTracking,
-            // The name is the identity; the colour is a second way of reading the same fact.
-            // Neither is load-bearing alone, which is what makes this survive greyscale.
-            color: cue.speaker?.color ?? "transparent",
-            textShadow: HALO,
-            textTransform: "uppercase",
-          }}
-        >
-          {cue.speaker?.name ?? ""}
-        </div>
-      ) : null}
+      {/* The metadata row, drawn on every cue of every subtitled deck (`subtitleBand`). What it
+        holds varies; that it is there does not. */}
+      <div
+        style={{
+          height: Math.ceil(SUBTITLE.label * 1.1),
+          display: "flex",
+          alignItems: "center",
+          fontSize: SUBTITLE.label,
+          fontWeight: 700,
+          letterSpacing: SUBTITLE.labelTracking,
+          // The name is the identity; the colour is a second way of reading the same fact.
+          // Neither is load-bearing alone, which is what makes this survive greyscale.
+          color: cue.speaker?.color ?? "transparent",
+          textShadow: HALO,
+          textTransform: "uppercase",
+        }}
+      >
+        {cue.speaker === undefined ? (
+          // Nobody was named, so the row says the only true thing left: a block begins here. The
+          // deck's own opening mark, at the deck's own weight — see SUBTITLE.markWidth for why a
+          // stand-in name would have been the wrong answer.
+          <div
+            style={{
+              width: SUBTITLE.markWidth,
+              height: SUBTITLE.markHeight,
+              backgroundColor: COLORS.accent,
+            }}
+          />
+        ) : (
+          cue.speaker.name
+        )}
+      </div>
       <div
         style={{
           fontSize: fit.size,

@@ -622,6 +622,18 @@ export const SUBTITLE = {
    * word, and stepping down two pixels early is invisible where an overflowing line is not.
    */
   wrapSlack: 0.94,
+  /**
+   * The mark that opens a narration block nobody signed, at the size the deck's own does.
+   *
+   * Not a new shape. `Rule` in `layouts.tsx` is an 88x6 accent bar and the comment above it calls
+   * it "the only decoration in the design language"; every slide opens with one. This is that mark
+   * in the one other place where something begins, and it says the only thing it is entitled to
+   * say: *a block starts here*. It is emphatically not an identity. Nobody was named, and a mark
+   * that stood in for a name — "NARRATOR", a deck title, a voice id — would be cuecraft inventing
+   * a fact about the film in the one layer that is forbidden to.
+   */
+  markWidth: 88,
+  markHeight: 6,
 } as const;
 
 /**
@@ -684,16 +696,28 @@ export function fitSubtitle(
  * derived: one number, from the fitted size and the lines the deck's longest sentence needs, so
  * that the composition above it never moves between slides.
  *
+ * **The metadata row is unconditional, and that is the whole of decision:41.** It used to be charged
+ * only to a deck that changed speaker, which made the band a function of whether a cast happened to
+ * exist. Two consequences, both bad and both only visible in rendered frames. A single-narrator
+ * subtitle landed one row closer to the composition it was explaining, and on the `index` archetype
+ * that put it directly under the list's own closing hairline, at the same left edge and near enough
+ * the same size — where it read as a fifth row of the list rather than as narration. And two films
+ * of the same deck, one of which happened to hand over once, put their sentences on different rows.
+ *
+ * A subtitle now occupies the same slot in every film cuecraft renders. What varies is only what is
+ * written in the row above it.
+ *
  * Zero when the deck asked for no subtitles, which is every deck written before they existed.
  */
 export function subtitleBand(
-  fitted: { size: number; lines: number; labelled: boolean } | undefined,
+  fitted: { size: number; lines: number } | undefined,
 ): number {
   if (fitted === undefined) return 0;
   return (
     SUBTITLE.bottom +
     Math.ceil(fitted.size * SUBTITLE.lineHeight * fitted.lines) +
-    (fitted.labelled ? SUBTITLE.labelGap + Math.ceil(SUBTITLE.label * 1.1) : 0) +
+    SUBTITLE.labelGap +
+    Math.ceil(SUBTITLE.label * 1.1) +
     SUBTITLE.gap
   );
 }

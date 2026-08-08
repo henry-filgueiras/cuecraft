@@ -171,11 +171,7 @@ test("a deck without subtitles is laid out exactly as it always was", () => {
 
 test("the band comes out of the composition's height and nothing else", () => {
   const title = "Author relationships. Derive mechanics.";
-  const band = subtitleBand({
-    size: SUBTITLE.maxSize,
-    lines: SUBTITLE.lines,
-    labelled: true,
-  });
+  const band = subtitleBand({ size: SUBTITLE.maxSize, lines: SUBTITLE.lines });
   assert.ok(band > 0);
   assert.equal(bodyBox(title, band).height, bodyBox(title).height - band);
   assert.equal(
@@ -185,10 +181,19 @@ test("the band comes out of the composition's height and nothing else", () => {
   );
 });
 
-test("a speaker label costs a row, and a deck without one does not pay for it", () => {
+test("the band reserves the metadata row whether or not anybody was named", () => {
+  // sprint:13. The band used to be a function of whether the deck happened to change speaker,
+  // which put a single-narrator sentence one row closer to the composition above it — close
+  // enough, on `index`, to read as another list row. The room is now unconditional, so the only
+  // input left is the sentences themselves.
   const fit = { size: SUBTITLE.maxSize, lines: SUBTITLE.lines };
-  assert.ok(
-    subtitleBand({ ...fit, labelled: true }) > subtitleBand({ ...fit, labelled: false }),
+  assert.equal(
+    subtitleBand(fit),
+    SUBTITLE.bottom +
+      Math.ceil(SUBTITLE.maxSize * SUBTITLE.lineHeight * SUBTITLE.lines) +
+      SUBTITLE.labelGap +
+      Math.ceil(SUBTITLE.label * 1.1) +
+      SUBTITLE.gap,
   );
 });
 
@@ -210,8 +215,8 @@ test("a subtitle steps its type down before it takes a third line", () => {
   assert.equal(enormous.size, SUBTITLE.minSize);
   assert.ok(enormous.lines > SUBTITLE.lines);
   assert.ok(
-    subtitleBand({ ...enormous, labelled: false }) >
-      subtitleBand({ size: SUBTITLE.minSize, lines: SUBTITLE.lines, labelled: false }),
+    subtitleBand(enormous) >
+      subtitleBand({ size: SUBTITLE.minSize, lines: SUBTITLE.lines }),
     "a deck that needs more lines reserves more room, rather than overflowing into the frame",
   );
 });
