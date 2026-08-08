@@ -2,9 +2,10 @@
 id: tsk_01KZHF7WFA3X7JCS0867GJHN66
 sequence: 53
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZHF7205JE9TQ1HJRVMCXM6H
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # An example that changes speaker and not pace

@@ -2,8 +2,9 @@
 id: spr_01KZHF7205JE9TQ1HJRVMCXM6H
 sequence: 11
 kind: sprint
-status: active
+status: closed
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Name who is speaking, and change nothing about when
@@ -112,3 +113,114 @@ most likely thing to be asked for.
 
 **A provider-level narrator abstraction.** decision:4's interface is unchanged and unwidened. A
 narrator is a name for arguments that seam already accepts.
+
+## Outcome
+
+Every success criterion was met except one, and the exception is an act rather than a result: the
+rendered example has been measured but **not yet listened to by a person**. Everything below the
+perceptual gate is verified; the gate itself is described honestly at the end.
+
+    src/presentation/narrator.ts     159   what a narrator is, and what a bad one is told
+    src/presentation/parse.ts       +232   three lexical scopes, one resolution, four refusals
+    src/compile/compile.ts           +58   one lookup, and two more fields on a clip
+    beat.ts, cue.ts, cli.ts          +35   a protocol's steps, a cue's field, a printed line
+    examples/aside.yaml               82   the film
+    tests                           +720
+
+No change to the renderer, to the timeline, to the camera, to the anchor model, or to decision:4's
+synthesis seam.
+
+### 1. Did adding identity cost anything in time?
+
+**Nothing, and this is checkable rather than argued.** Three shipped decks were compiled at the
+commit before this round and again after it, with the real Kokoro and the WAVs hashed:
+
+    examples/witnessglass.yaml   12 clips    byte-identical, same offsets, same sceneMs
+    examples/tap.yaml            10 clips    byte-identical
+    examples/order/order.yaml    20 clips    byte-identical
+
+`examples/tap.yaml` exercises the changed `protocolCues` signature and `examples/order/` exercises
+the changed module resolver, so the two paths most likely to have drifted are the two with the
+strongest evidence. A unit test makes the same claim on the compiled record: two decks differing
+only in who speaks produce the same clips at the same offsets with the same scene length.
+
+### 2. Was the schema shape right?
+
+**Yes, and the two refusals were the load-bearing parts.** A narrator id never becomes a structural
+key, so the grammar is still statically readable and `SPEECH_CUE_KEYS` still enumerates what a cue
+may contain. A cue carries a *name* and not a voice, so `examples/aside.yaml` mentions `af_heart`
+once, in the cast, and changing the second voice is one edit.
+
+What made it small was that the three scopes already existed. `defaults.narrator` sits beside
+`defaults.voice`, a slide's `narrator:` sits beside its `pre_say:`, and a cue's sits beside its
+`activates:`, so nothing new had to be invented about *where* an author says things — only about
+what they say there.
+
+### 3. Was lexical resolution actually simpler than the stateful rule?
+
+**Yes, and by more than expected.** Resolution is one expression evaluated per cue, with no state
+to carry and nothing to reset at a slide boundary. The stateful alternative would have needed a
+carrier through `bindNarration`'s splice — which is where a module's cues are spliced into the
+parent's list — and would have had to answer what a descent does to the current speaker. The
+lexical rule answers that by construction and needed no code to do it.
+
+### 4. What did the rule cost at the one scope it does not fit?
+
+**A module.** decision:31 refuses to let a module declare `defaults`, so a module cannot say who
+speaks it, and its cues take the narrator of the slide that entered them. That is the one place in
+the chain where a cue's meaning depends on something outside its own file, which is precisely the
+property the lexical rule exists to provide. Recorded as dragon:20 rather than solved: the case that
+distinguishes the two candidate rules — one module entered from two slides — does not exist in any
+deck, so choosing between them now would be choosing without evidence.
+
+### 5. Was the temptation to infer a speaker real?
+
+**Very.** `examples/tap.yaml` has five named actors and each narrated step already knows which one
+sent it; wiring `from:` to a narrator is about four lines and would have produced a demo that sounds
+impressive immediately. It is refused in `beat.ts` with the reason in the source: an actor is a
+party to an exchange and a narrator is who is telling you about it, and a protocol whose lanes
+started speaking for themselves is a dialogue system with no way to turn it off. A protocol's steps
+take their slide's narrator, like every other cue.
+
+### 6. Does the film prove what it was built to prove?
+
+**Measured yes; heard, not yet.** `examples/aside.yaml` renders in 53.1s, two slides, seven clips,
+`index` and `statement` layouts, at 1920x1080/h264+aac. Its narration was analysed rather than
+listened to:
+
+    reader (af_heart)   median f0   195, 198, 197, 202 Hz
+    aside  (bm_george)  median f0   141, 142, 142 Hz
+
+A separation of about half an octave, consistent within each narrator across both slides and across
+two different layouts — plus an accent difference the pitch does not capture. Whatever else is true,
+these are two speakers and not one.
+
+And the handovers cost nothing in pacing. Silence between consecutive clips, measured from the
+audio:
+
+    reader -> aside     726 ms          aside -> reader     841 ms
+    aside  -> reader    757 ms          reader -> reader    852 ms
+    reader -> aside     893 ms
+
+The one same-voice boundary sits *inside* the range of the four speaker changes, which is the whole
+claim: the variation at a handover is Kokoro's ordinary per-utterance edge silence (277-329 ms
+leading, 445-564 ms trailing, decision:11's numbers) and nothing about a change of speaker adds to
+it. Two frames were inspected and the composition is unchanged, as it should be — a viewer must not
+be able to see who is speaking.
+
+**What remains is the listen.** The aesthetic gate this project holds itself to is a person watching
+the film end to end, and that has not happened. `out/aside.mp4` is where the round left it.
+
+### 7. What was deliberately not built
+
+`@aside` inline sugar (idea:18), narrator-aware visual treatment of any kind, overlapping or
+concurrent speech, per-narrator anything beyond voice and speed (dragon:3), a provider-level narrator
+abstraction, and any inference of a speaker from content. The cast is also not addressable by the
+renderer: nothing downstream of `compile.ts` knows a narrator exists.
+
+### Recommendation
+
+**Retain.** It cannot make an existing deck worse — three of them are byte-identical — and it is one
+argument to one synthesis call, chosen by one expression. The two things worth watching are dragon:20
+and whether the object form starts to read as configuration in a deck that alternates more than this
+one does (idea:18).

@@ -734,7 +734,8 @@ function buildSlideSchema(resolution: Resolution) {
  * The last two are about who is talking, and they are here because a module carries a `say`. A
  * module may not declare `defaults` of its own — `./module.ts` refuses the key, because theme,
  * voice and timing are the root presentation's — so the lexical scope a module's cues resolve their
- * narrator against is the slide that entered it, which is a fact only the caller has.
+ * narrator against is the slide that entered it, which is a fact only the caller has. It is also
+ * the one scope in decision:39's chain that is not textually local; see dragon:20.
  */
 interface Resolution {
   readonly read: RepositoryReader;

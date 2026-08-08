@@ -383,6 +383,33 @@ which is most of what makes a slide sound deliberate. Punctuation is the real ph
 every clip already carries about 780ms of its own silence, so authored pauses go a long way.
 `pronounce: { records: rekords }` repairs one occurrence of a heteronym without touching the prose.
 
+**Who speaks.** A deck may name more than one narrator, and choose between them at three lexical
+scopes — the deck, a slide, and a single sentence:
+
+```yaml
+narrators:
+  reader: { voice: af_heart }
+  aside: { voice: bm_george }
+
+defaults:
+  narrator: reader
+
+slides:
+  - slide: { title: "Two voices, one clock" }
+    say:
+      - "The reader says this."
+      - speech: "And this is the other one."
+        narrator: aside
+      - "The reader again — nobody had to say so."
+```
+
+Resolution is **lexical**, not stateful: a cue takes its own narrator, else its slide's, else the
+deck's. A narrator named on one sentence never becomes the narrator of the next, so a cue means the
+same thing wherever it is read from. A deck that names nobody uses `defaults.voice` exactly as it
+always did. What a narrator changes is which voice one synthesis call gets, and nothing else — two
+voices never overlap, nothing is mixed, and clip lengths still set the timing.
+[`examples/aside.yaml`](examples/aside.yaml) is fifty seconds of it.
+
 **Semantic anchors.** An element can carry an identity, and a cue can say it reaches it.
 `activates:` is not a timestamp — cuecraft derives the moment from the measured audio, so rewording
 narration can never desynchronize a deck, and an identity nothing declares is a compile error.

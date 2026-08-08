@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
+import { repositoryRoot } from "../repository.ts";
 import { parsePresentation, PresentationError } from "./parse.ts";
 import { SourceError } from "./source.ts";
 
@@ -505,4 +508,34 @@ say:
     'slide 1, slide.world.entities.payment.child.say.0: module "payment.yaml": names narrator ' +
       '"mehta", which the deck does not declare (declared: ada, meta)',
   );
+});
+
+/* -------------------------------------------------------- the shipped deck */
+
+test("the two-voice example alternates, and comes back", () => {
+  const path = join(repositoryRoot(), "examples", "aside.yaml");
+  const presentation = parsePresentation(readFileSync(path, "utf8"), path);
+
+  assert.deepEqual(
+    [...presentation.narrators.values()],
+    [
+      { id: "reader", voice: "af_heart", speed: 1 },
+      { id: "aside", voice: "bm_george", speed: 1 },
+    ],
+  );
+
+  // The perceptual claim, as a fact about the source: primary, other, primary — on the first
+  // slide by one cue saying so, and on the second by the slide saying so and one cue disagreeing.
+  const spoken = presentation.slides.map((slide) =>
+    slide.say.flatMap((cue) => (cue.kind === "speech" ? [cue.narrator] : [])),
+  );
+  assert.deepEqual(spoken, [
+    ["reader", "aside", "reader", "reader"],
+    ["aside", "reader", "aside"],
+  ]);
+
+  // Two voices that are actually two voices. An example whose narrators shared a voice would
+  // render identically to a deck with no cast at all and would prove nothing by ear.
+  const voices = new Set([...presentation.narrators.values()].map((n) => n.voice));
+  assert.equal(voices.size, 2);
 });

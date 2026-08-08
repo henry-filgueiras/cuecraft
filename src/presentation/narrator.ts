@@ -29,6 +29,9 @@ import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
  * and nothing infers one from the other. `examples/tap.yaml` has five named parties and none of
  * them is a narrator; mapping a protocol's actors onto voices automatically is the inference this
  * was built to avoid making by accident.
+ *
+ * See decision:39 for the whole argument, idea:18 for the inline spelling that was deferred, and
+ * dragon:20 for the one scope whose narrator is not textually local.
  */
 
 /** A declared narrator, with everything about it resolved. */

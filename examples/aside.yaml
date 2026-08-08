@@ -1,0 +1,82 @@
+# Two narrators, one stream — the smallest deck that makes a change of speaker audible.
+#
+#   cuecraft render examples/aside.yaml -o out/aside.mp4
+#
+# Everything this file demonstrates is one word. `narrators:` declares who exists; `narrator:`
+# chooses, and it chooses in three places — the deck, a slide, and a single utterance.
+#
+#   deck        defaults.narrator      who speaks when nothing nearer says
+#   slide       narrator:              this slide, and every cue on it
+#   utterance   narrator:              this sentence, and emphatically not the next one
+#
+# The last line is the point. Selection is *lexical*: a cue that names a narrator does not become
+# the narrator of what follows, so the third sentence below is spoken by whoever spoke the first
+# without anybody having to say so again. A deck can be read from anywhere in the middle.
+#
+# What has not changed is everything else. There is no overlap, no mixing, no second track, and no
+# timing key: each cue is still one synthesis call and one clip, the clip is still measured after it
+# comes back, and the slide is still exactly as long as what was said on it. If the handovers below
+# sound like a normal cuecraft film with a different person in it, that is the whole result.
+#
+# See decision:39 (who says it, resolved lexically), decision:11 (narration as an ordered list of
+# cues) and dragon:3 (why voice and speed are the entire delivery surface).
+
+title: "Two voices, one clock"
+
+narrators:
+  # A name for a voice, declared once. Nothing else in the deck mentions `af_heart` again, which is
+  # the reason this is a cast and not a per-cue setting.
+  reader: { voice: af_heart }
+  aside: { voice: bm_george }
+
+defaults:
+  narrator: reader
+  pre_say: 700ms
+  post_say: 1500ms
+
+slides:
+  - slide:
+      title: "Two voices, one clock"
+      bullets:
+        - id: cast
+          text: A deck names its narrators once
+        - id: choice
+          text: A sentence may say who speaks it
+        - id: clock
+          text: The measured clip still sets the time
+
+    say:
+      - speech:
+          "A cuecraft deck can name more than one narrator. This one names two, and you have just
+          heard the first."
+        activates: cast
+
+      - speech:
+          "And this is the second. The same file, the same ordered list of sentences — one word
+          different."
+        narrator: aside
+
+      - speech:
+          "Which is all of it. A sentence may say who speaks it, and the sentence after it goes back
+          to whoever was speaking before, without being told to."
+        activates: choice
+
+      - speech:
+          "Nothing about the timing moved. Every clip is still measured after it is spoken, and this
+          slide is still exactly as long as what was said on it."
+        activates: clock
+
+  # A slide is a lexical scope too, so a whole slide can change hands without repeating itself.
+  - slide:
+      title: "One stream, one speaker at a time"
+
+    narrator: aside
+
+    say:
+      - "Everything on this slide is mine, because the slide said so once."
+
+      - speech: "Though a single sentence can still be handed back."
+        narrator: reader
+
+      - "And then it returns. Never both of us at once: narration is one stream, and choosing a
+        narrator only changes who is on it."
