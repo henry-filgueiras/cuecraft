@@ -2,8 +2,9 @@
 id: spr_01KZFC13DGXRSF95PKWG894JMA
 sequence: 9
 kind: sprint
-status: active
+status: closed
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # A protocol as a body, and a step as a beat
