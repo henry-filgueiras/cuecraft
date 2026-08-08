@@ -37,6 +37,7 @@ export type LayoutArchetype =
   | "specimen"
   | "revision"
   | "atlas"
+  | "transcript"
   | "figure"
   | "formula"
   | "series";
@@ -96,9 +97,12 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   presentation scale. There is no second arrangement of code worth having.
  * - **revision** — one source becoming another. The same block, with the changed lines swapping
  *   in place while everything around them holds still.
- * - **atlas** — a semantic world. The only composition that is larger than the frame: the world
- *   is laid out once in its own coordinates and a derived camera travels through it as the
- *   narration does. Nothing else here has a camera, and nothing else needs one.
+ * - **atlas** — a semantic world. A composition larger than the frame: the world is laid out once
+ *   in its own coordinates and a derived camera travels through it as the narration does.
+ * - **transcript** — an ordered exchange. Lanes across, time down, and the same kind of camera as
+ *   the atlas pointed at a different kind of space: one where position on one axis is *who* and
+ *   position on the other is *when*. The second composition with a camera, which is what turned
+ *   the camera into its own module (`./camera.ts`) rather than part of the world.
  * - **formula** — mathematics. Set by KaTeX at a size derived from the longest line, because a
  *   definition is not points and not source: it is one line whose spacing carries its meaning.
  * - **series** — a bounded population. A derived field of members, filling in reading order over
@@ -127,6 +131,7 @@ export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "code") return "specimen";
   if (content.body.kind === "change") return "revision";
   if (content.body.kind === "world") return "atlas";
+  if (content.body.kind === "protocol") return "transcript";
   if (content.body.kind === "steps") return "cascade";
 
   const shape = analyzeContent(content);

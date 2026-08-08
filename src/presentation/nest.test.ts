@@ -118,7 +118,9 @@ function transcript(cues: readonly NarrationCue[]): string[] {
       ? `narrate ${cue.scope}${cue.address === undefined ? "" : ` -> ${cue.address}`}`
       : cue.kind === "pause"
         ? `pause ${cue.scope}`
-        : `${cue.kind} ${cue.scope} ${cue.into}`,
+        : cue.kind === "dwell"
+          ? `dwell ${cue.scope} -> ${cue.address}`
+          : `${cue.kind} ${cue.scope} ${cue.into}`,
   );
 }
 

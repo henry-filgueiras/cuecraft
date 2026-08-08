@@ -15,6 +15,8 @@ import {
   resolveModuleSpec,
 } from "./module.ts";
 import { bindNarration, modulesOf } from "./nest.ts";
+import { protocolCues } from "./beat.ts";
+import { resolveProtocol } from "./protocol.ts";
 import {
   MAX_SERIES_TOTAL,
   SERIES_GROUP_HINT,
@@ -62,6 +64,12 @@ export {
   type SlideBody,
 } from "./body.ts";
 export { ENTER_MS, EXIT_MS, spokenText, type NarrationCue } from "./cue.ts";
+export {
+  stepId,
+  type AuthoredActor,
+  type AuthoredProtocol,
+  type AuthoredStep,
+} from "./protocol.ts";
 export { MAX_MODULE_DEPTH, ROOT_SCOPE, type Scope } from "./scope.ts";
 export { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
 
@@ -615,6 +623,7 @@ function buildSlideSchema(resolution: Resolution) {
       code: z.unknown().optional(),
       change: z.unknown().optional(),
       world: z.unknown().optional(),
+      protocol: z.unknown().optional(),
       figure: z.unknown().optional(),
       formula: z.unknown().optional(),
       series: z.unknown().optional(),
@@ -682,6 +691,15 @@ function buildSlideSchema(resolution: Resolution) {
           });
         }
       }
+      if (slide.protocol !== undefined) {
+        for (const issue of resolveProtocol(slide.protocol).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["protocol", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
     });
 }
 
@@ -721,6 +739,7 @@ const BODY_KEYS = [
   "code",
   "change",
   "world",
+  "protocol",
   "figure",
   "formula",
   "series",
@@ -1127,6 +1146,7 @@ function bodyOf(
     code?: unknown;
     change?: unknown;
     world?: unknown;
+    protocol?: unknown;
     figure?: unknown;
     formula?: unknown;
     series?: unknown;
@@ -1154,6 +1174,12 @@ function bodyOf(
     if (world === undefined)
       throw new Error("world passed validation but did not resolve");
     return { kind: "world", entities: world.entities, relations: world.relations };
+  }
+  if (slide.protocol !== undefined) {
+    const { protocol } = resolveProtocol(slide.protocol);
+    if (protocol === undefined)
+      throw new Error("protocol passed validation but did not resolve");
+    return { kind: "protocol", actors: protocol.actors, steps: protocol.steps };
   }
   if (slide.code !== undefined) {
     const { body } = resolveCode(slide.code, read);
@@ -1335,9 +1361,22 @@ function cueListProblems(
   return problems;
 }
 
+/**
+ * Everything about a `say` except whether there had to be one.
+ *
+ * That last question moved to the entry, because it now depends on a sibling: a protocol's steps
+ * carry their own narration (`./protocol.ts`), so an entry-level `say` becomes a *prologue* — the
+ * establishing sentence spoken over the cast before anything is sent — and a protocol that needs
+ * no prologue writes no `say` at all. Optional for exactly one body rather than optional in
+ * general: "a slide with no clock" is still the failure it always was, and the body has to be able
+ * to supply one.
+ *
+ * Absence is the only part deferred, and it is deferred rather than moved wholesale because a
+ * field schema runs even when its siblings have failed, and an object's `superRefine` does not.
+ * A slide with a bad title and an empty `say` should report both.
+ */
 const saySchema = z.unknown().superRefine((value, context) => {
-  // `z.unknown()` accepts a missing key, so absence has to be caught here rather than by
-  // the schema. A slide with no narration has no duration, so it is never valid.
+  if (value === undefined) return;
   for (const problem of cueListProblems(value)) {
     context.addIssue({
       code: "custom",
@@ -1373,7 +1412,9 @@ function buildEntrySchema(resolution: Resolution) {
   return z
     .strictObject({
       slide: buildSlideSchema(resolution),
-      say: saySchema,
+      // Optional to *zod*, required by the check below. Absence is the one thing about a `say`
+      // that depends on a sibling, and a field schema cannot see one.
+      say: saySchema.optional(),
       pre_say: durationLiteral.optional(),
       post_say: durationLiteral.optional(),
     })
@@ -1397,6 +1438,15 @@ function buildEntrySchema(resolution: Resolution) {
             });
           }
         });
+      }
+
+      // The one thing about narration a field schema cannot decide, because it depends on a
+      // sibling: a slide has to say something unless its body already does.
+      if (entry.say === undefined) {
+        if (entry.slide.protocol === undefined) {
+          context.addIssue({ code: "custom", path: ["say"], message: "is required" });
+        }
+        return;
       }
 
       // Both ends of the relationship, once the body has actually resolved. When it has not,
@@ -1555,14 +1605,24 @@ export function parsePresentation(
     warnings,
     slides: raw.slides.map((entry, index) => {
       const body = bodyOf(entry.slide, resolution);
+      // Flattened here rather than downstream, so that everything after this point sees one
+      // ordered list of cues and knows nothing about modules — or about protocols. Validation
+      // already ran the same walk and reported anything wrong with it, so this one cannot fail.
+      const prologue =
+        entry.say === undefined
+          ? []
+          : bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE).cues;
       return {
         ordinal: index + 1,
         title: entry.slide.title.trim(),
         body,
-        // Flattened here rather than downstream, so that everything after this point sees one
-        // ordered list of cues and knows nothing about modules. Validation already ran the same
-        // walk and reported anything wrong with it, so this one cannot fail.
-        say: bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE).cues,
+        // A protocol's steps append themselves to whatever the author said first. The prologue
+        // goes through `bindNarration` because it names things by hand; the steps do not, because
+        // the compiler wrote both ends of that relationship and has nothing to look up.
+        say:
+          body.kind === "protocol"
+            ? [...prologue, ...protocolCues(body, ROOT_SCOPE)]
+            : prologue,
         preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
         postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
         minSlideMs,

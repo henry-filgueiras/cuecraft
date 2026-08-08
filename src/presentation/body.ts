@@ -2,6 +2,8 @@ import type { FigureKind } from "./figure.ts";
 import type { AuthoredFormulaLine } from "./formula.ts";
 import type { AuthoredSeriesGroup } from "./series.ts";
 import type { CodeLanguage } from "./language.ts";
+import type { AuthoredActor, AuthoredStep } from "./protocol.ts";
+import { stepId } from "./protocol.ts";
 import { childScope, type Scope } from "./scope.ts";
 import type { AuthoredMark } from "./specimen.ts";
 import type { AuthoredEntity, AuthoredRelation } from "./world.ts";
@@ -85,6 +87,16 @@ export type SlideBody =
       readonly entities: readonly AuthoredEntity[];
       /** How it relates. Where any of it *sits* is derived — see `../render/world.ts`. */
       readonly relations: readonly AuthoredRelation[];
+    }
+  | {
+      /**
+       * An ordered exchange between parties — see `./protocol.ts`. The first body whose content
+       * is a sequence of *events* rather than a structure, and the only one that brings its own
+       * narration with it.
+       */
+      readonly kind: "protocol";
+      readonly actors: readonly AuthoredActor[];
+      readonly steps: readonly AuthoredStep[];
     };
 
 /**
@@ -130,6 +142,12 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       return [];
     case "world":
       return [...body.entities, ...body.entities.flatMap(interiorElements)];
+    case "protocol":
+      // Actors first, then steps, for the same reason a world publishes entities before
+      // interiors: two lists that share one index space need one ordering rule, stated once.
+      // The steps' identities are the compiler's own (`./protocol.ts`), which is why an author
+      // writes none.
+      return [...body.actors, ...body.steps.map((_, index) => ({ id: stepId(index) }))];
     default:
       return body.items;
   }
@@ -221,6 +239,18 @@ export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAd
       return [
         ...body.entities.map((entity) => named(entity.id)),
         ...body.entities.flatMap((entity) => interiorAddresses(entity, scope)),
+      ];
+    case "protocol":
+      return [
+        ...body.actors.map((actor) => named(actor.id)),
+        // A step is addressed under the slide and reachable only from the narration the compiler
+        // generated for it — which is the module rule (below) applied to something that is not a
+        // module. Giving each step a scope of its own is what makes `activates: step-3` in an
+        // author's own `say:` an unknown identity rather than a way to reach inside the lowering.
+        ...body.steps.map((_, index) => ({
+          address: childScope(scope, stepId(index)),
+          scope: childScope(scope, stepId(index)),
+        })),
       ];
     default:
       return body.items.map((item) => named(item.id));

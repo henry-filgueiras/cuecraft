@@ -181,6 +181,9 @@ function where(scope: Scope): string {
 }
 
 function describeMiss(body: SlideBody, target: string): string {
+  if (body.kind !== "world") {
+    return "cannot be entered; only an entity of a world, carrying a child module, can be";
+  }
   const entity = entityIn(body, target);
   if (entity === undefined) return "no entity in this world declares";
   if (entity.module === undefined && entity.detail !== undefined) {
