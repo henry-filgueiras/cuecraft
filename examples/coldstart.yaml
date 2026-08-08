@@ -1,0 +1,180 @@
+# A cold start — the protocol the lane allocator was built for.
+#
+#   cuecraft render examples/coldstart.yaml -o out/coldstart.mp4
+#
+# examples/tap.yaml is the case where every party is present throughout, and examples/deploy.yaml
+# is the case where a large cast is expensive. This one is neither: it is a protocol whose cast
+# *turns over*. Four parties do the work of starting a service and are then never heard from again;
+# five more arrive afterwards and do everything the film is actually about.
+#
+# It exists to exercise one derivation and nothing else — see sprint:10 and decision:38. cuecraft
+# reads the whole exchange before it draws a frame, so it knows every actor's first and last step
+# and therefore its live interval, and two actors whose intervals do not overlap may be given the
+# same physical column at different times:
+#
+#   boot     [-----)                     nine semantic actors
+#   dns      [-)                         seven physical columns
+#   vault      [-)                       five ever live at once
+#   registry     [-)                     two columns handed over
+#   client         [------------------)
+#   gateway        [------------------)
+#   orders          [-----------------)
+#   cache                 [-------)         <- takes over the DNS column
+#   db                      [-)             <- takes over the secret store's
+#
+# Two things in it are deliberate and neither is decoration.
+#
+# **The disposable actors take the leftmost columns and keep them.** `boot` and `registry` are
+# finished six steps in and still hold the two best positions in the picture. Nothing demotes them,
+# because nothing may: an actor that moved once would cost the notation the only thing it gives a
+# viewer for free. What happens instead is that two of the four *vacate*, and the columns come free
+# on their own — which turns out to be the whole answer to "disposable actors stake the best real
+# estate", and it needed no ranking, no weighting and no score.
+#
+# **One reuse is refused by a single row.** `db` arrives nine steps after `boot` finishes, and the
+# reclamation rule needs strictly more than nine — so `boot`'s column stays empty for the rest of
+# the film even though the arithmetic would allow it. That is the price of never letting the film
+# imply that one party continued another, and it is left visible here on purpose rather than tuned
+# away. See `COOLING_ROWS` in src/render/tenancy.ts.
+#
+# Everything else is the ordinary vocabulary: no identity, no coordinate, no lane, no duration and
+# no camera instruction, and there is no key that could become one.
+
+title: "A cold start"
+
+defaults:
+  pre_say: 900ms
+  post_say: 1700ms
+
+slides:
+  - slide:
+      title: "Everything a service does before it can answer anything"
+
+      protocol:
+        actors:
+          boot: Boot script
+          dns: Resolver
+          vault: Secret store
+          registry: Service registry
+          client: A caller
+          gateway: API gateway
+          orders: Orders service
+          cache: Cache
+          db: Database
+
+        steps:
+          - from: boot
+            to: dns
+            message: resolve vault.internal
+            say:
+              "Nothing here is running yet. The first thing a service does is ask where everything
+              else lives, because the only address it was given is a name."
+
+          - from: dns
+            to: boot
+            message: 10.0.3.7
+
+          - from: boot
+            to: vault
+            message: fetch signing key
+            say:
+              "Then it collects the one secret it is not allowed to keep on disk. It has a lease,
+              and the lease is shorter than you would guess."
+
+          - from: vault
+            to: boot
+            message: key, twenty-four hour lease
+
+          - from: boot
+            to: registry
+            message: announce orders v4.2
+            say:
+              "And it puts its hand up. Until this line, nothing in the cluster knew there was
+              anything new to talk to."
+
+          - from: registry
+            to: boot
+            message: registered
+
+          - from: client
+            to: gateway
+            message: GET /orders/8812
+            say:
+              "That is the whole of the setup, and every party in it has now finished. Not paused —
+              finished. Nothing above this line ever speaks again, and the rest of the story is
+              told by parties that have not appeared yet."
+
+          - from: gateway
+            to: orders
+            message: "forward: order 8812"
+
+          - from: orders
+            to: gateway
+            message: 503, still warming up
+            say:
+              "The first answer is not an answer. The service is up and it is not ready, and the
+              honest thing to do with a request it cannot serve is to say so immediately rather
+              than hold it."
+
+          - from: gateway
+            to: gateway
+            message: back off 200 ms
+
+          - from: gateway
+            to: orders
+            message: "retry: order 8812"
+            say: "So the gateway waits, barely, and asks again."
+
+          - from: orders
+            to: orders
+            message: open the connection pool
+
+          - from: orders
+            to: cache
+            message: "get order:8812"
+            say:
+              "And here is the first party that was never part of starting anything. It arrives
+              into a column somebody else was using twenty seconds ago, and it is not that party's
+              continuation — it is simply what that space is for now."
+
+          - from: cache
+            to: orders
+            message: miss
+
+          - from: orders
+            to: db
+            message: select where id = 8812
+
+          - from: db
+            to: orders
+            message: one row
+            say:
+              "One row, once. Everything before this was the cost of being allowed to ask for it,
+              and everything after it is the cost of not having to ask again."
+
+          - from: orders
+            to: cache
+            message: "set order:8812, ttl 60s"
+
+          - from: cache
+            to: orders
+            message: stored
+
+          - from: orders
+            to: gateway
+            message: 200 OK
+
+          - from: gateway
+            to: client
+            message: 200 OK in 41 ms
+            say:
+              "Forty-one milliseconds, of which the interesting part is the last four steps. The
+              other fifteen happened once, before anybody was watching, and the parties that did
+              them are not on screen any more."
+
+    say:
+      - "Nine parties, and never more than five of them at once."
+      - speech:
+          "Which is why the picture is narrower than the cast list, and why nothing in it ever
+          moves."
+        activates: orders
