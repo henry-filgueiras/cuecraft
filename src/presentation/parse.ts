@@ -14,6 +14,12 @@ import {
   readModuleDocument,
   resolveModuleSpec,
 } from "./module.ts";
+import {
+  narratorProblems,
+  narratorsOf,
+  unknownNarrator,
+  type Narrator,
+} from "./narrator.ts";
 import { bindNarration, modulesOf } from "./nest.ts";
 import { protocolCues } from "./beat.ts";
 import { resolveProtocol } from "./protocol.ts";
@@ -64,6 +70,7 @@ export {
   type SlideBody,
 } from "./body.ts";
 export { ENTER_MS, EXIT_MS, spokenText, type NarrationCue } from "./cue.ts";
+export { NARRATOR_HINT, type Narrator } from "./narrator.ts";
 export {
   stepId,
   type AuthoredActor,
@@ -137,9 +144,21 @@ export interface AuthoredSlide {
 export interface Presentation {
   readonly title: string;
   readonly slides: readonly AuthoredSlide[];
-  /** Kokoro's entire control surface, deck-wide — see dragon:3. */
+  /**
+   * Kokoro's entire control surface, deck-wide — see dragon:3.
+   *
+   * Still the whole story for a deck that names no narrator, and still the fallback for a cue that
+   * resolves to none. `narrators` below is how a deck says the same thing more than one way.
+   */
   readonly voice: string | undefined;
   readonly speed: number;
+  /**
+   * The declared cast, by name, in declaration order. Empty on every deck that never names one.
+   *
+   * A cue carries the *name* of who says it (`./cue.ts`); what that name sounds like is here, so
+   * that changing a narrator's voice is one edit rather than one per utterance (`./narrator.ts`).
+   */
+  readonly narrators: ReadonlyMap<string, Narrator>;
   /** Valid source that will not do what it looks like it does. Printed, not thrown. */
   readonly warnings: readonly string[];
 }
@@ -711,11 +730,20 @@ function buildSlideSchema(resolution: Resolution) {
  * the presentation itself: a `child:` is resolved relative to its last entry, a repeat anywhere
  * in it is a cycle, and its length is the depth. `scope` is where the identities being resolved
  * live, which is what keeps two modules from colliding on a name they both chose innocently.
+ *
+ * The last two are about who is talking, and they are here because a module carries a `say`. A
+ * module may not declare `defaults` of its own — `./module.ts` refuses the key, because theme,
+ * voice and timing are the root presentation's — so the lexical scope a module's cues resolve their
+ * narrator against is the slide that entered it, which is a fact only the caller has.
  */
 interface Resolution {
   readonly read: RepositoryReader;
   readonly chain: readonly string[];
   readonly scope: Scope;
+  /** Every narrator the deck declares, for rejecting a name that is not one of them. */
+  readonly narrators: ReadonlySet<string>;
+  /** Who speaks a cue that does not say. Absent on every deck that never names a narrator. */
+  readonly narrator?: string;
 }
 
 /**
@@ -1055,7 +1083,7 @@ function childResolver(resolution: Resolution): ChildResolver {
 
     const scope = childScope(within, id);
     const inside: Resolution = {
-      read: resolution.read,
+      ...resolution,
       chain: [...resolution.chain, path],
       scope,
     };
@@ -1069,7 +1097,13 @@ function childResolver(resolution: Resolution): ChildResolver {
       message: `module ${JSON.stringify(path)}: ${issue.message}`,
     }));
 
-    const sayProblems = cueListProblems(shape.say);
+    const sayProblems = [
+      ...cueListProblems(shape.say),
+      // A module may not declare defaults of its own (`./module.ts`), so it has no cast and no
+      // narrator of its own either — its cues may name one of the deck's, and inherit the slide
+      // that entered them otherwise.
+      ...narratorReferenceProblems(shape.say, resolution.narrators),
+    ];
     for (const problem of sayProblems) {
       issues.push({
         path: ["say", ...problem.path],
@@ -1081,7 +1115,11 @@ function childResolver(resolution: Resolution): ChildResolver {
       return { ...nothing, issues };
     }
 
-    const bound = bindNarration(resolved.body, toCues(shape.say, scope), scope);
+    const bound = bindNarration(
+      resolved.body,
+      toCues(shape.say, scope, resolution.narrator),
+      scope,
+    );
     for (const issue of bound.issues) {
       issues.push({
         path: ["say", ...issue.path],
@@ -1263,7 +1301,7 @@ function checkCue(value: unknown): string | undefined {
     if (typeof record["speech"] !== "string" || record["speech"].trim().length === 0) {
       return "speech must not be empty";
     }
-    for (const key of ["activates", "fills"] as const) {
+    for (const key of ["activates", "fills", "narrator"] as const) {
       if (record[key] === undefined) continue;
       const id = record[key];
       if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
@@ -1288,7 +1326,7 @@ function checkCue(value: unknown): string | undefined {
   return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
 }
 
-const SPEECH_CUE_KEYS = ["speech", "activates", "fills", "pronounce"];
+const SPEECH_CUE_KEYS = ["speech", "activates", "fills", "pronounce", "narrator"];
 
 /**
  * A `pronounce` entry only means anything if the word it names is actually in this cue, so
@@ -1417,6 +1455,9 @@ function buildEntrySchema(resolution: Resolution) {
       say: saySchema.optional(),
       pre_say: durationLiteral.optional(),
       post_say: durationLiteral.optional(),
+      // A lexical scope for who is speaking, sitting exactly where `pre_say` sits and overriding
+      // the deck exactly as `pre_say` does.
+      narrator: narratorReference(resolution.narrators).optional(),
     })
     .superRefine((entry, context) => {
       // Every identity this slide declares, whichever body declared it. Duplicate marks are
@@ -1452,12 +1493,26 @@ function buildEntrySchema(resolution: Resolution) {
       // Both ends of the relationship, once the body has actually resolved. When it has not,
       // whatever went wrong with it has already been reported against the body itself, and a
       // second complaint about the narration that pointed at it would be noise.
-      const body = resolvedBody(entry.slide, resolution);
+      const within = speaking(resolution, entry.narrator);
+      const body = resolvedBody(entry.slide, within);
       if (body === undefined) return;
       if (cueListProblems(entry.say).length > 0) return;
 
-      for (const issue of bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE)
-        .issues) {
+      // Who this slide's cues name, checked here rather than against the resolved stream, because
+      // a module's cues are checked the same way before anything turns them into cues.
+      for (const problem of narratorReferenceProblems(entry.say, resolution.narrators)) {
+        context.addIssue({
+          code: "custom",
+          path: ["say", ...problem.path],
+          message: problem.message,
+        });
+      }
+
+      for (const issue of bindNarration(
+        body,
+        toCues(entry.say, ROOT_SCOPE, within.narrator),
+        ROOT_SCOPE,
+      ).issues) {
         context.addIssue({
           code: "custom",
           path: ["say", ...issue.path],
@@ -1465,6 +1520,26 @@ function buildEntrySchema(resolution: Resolution) {
         });
       }
     });
+}
+
+/**
+ * A name that has to be one of the deck's narrators.
+ *
+ * A field schema rather than a check in an object's `superRefine`, so that a slide with a bad
+ * narrator and a bad `pre_say` reports both — an object's refinement does not run once one of its
+ * fields has failed.
+ */
+function narratorReference(declared: ReadonlySet<string>) {
+  return nonEmptyString.superRefine((value, context) => {
+    const problem = unknownNarrator(value.trim(), declared);
+    if (problem !== undefined) context.addIssue({ code: "custom", message: problem });
+  });
+}
+
+/** The same resolution, with a different lexical narrator, when a scope names one. */
+function speaking(resolution: Resolution, narrator: string | undefined): Resolution {
+  const named = narrator?.trim();
+  return named === undefined ? resolution : { ...resolution, narrator: named };
 }
 
 /** The slide's body if it resolved, and nothing if it did not. Never throws. */
@@ -1479,28 +1554,54 @@ function resolvedBody(
   }
 }
 
-const defaultsSchema = z.strictObject({
-  pre_say: durationLiteral.optional(),
-  post_say: durationLiteral.optional(),
-  min_slide_duration: durationLiteral.optional(),
-  voice: nonEmptyString.optional(),
-  speed: z.number().optional(),
-  // Accepted because decision:6 put it in the format, ignored because Kokoro has no input
-  // for it (dragon:3). compilePresentation warns rather than letting it look effective.
-  instructions: nonEmptyString.optional(),
+/**
+ * The cast, hand-checked for the reason every other list in this format is: a `z.record` would
+ * report a malformed narrator as one nested union failure, and the name the author got wrong is the
+ * only part of the message worth printing.
+ */
+const narratorsSchema = z.unknown().superRefine((value, context) => {
+  for (const problem of narratorProblems(value)) {
+    context.addIssue({
+      code: "custom",
+      message: problem.message,
+      path: [...problem.path],
+    });
+  }
 });
+
+function buildDefaultsSchema(resolution: Resolution) {
+  return z.strictObject({
+    pre_say: durationLiteral.optional(),
+    post_say: durationLiteral.optional(),
+    min_slide_duration: durationLiteral.optional(),
+    voice: nonEmptyString.optional(),
+    speed: z.number().optional(),
+    /**
+     * Who speaks a slide that does not say. A name from `narrators:`, and not a voice — the deck's
+     * own voice is `voice:` above, which is what every deck written before a cast existed uses and
+     * keeps using.
+     */
+    narrator: narratorReference(resolution.narrators).optional(),
+    // Accepted because decision:6 put it in the format, ignored because Kokoro has no input
+    // for it (dragon:3). compilePresentation warns rather than letting it look effective.
+    instructions: nonEmptyString.optional(),
+  });
+}
 
 /**
  * The whole schema, built around one repository reader.
  *
  * Built per parse rather than at module scope because validating a specimen may mean *reading
  * a file*, and the thing that does the reading is an argument — which is what keeps every test
- * in this repository free of the disk.
+ * in this repository free of the disk. The cast joined it for a related reason: whether a name is
+ * a narrator is a fact about the document being parsed.
  */
 function buildDocumentSchema(resolution: Resolution) {
   const entrySchema = buildEntrySchema(resolution);
+  const defaultsSchema = buildDefaultsSchema(resolution);
   const documentSchema = z.strictObject({
     title: nonEmptyString,
+    narrators: narratorsSchema.optional(),
     defaults: defaultsSchema.optional(),
     slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
   });
@@ -1553,12 +1654,6 @@ export function parsePresentation(
   options: ParseOptions = {},
 ): Presentation {
   const read = onceReader(options.read ?? repositoryReader());
-  const resolution: Resolution = {
-    read,
-    chain: [options.origin ?? repositoryRelative(source)],
-    scope: ROOT_SCOPE,
-  };
-  const { documentSchema, allowedKeys } = buildDocumentSchema(resolution);
 
   let document: unknown;
   try {
@@ -1574,6 +1669,20 @@ export function parsePresentation(
     throw new PresentationError(`${source} is empty`);
   }
 
+  // Read before validation, because the schema is built around it: which names are narrators is a
+  // fact about this document, and every place one can be selected has to be checked against it —
+  // including inside a module, which the schema never sees. Read leniently on purpose; a cast that
+  // is not a cast is reported by `narratorsSchema` a few lines below, not here.
+  const cast = declaredNarrators(document);
+  const resolution: Resolution = {
+    read,
+    chain: [options.origin ?? repositoryRelative(source)],
+    scope: ROOT_SCOPE,
+    narrators: cast.names,
+    ...(cast.narrator === undefined ? {} : { narrator: cast.narrator }),
+  };
+  const { documentSchema, allowedKeys } = buildDocumentSchema(resolution);
+
   const result = documentSchema.safeParse(document);
   if (!result.success) {
     throw new PresentationError(
@@ -1584,6 +1693,7 @@ export function parsePresentation(
 
   const raw = result.data;
   const defaults = raw.defaults ?? {};
+  const narrators = narratorsOf(raw.narrators, defaults.speed ?? DEFAULT_SPEED);
   const preSayMs = optionalDuration(defaults.pre_say) ?? DEFAULT_PRE_SAY_MS;
   const postSayMs = optionalDuration(defaults.post_say) ?? DEFAULT_POST_SAY_MS;
   const minSlideMs =
@@ -1602,26 +1712,36 @@ export function parsePresentation(
     title: raw.title.trim(),
     voice: defaults.voice?.trim(),
     speed: defaults.speed ?? DEFAULT_SPEED,
+    narrators,
     warnings,
     slides: raw.slides.map((entry, index) => {
-      const body = bodyOf(entry.slide, resolution);
+      // Who this slide speaks in, which is the slide's own choice or the deck's, and which is
+      // handed to the body as well: a child module has no defaults of its own, so its narration
+      // resolves against whoever entered it.
+      const within = speaking(resolution, entry.narrator);
+      const body = bodyOf(entry.slide, within);
       // Flattened here rather than downstream, so that everything after this point sees one
       // ordered list of cues and knows nothing about modules — or about protocols. Validation
       // already ran the same walk and reported anything wrong with it, so this one cannot fail.
       const prologue =
         entry.say === undefined
           ? []
-          : bindNarration(body, toCues(entry.say, ROOT_SCOPE), ROOT_SCOPE).cues;
+          : bindNarration(
+              body,
+              toCues(entry.say, ROOT_SCOPE, within.narrator),
+              ROOT_SCOPE,
+            ).cues;
       return {
         ordinal: index + 1,
         title: entry.slide.title.trim(),
         body,
         // A protocol's steps append themselves to whatever the author said first. The prologue
         // goes through `bindNarration` because it names things by hand; the steps do not, because
-        // the compiler wrote both ends of that relationship and has nothing to look up.
+        // the compiler wrote both ends of that relationship and has nothing to look up. Both are
+        // spoken by the slide's narrator: a step is narration, and an actor is not a speaker.
         say:
           body.kind === "protocol"
-            ? [...prologue, ...protocolCues(body, ROOT_SCOPE)]
+            ? [...prologue, ...protocolCues(body, ROOT_SCOPE, within.narrator)]
             : prologue,
         preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
         postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
@@ -1637,20 +1757,71 @@ function optionalDuration(value: string | undefined): number | undefined {
 }
 
 /**
+ * The cast and the deck's choice from it, read out of the raw document before validation.
+ *
+ * Nothing here judges: a `narrators:` that is a list, or one whose entries are strings, yields no
+ * names and is reported by the schema in the ordinary way. What this exists for is that the schema
+ * has to be *built* knowing which names are narrators, and a document knows that about itself.
+ */
+function declaredNarrators(document: unknown): {
+  names: ReadonlySet<string>;
+  narrator: string | undefined;
+} {
+  const empty = { names: new Set<string>(), narrator: undefined };
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    return empty;
+  }
+
+  const record = document as Record<string, unknown>;
+  const cast = record["narrators"];
+  const names =
+    typeof cast === "object" && cast !== null && !Array.isArray(cast)
+      ? new Set(Object.keys(cast))
+      : new Set<string>();
+
+  const defaults = record["defaults"];
+  const chosen =
+    typeof defaults === "object" && defaults !== null && !Array.isArray(defaults)
+      ? (defaults as Record<string, unknown>)["narrator"]
+      : undefined;
+
+  return {
+    names,
+    narrator: typeof chosen === "string" ? chosen.trim() : undefined,
+  };
+}
+
+/**
  * Turn validated `say` into cues.
  *
  * A scalar is shorthand for one speech cue, which is what keeps every deck written before the
  * grammar existed working unchanged. Nothing here can fail: `saySchema` already rejected
  * everything this would have to complain about.
+ *
+ * `narrator` is who speaks the cues that do not say — the slide's, or the deck's, whichever is
+ * nearest. It is applied **per cue and never carried**: a cue that names its own narrator gets it,
+ * and the cue after it gets the lexical one back, because a narrator that persisted would make the
+ * meaning of a sentence depend on every sentence above it.
  */
-function toCues(value: unknown, scope: Scope): readonly NarrationCue[] {
-  if (typeof value === "string") {
-    return [{ kind: "speech", scope, text: collapseWhitespace(value) }];
-  }
+function toCues(
+  value: unknown,
+  scope: Scope,
+  narrator?: string,
+): readonly NarrationCue[] {
+  const spoken = (text: string, said?: unknown): NarrationCue => {
+    const who = typeof said === "string" ? said : narrator;
+    return {
+      kind: "speech",
+      scope,
+      text: collapseWhitespace(text),
+      ...(who === undefined ? {} : { narrator: who }),
+    };
+  };
+
+  if (typeof value === "string") return [spoken(value)];
+
   return (value as unknown[]).map((cue): NarrationCue => {
-    if (typeof cue === "string") {
-      return { kind: "speech", scope, text: collapseWhitespace(cue) };
-    }
+    if (typeof cue === "string") return spoken(cue);
     const record = cue as Record<string, unknown>;
     if (typeof record["pause"] === "string") {
       return { kind: "pause", scope, milliseconds: parseDurationMs(record["pause"]) };
@@ -1669,9 +1840,7 @@ function toCues(value: unknown, scope: Scope): readonly NarrationCue[] {
 
     const pronounce = record["pronounce"] as Record<string, string> | undefined;
     return {
-      kind: "speech",
-      scope,
-      text: collapseWhitespace(record["speech"] as string),
+      ...spoken(record["speech"] as string, record["narrator"]),
       ...(record["activates"] === undefined
         ? {}
         : { activates: record["activates"] as string }),
@@ -1681,6 +1850,29 @@ function toCues(value: unknown, scope: Scope): readonly NarrationCue[] {
         : { pronounce: new Map(Object.entries(pronounce)) }),
     };
   });
+}
+
+/**
+ * Every narrator a `say` names that the deck does not declare.
+ *
+ * Checked against the raw list rather than against resolved cues, because this is the same walk for
+ * a slide's narration and for a module's, and a module's is validated before anything turns it into
+ * cues. Paths are relative to the `say`, so a caller can prefix them.
+ */
+function narratorReferenceProblems(
+  say: unknown,
+  declared: ReadonlySet<string>,
+): readonly { path: readonly (string | number)[]; message: string }[] {
+  if (!Array.isArray(say)) return [];
+  const problems: { path: readonly (string | number)[]; message: string }[] = [];
+  say.forEach((cue: unknown, index: number) => {
+    if (typeof cue !== "object" || cue === null) return;
+    const named = (cue as Record<string, unknown>)["narrator"];
+    if (typeof named !== "string") return;
+    const problem = unknownNarrator(named, declared);
+    if (problem !== undefined) problems.push({ path: [index], message: problem });
+  });
+  return problems;
 }
 
 function describeIssue(

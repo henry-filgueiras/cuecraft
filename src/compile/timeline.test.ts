@@ -75,6 +75,8 @@ function slide(overrides: SlideOverrides): CompiledSlide {
       durationSeconds: duration,
       leadingSilenceSeconds: overrides.leadingSilence ?? 0,
       scope: ROOT_SCOPE,
+      voice: "af_heart",
+      speed: 1,
       ...(overrides.activates?.[index]
         ? {
             activates: overrides.activates[index] as string,

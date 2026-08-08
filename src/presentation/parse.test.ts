@@ -274,7 +274,9 @@ slides:
   - slide: { title: One }
     say: Hello.
 `),
-    ['presentation: unknown field "duration" (allowed: title, defaults, slides)'],
+    [
+      'presentation: unknown field "duration" (allowed: title, narrators, defaults, slides)',
+    ],
   );
 
   assert.match(
@@ -283,7 +285,7 @@ slides:
         "title: A deck\ndefaults:\n  voise: af_heart\nslides:\n  - slide: {title: One}\n    say: Hi.\n",
       )[0],
     ),
-    /^defaults: unknown field "voise" \(allowed: pre_say, post_say, min_slide_duration, voice, speed, instructions\)$/,
+    /^defaults: unknown field "voise" \(allowed: pre_say, post_say, min_slide_duration, voice, speed, narrator, instructions\)$/,
   );
 });
 
@@ -598,7 +600,7 @@ test("unknown keys on a speech cue are rejected", () => {
         'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        emphasise: loud\n',
       )[0],
     ),
-    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, fills, pronounce\)$/,
+    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, fills, pronounce, narrator\)$/,
   );
 });
 

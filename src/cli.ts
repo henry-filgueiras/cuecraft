@@ -150,7 +150,7 @@ async function runRender(
         note(
           `    slide ${slide.ordinal}: ${narration.durationSeconds.toFixed(1)}s ` +
             `in ${clips} clip${clips === 1 ? "" : "s"} ` +
-            `(${narration.voice} at ${narration.speed}x)`,
+            `(${describeVoices(narration)} at ${narration.speed}x)`,
         );
       },
     });
@@ -187,6 +187,18 @@ async function runRender(
     }
     throw error;
   }
+}
+
+/**
+ * Which voices a slide was actually spoken in, in the order they were first heard.
+ *
+ * One name on every deck that names no narrator, which is the line this always printed. A slide
+ * that changes narrator prints both, because "who is speaking" is the only thing about a narrator
+ * an author can check without listening.
+ */
+function describeVoices(narration: { clips: readonly { voice: string }[] }): string {
+  const voices = [...new Set(narration.clips.map((clip) => clip.voice))];
+  return voices.length === 0 ? "no speech" : voices.join(", ");
 }
 
 /**

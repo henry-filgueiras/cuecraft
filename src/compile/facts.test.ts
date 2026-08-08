@@ -26,6 +26,8 @@ function clip(index: number, seconds: number, text: string): SpeechClip {
     durationSeconds: seconds,
     leadingSilenceSeconds: 0.3,
     scope: ROOT_SCOPE,
+    voice: "af_heart",
+    speed: 1,
   };
 }
 

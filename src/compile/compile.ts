@@ -1,7 +1,12 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { AuthoredSlide, Presentation, Scope } from "../presentation/parse.ts";
+import type {
+  AuthoredSlide,
+  Narrator,
+  Presentation,
+  Scope,
+} from "../presentation/parse.ts";
 import { spokenText } from "../presentation/parse.ts";
 
 /**
@@ -42,6 +47,17 @@ export interface SpeechClip {
   readonly fillsAddress?: Scope;
   /** Which narration this clip belongs to. `root` on every deck that never descends. */
   readonly scope: Scope;
+  /**
+   * Who spoke it, as a declared narrator's name, and absent when the deck never named one.
+   *
+   * Recorded beside the voice for the reason `activates` is recorded beside `address`: one is what
+   * the source says and the other is what it resolved to, and only the first survives a change of
+   * provider.
+   */
+  readonly narrator?: string;
+  /** The voice and rate this clip was actually synthesized at, as the seam reported them. */
+  readonly voice: string;
+  readonly speed: number;
 }
 
 /**
@@ -97,6 +113,10 @@ export interface Narration {
   readonly dwells: readonly NarrationDwell[];
   /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
+  /**
+   * What this slide opens in. The clips are authoritative — a slide may change narrator partway
+   * through, and each clip carries the voice it was actually synthesized at.
+   */
   readonly voice: string;
   readonly speed: number;
 }
@@ -138,6 +158,29 @@ export interface CompileOptions {
   readonly onProgress?: (slide: AuthoredSlide, narration: Narration) => void;
 }
 
+/**
+ * The narrator a cue named, resolved against the deck's cast.
+ *
+ * A cue that names nobody speaks in the deck's own voice, which is every cue in every deck written
+ * before a cast existed. A cue that names somebody the deck does not declare cannot come out of the
+ * parser — it is rejected there, with the cast listed — so reaching this is a caller that built a
+ * `Presentation` by hand and got it wrong, and saying so beats silently synthesizing the wrong
+ * voice.
+ */
+function narratorFor(
+  named: string | undefined,
+  presentation: Presentation,
+): Narrator | undefined {
+  if (named === undefined) return undefined;
+  const narrator = presentation.narrators.get(named);
+  if (narrator === undefined) {
+    throw new Error(
+      `narration names narrator ${JSON.stringify(named)}, which this presentation does not declare`,
+    );
+  }
+  return narrator;
+}
+
 /** `max(minimum slide duration, pre_say + narration + post_say)` — decision:1. */
 export function deriveSceneMs(input: {
   minSlideMs: number;
@@ -177,8 +220,6 @@ export async function compilePresentation(
     const calls: NarrationCall[] = [];
     const dwells: NarrationDwell[] = [];
     let offsetSeconds = 0;
-    let voice = presentation.voice ?? "";
-    let speed = presentation.speed;
 
     for (const cue of slide.say) {
       if (cue.kind === "pause") {
@@ -217,17 +258,22 @@ export async function compilePresentation(
         continue;
       }
 
+      // Who says it, and therefore which voice this one call gets. The whole of what a narrator
+      // changes: one argument to one synthesis call, chosen per cue. Nothing below this line
+      // knows a narrator exists — the clip is placed by its measured length exactly as every
+      // clip always has been, which is the invariant the feature was built to keep.
+      const narrator = narratorFor(cue.narrator, presentation);
+      const voiceFor = narrator?.voice ?? presentation.voice;
+
       const fileName = narrationFileName(slide, clips.length + 1);
       const spoken = await options.synthesize({
         // What is synthesized, which may differ from what the source says by exactly the
         // per-occurrence spellings the author supplied (decision:12).
         text: spokenText(cue),
         output: join(narrationDir, fileName),
-        ...(presentation.voice === undefined ? {} : { voice: presentation.voice }),
-        speed: presentation.speed,
+        ...(voiceFor === undefined ? {} : { voice: voiceFor }),
+        speed: narrator?.speed ?? presentation.speed,
       });
-      voice = spoken.voice;
-      speed = spoken.speed;
 
       clips.push({
         ordinal: clips.length + 1,
@@ -238,6 +284,9 @@ export async function compilePresentation(
         durationSeconds: spoken.durationSeconds,
         leadingSilenceSeconds: spoken.leadingSilenceSeconds,
         scope: cue.scope,
+        voice: spoken.voice,
+        speed: spoken.speed,
+        ...(cue.narrator === undefined ? {} : { narrator: cue.narrator }),
         ...(cue.activates === undefined ? {} : { activates: cue.activates }),
         ...(cue.address === undefined ? {} : { address: cue.address }),
         ...(cue.fills === undefined ? {} : { fills: cue.fills }),
@@ -253,8 +302,8 @@ export async function compilePresentation(
       calls,
       dwells,
       durationSeconds: offsetSeconds,
-      voice,
-      speed,
+      voice: clips[0]?.voice ?? presentation.voice ?? "",
+      speed: clips[0]?.speed ?? presentation.speed,
     };
 
     options.onProgress?.(slide, narration);

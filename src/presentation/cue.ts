@@ -25,6 +25,20 @@ export type NarrationCue =
       readonly scope: Scope;
       readonly text: string;
       /**
+       * Who says it, as a declared narrator's name (`./narrator.ts`).
+       *
+       * Resolved by the parser from where the cue sits — the cue's own `narrator:`, else its
+       * slide's, else the deck's — and absent on every deck that never names one, which is what
+       * keeps a deck written before this indistinguishable from one that declined the feature.
+       *
+       * It is a name and not a voice for the reason `address` is not an element index: the author
+       * says who, and what that sounds like is resolved elsewhere. It reaches exactly this cue.
+       * Nothing about a cue's narrator is inherited by the cue after it, because an identity that
+       * accumulated down a list would make a sentence unreadable without reading everything above
+       * it — the same objection decision:9 makes to anything downstream changing derived timing.
+       */
+      readonly narrator?: string;
+      /**
        * The semantic identity this cue reaches, as the author wrote it. Not a time and not an
        * animation: the author states that this moment in the narration and some element are the
        * same idea, and the compiler works out when that happens (decision:14).

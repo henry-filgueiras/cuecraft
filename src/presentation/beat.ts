@@ -99,10 +99,16 @@ export function dwellMs(step: AuthoredStep, run: number = 0): number {
  * Order is the whole coupling. Nothing here carries an index, a target, or a link; the cues come
  * out in step order because the steps were in step order, and everything downstream — synthesis,
  * the frame clock, anchoring — sees the ordinary serial list it has always seen.
+ *
+ * `narrator` is the slide's, applied to every step that says anything. It is emphatically not read
+ * from the step's `from:` — an actor is a party to an exchange and a narrator is who is telling you
+ * about it, and a protocol whose lanes started speaking for themselves would be a dialogue system
+ * that nobody asked for and that no step could turn off.
  */
 export function protocolCues(
   protocol: AuthoredProtocol,
   scope: Scope,
+  narrator?: string,
 ): readonly NarrationCue[] {
   let run = 0;
   return protocol.steps.map((step, index): NarrationCue => {
@@ -119,6 +125,7 @@ export function protocolCues(
       text: step.say,
       activates: stepId(index),
       address,
+      ...(narrator === undefined ? {} : { narrator }),
       ...(step.pronounce === undefined ? {} : { pronounce: step.pronounce }),
     };
   });
