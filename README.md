@@ -215,6 +215,7 @@ relationships                 when every event happens
 actors, and who sends what    graph layout, and every edge route
 narration cues                which composition each slide gets
 which cue is about what       type size, position, colour
+whether to show subtitles     which sentence is on screen, and when
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
@@ -409,6 +410,18 @@ same thing wherever it is read from. A deck that names nobody uses `defaults.voi
 always did. What a narrator changes is which voice one synthesis call gets, and nothing else — two
 voices never overlap, nothing is mixed, and clip lengths still set the timing.
 [`examples/aside.yaml`](examples/aside.yaml) is fifty seconds of it.
+
+**Subtitles.** `defaults: { subtitles: true }` puts the narration on screen while it is being
+spoken. There is nothing else to write — no timestamp, no position, no size, no colour, and no
+per-slide or per-cue key — because a subtitle is a projection of narration that has already been
+synthesized, measured and placed. A cue appears on exactly the frame its clip was placed at and
+holds until the next one starts, so an authored `pause:` is bridged rather than blinked through,
+and nothing is ever read over a slide that is leaving. Sentences are shown whole; when one is too
+long for the measure, the type steps down rather than the words dropping off. If the deck names a
+cast _and actually changes speaker_, each line is labelled with the narrator's name in a colour of
+their own — a name, never a provider voice. There is deliberately no word-by-word reveal:
+cuecraft measured the clip, not the words in it. [`examples/onscreen.yaml`](examples/onscreen.yaml)
+is the whole feature in three slides.
 
 **Semantic anchors.** An element can carry an identity, and a cue can say it reaches it.
 `activates:` is not a timestamp — cuecraft derives the moment from the measured audio, so rewording

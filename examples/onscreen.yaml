@@ -1,0 +1,107 @@
+# The narration, on screen — the smallest deck that shows what subtitles are and what they
+# deliberately are not.
+#
+#   cuecraft render examples/onscreen.yaml -o out/onscreen.mp4
+#
+# Everything this file demonstrates is one key. `defaults.subtitles: true` puts what is being said
+# on the frame while it is being said, and there is nothing else to write: no timestamp, no
+# position, no size, no colour, and no per-cue anything. A subtitle is a *projection* of narration
+# that has already been synthesized, measured and placed, so by the time anybody could have an
+# opinion about when it appears, the answer is already settled.
+#
+#   what is shown     the sentence, whole and unshortened            decision:28
+#   when it appears   the frame the compiler put its clip at         decision:9, decision:13
+#   when it leaves    the next sentence, or the end of the slide
+#   who said it       the narrator the deck declared, if it declared one     decision:39
+#
+# The second slide is the one worth watching twice. A cue that names a narrator hands the film over
+# for exactly one sentence, and the label and the colour change with it — which is the whole reason
+# this exists, because the next cuecraft film has two people in it and a voice alone does not say
+# which one you are listening to.
+#
+# What this is not: there is no word-by-word reveal, no highlight travelling along the sentence and
+# no karaoke. cuecraft knows when a *clip* starts and how long it lasts, because it measured the
+# audio; it does not know when a word starts, and dividing the clip by the word count would be a
+# guess wearing the costume of a measurement. See decision:40 and idea:19.
+#
+# See decision:40 (the whole argument), decision:39 (who speaks), decision:28 (an utterance is
+# projected whole or not at all) and dragon:21 (the two compositions that cannot give up the room).
+
+title: "Read what you are hearing"
+
+narrators:
+  # Two, because one narrator would be a film with nothing to disambiguate — and a label under
+  # every sentence of a one-voice film is noise, so cuecraft withholds it. Declaring a second
+  # narrator is not enough either: the label appears because this deck actually changes hands.
+  reader: { voice: af_heart }
+  aside: { voice: bm_george }
+
+defaults:
+  narrator: reader
+  subtitles: true
+  pre_say: 700ms
+  post_say: 1400ms
+
+slides:
+  - slide:
+      title: "Read what you are hearing"
+
+    say:
+      - "Everything I say from here is also written along the bottom of the frame."
+
+      - "It is not a caption track, and nothing about it was typed. It is the narration itself,
+        shown at the frames it was already going to be spoken at."
+
+  - slide:
+      title: "One clock, two speakers"
+      bullets:
+        - id: whole
+          text: A sentence is shown whole
+        - id: who
+          text: A label says who is speaking
+        - id: derived
+          text: Nothing about the timing is authored
+
+    say:
+      # Long enough to wrap. cuecraft picks one type size for the whole deck from the longest
+      # sentence in it, so the line never resizes under a full stop.
+      - speech:
+          "A sentence appears when its clip begins and stays until the next one starts, so a pause
+          in the middle of a thought does not blink the words off the screen and back on."
+        activates: whole
+
+      # One sentence, somebody else, and then it comes straight back — decision:39's lexical rule,
+      # now with something to see as well as something to hear.
+      - speech: "And when somebody else says something, you can see that it was somebody else."
+        narrator: aside
+        activates: who
+
+      - speech:
+          "Which is the point. Nothing here is a timestamp: the words on the frame are placed by
+          the same measured audio that decides how long this slide is."
+        activates: derived
+
+  # The first slide of this file, quoted back. The argument is what is *absent* from it: a slide
+  # that is being subtitled says nothing about being subtitled, because there is nothing per-slide
+  # and nothing per-cue to say. The deck said `subtitles: true` once, at the top.
+  - slide:
+      title: "Nothing here mentions a subtitle"
+      code:
+        file: examples/onscreen.yaml
+        slide: "Read what you are hearing"
+        marks:
+          - id: cues
+            line: "say:"
+
+    post_say: 2000ms
+    say:
+      - "This is the first slide of this file, and it is the slide you have been watching the
+        subtitles of."
+
+      - speech:
+          "There is no timestamp in it, no position, and no mention of a subtitle at all. Just the
+          sentences, in the order they are said."
+        activates: cues
+
+      - speech: "The deck said the word once, at the top, and that is the whole of the vocabulary."
+        narrator: aside
