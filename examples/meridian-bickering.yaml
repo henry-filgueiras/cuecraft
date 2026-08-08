@@ -1,0 +1,324 @@
+# Two narrators conduct an executive cutover review. It begins as a respectable status deck;
+# the status vocabulary does not survive contact with the reliability lead.
+#
+#   npm run render -- examples/meridian-bickering.yaml -o out/meridian-bickering.mp4
+#
+# Mara is the program director. Eli is the reliability lead. Speaker selection is deliberately
+# cue-local until slide 5, where Eli receives the whole slide and Mara has to interrupt him.
+
+title: "Meridian: Executive Cutover Readiness"
+
+narrators:
+  mara: { voice: af_heart, speed: 1.02 }
+  eli: { voice: bm_george, speed: 1.0 }
+
+defaults:
+  narrator: mara
+  subtitles: true
+  pre_say: 700ms
+  post_say: 1400ms
+
+slides:
+  - slide:
+      title: "Meridian: Executive Cutover Readiness"
+
+    say:
+      - >-
+        Good afternoon. This review will establish whether Project Meridian is ready to migrate
+        customer traffic on Saturday evening.
+
+      - speech: >-
+          Before we begin: when this deck says green, does it mean ready, or does it mean nobody
+          senior has opened the incident log?
+        narrator: eli
+
+      - >-
+        It means the program is within its approved tolerance and has a credible path to cutover.
+
+      - speech: "Credible. Excellent. So we have already retired the word ready."
+        narrator: eli
+
+  - slide:
+      title: "The decision in front of us"
+      bullets:
+        - id: service
+          text: Protect customer service
+        - id: schedule
+          text: Preserve the launch window
+        - id: controls
+          text: Confirm rollback controls
+        - id: decision
+          text: Authorize Saturday cutover
+
+    say:
+      - speech: >-
+          The decision balances four things. First, protecting customer service throughout the
+          migration.
+        activates: service
+
+      - speech: "Second, preserving the launch window committed to our partners."
+        activates: schedule
+
+      - speech: "Third, confirming that every rollback control has been exercised."
+        activates: controls
+
+      - speech: "Has been designed. Two of them have been exercised."
+        narrator: eli
+
+      - speech: "That distinction is addressed in the readiness detail."
+        activates: decision
+
+      - speech: "That sentence has the structural integrity of wet cardboard."
+        narrator: eli
+
+  - slide:
+      title: "The cutover path"
+      world:
+        entities:
+          traffic: Customer traffic
+          edge: Edge gateway
+          bridge: Dual-write bridge
+          ledger: Ledger v2
+          archive: Legacy archive
+        relations:
+          - traffic -> edge
+          - edge -> bridge
+          - bridge -> ledger
+          - bridge -> archive
+
+    say:
+      - speech: "The cutover path is intentionally simple. Traffic enters through the edge."
+        activates: traffic
+
+      - speech: "The gateway moves each request into the dual-write bridge."
+        activates: edge
+
+      - speech: "The bridge keeps the new ledger and the legacy archive consistent."
+        activates: bridge
+
+      - speech: >-
+          The bridge is a service, two queue consumers, a reconciliation job, and a spreadsheet
+          named bridge-final-three.
+        narrator: eli
+
+      - speech: "The spreadsheet is an operational control, not part of the architecture."
+        activates: ledger
+
+      - speech: "Then it should stop deciding which ledger wins."
+        narrator: eli
+        activates: archive
+
+  - slide:
+      title: "Readiness by workstream"
+      bullets:
+        - id: apps
+          text: Application changes — complete
+        - id: data
+          text: Data rehearsal — complete with observations
+        - id: ops
+          text: Rollback drill — scheduled
+        - id: comms
+          text: Customer communications — draft
+
+    say:
+      - speech: "Application changes are complete and deployed behind flags."
+        activates: apps
+
+      - speech: "The data rehearsal is also complete, with observations."
+        activates: data
+
+      - speech: "It failed. Complete with observations means it finished failing."
+        narrator: eli
+
+      - speech: "It exposed two remediations, both of which have owners."
+        activates: ops
+
+      - speech: >-
+          The rollback drill is scheduled for eleven thirty on Saturday night, which is thirty
+          minutes after the irreversible schema promotion.
+        narrator: eli
+
+      - speech: "The customer communication remains in draft pending this meeting."
+        activates: comms
+
+      - speech: "Good. At least the apology is on schedule."
+        narrator: eli
+
+  # Slide-level narrator selection: Eli owns the slide; Mara's cue is the local override.
+  - slide:
+      title: "Risk posture: circulated at 08:00"
+      bullets:
+        - id: loss
+          text: Data loss — low
+        - id: rollback
+          text: Rollback duration — medium
+        - id: fatigue
+          text: Operator fatigue — low
+        - id: unknowns
+          text: Unknown dependencies — not observed
+
+    narrator: eli
+
+    say:
+      - speech: "Mara has asked me to read the risk posture exactly as it was circulated."
+
+      - speech: "I asked you to present it without editorializing."
+        narrator: mara
+
+      - speech: "Data loss: low, because the only failed rehearsal has been classified as an observation."
+        activates: loss
+
+      - speech: "Rollback duration: medium, despite nobody having completed a rollback."
+        activates: rollback
+
+      - speech: "Operator fatigue: low, because exhaustion is not a dropdown option."
+        activates: fatigue
+
+      - speech: >-
+          Unknown dependencies: not observed. This is reassuring if you do not think about what
+          the word unknown is doing in that sentence.
+        activates: unknowns
+
+      - speech: "Can we please keep this discussion at board altitude?"
+        narrator: mara
+
+      - "Board altitude is apparently where the oxygen gets too thin for verbs."
+
+  - slide:
+      title: "Assumptions requiring confirmation"
+      steps:
+        - id: inventory
+          text: All write paths are known
+        - id: reversible
+          text: The schema migration is reversible
+        - id: staffing
+          text: The on-call team will remain conscious
+        - id: time
+          text: Time stays linear during the freeze window
+
+    say:
+      - "The remaining assumptions are explicit, bounded, and assigned."
+
+      - speech: "Observability discovered three new write paths this morning."
+        narrator: eli
+        activates: inventory
+
+      - speech: "The down migration currently contains the word to-do."
+        narrator: eli
+        activates: reversible
+
+      - speech: "The primary on-call engineer will be at his cousin's wedding."
+        narrator: eli
+        activates: staffing
+
+      - speech: "That is a staffing detail, not a program assumption."
+
+      - speech: >-
+          I added the last assumption because it now has roughly the same evidentiary support as
+          the first three.
+        narrator: eli
+        activates: time
+
+      - "You cannot put metaphysics in an executive readiness review."
+
+      - speech: "Then stop putting two in the morning in the project plan."
+        narrator: eli
+
+  - slide:
+      title: "Unscheduled appendix: vocabulary repairs"
+      bullets:
+        - id: green
+          text: Green is a color, not a causal model
+        - id: complete
+          text: Complete with observations is not complete
+        - id: seance
+          text: A post-cutover rollback drill is a séance
+        - id: senate
+          text: Eli may not rename the steering committee The Senate
+
+    narrator: eli
+
+    say:
+      - "This slide was not included in the circulated materials."
+
+      - speech: "Correct. It contains new information."
+        activates: green
+
+      - speech: "It contains your opinions formatted as governance."
+        narrator: mara
+
+      - speech: "Only the first three. The fourth is a personal attack."
+        activates: complete
+
+      - speech: "A rollback drill after the point of no return is not a drill. It is a séance."
+        activates: seance
+
+      - speech: "And you are not calling the steering committee The Senate in the minutes."
+        narrator: mara
+        activates: senate
+
+      - "The Senate will decide that."
+
+  - slide:
+      title: "Root-cause analysis of this meeting"
+      steps:
+        - id: evidence
+          text: Evidence entered the room
+        - id: taxonomy
+          text: Status vocabulary attempted containment
+        - id: custody
+          text: Narrators disputed custody of reality
+        - id: catering
+          text: Catering became the only green workstream
+
+    say:
+      - speech: "I have reconstructed the failure sequence."
+        narrator: eli
+        activates: evidence
+
+      - speech: "This is not a failure sequence. This is still the meeting."
+        activates: taxonomy
+
+      - speech: "That is exactly what a process says before the watchdog terminates it."
+        narrator: eli
+        activates: custody
+
+      - speech: "For clarity, nobody here has custody of reality."
+
+      - speech: "At last, a finding with unanimous support."
+        narrator: eli
+
+      - speech: >-
+          Catering is confirmed, reversible, adequately staffed, and has passed two rehearsals.
+          Catering is green.
+        activates: catering
+
+      - speech: "Fine. Put catering in the executive summary."
+        narrator: eli
+
+  - slide:
+      title: "Decision: move the cutover, keep the sandwiches"
+
+    post_say: 2000ms
+    say:
+      - >-
+        The cutover will move by forty-eight hours. During that window we will complete the
+        rollback drill, remove the spreadsheet from the control plane, and rehearse again.
+
+      - speech: "On what basis?"
+        narrator: eli
+
+      - "On the basis that the evidence changed the decision."
+
+      - speech: "Please say that once more for the minutes."
+        narrator: eli
+
+      - "The evidence changed the decision."
+
+      - speech: "Then reliability approves."
+        narrator: eli
+
+      - "And lunch remains at noon."
+
+      - speech: "Unanimous."
+        narrator: eli
