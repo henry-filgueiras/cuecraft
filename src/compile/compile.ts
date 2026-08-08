@@ -66,6 +66,23 @@ export interface NarrationCall {
 }
 
 /**
+ * A silence a protocol step owns, positioned on the same track as everything else.
+ *
+ * Beside the clips and the calls rather than folded into either, for the reason `NarrationCall`
+ * gives: these are all occupants of one serial track, and what this layer computes is *when*. A
+ * dwell is the only occupant whose duration was derived rather than measured — see
+ * `../presentation/beat.ts` — and keeping it a separate record is what makes that visible in the
+ * compiled output instead of indistinguishable from a synthesized clip.
+ */
+export interface NarrationDwell {
+  /** The step this silence belongs to, as a structural address. */
+  readonly address: Scope;
+  readonly scope: Scope;
+  readonly offsetSeconds: number;
+  readonly durationSeconds: number;
+}
+
+/**
  * A slide's narration as a track rather than a file.
  *
  * Speech cues become separate clips and pauses become the space between them. Nothing is
@@ -76,6 +93,8 @@ export interface Narration {
   readonly clips: readonly SpeechClip[];
   /** Every descent and return, in order. Empty on every deck that never descends. */
   readonly calls: readonly NarrationCall[];
+  /** Every unnarrated protocol step's silence, in order. Empty on every deck without one. */
+  readonly dwells: readonly NarrationDwell[];
   /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
   readonly voice: string;
@@ -156,12 +175,27 @@ export async function compilePresentation(
   for (const slide of presentation.slides) {
     const clips: SpeechClip[] = [];
     const calls: NarrationCall[] = [];
+    const dwells: NarrationDwell[] = [];
     let offsetSeconds = 0;
     let voice = presentation.voice ?? "";
     let speed = presentation.speed;
 
     for (const cue of slide.say) {
       if (cue.kind === "pause") {
+        offsetSeconds += cue.milliseconds / 1000;
+        continue;
+      }
+
+      // A silence with a cause, exactly as a descent is: it occupies the track like a pause and
+      // gets a position, because something visual has to be timed against it. Nothing is
+      // synthesized — that is the whole of what makes this step a silent one.
+      if (cue.kind === "dwell") {
+        dwells.push({
+          address: cue.address,
+          scope: cue.scope,
+          offsetSeconds,
+          durationSeconds: cue.milliseconds / 1000,
+        });
         offsetSeconds += cue.milliseconds / 1000;
         continue;
       }
@@ -217,6 +251,7 @@ export async function compilePresentation(
     const narration: Narration = {
       clips,
       calls,
+      dwells,
       durationSeconds: offsetSeconds,
       voice,
       speed,

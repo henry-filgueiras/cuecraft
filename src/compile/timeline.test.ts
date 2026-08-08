@@ -5,13 +5,17 @@ import type {
   CompiledPresentation,
   CompiledSlide,
   NarrationCall,
+  NarrationDwell,
   SpeechClip,
 } from "./compile.ts";
-import type { SlideBody } from "../presentation/parse.ts";
+import type { AuthoredActor, AuthoredStep, SlideBody } from "../presentation/parse.ts";
 import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
+  if (overrides.protocol !== undefined) {
+    return { kind: "protocol", ...overrides.protocol };
+  }
   if (overrides.change !== undefined) {
     return {
       kind: "change",
@@ -45,6 +49,10 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   activates?: readonly string[];
   /** Scope transitions, already measured, for the tests that assert on the call stack. */
   calls?: readonly NarrationCall[];
+  /** A protocol's unnarrated steps, already measured, for the beat tests. */
+  dwells?: readonly NarrationDwell[];
+  /** A protocol body, when the test is about one; wins over `bullets` and `steps`. */
+  protocol?: { actors: readonly AuthoredActor[]; steps: readonly AuthoredStep[] };
   modules?: readonly string[];
 };
 
@@ -89,6 +97,7 @@ function slide(overrides: SlideOverrides): CompiledSlide {
     narration: {
       clips,
       calls: overrides.calls ?? [],
+      dwells: overrides.dwells ?? [],
       durationSeconds: overrides.narrationSeconds ?? running,
       voice: "af_heart",
       speed: 1,
@@ -464,4 +473,111 @@ test("a change with no narration reaching it still lays out, with no anchors", (
   );
   assert.deepEqual(timeline.scenes[0]?.anchors, []);
   assert.equal(timeline.scenes[0]?.layout, "revision");
+});
+
+/* ---------------------------------------------------------------- beats */
+
+/**
+ * A step gets a frame whichever way it came by one.
+ *
+ * The property worth asserting is that the two paths produce one list: a narrated step resolves
+ * through the anchor machinery decision:14 built, a silent one through a dwell that never became
+ * a sound file, and the composition downstream sees no seam between them. Anything that had to
+ * ask *how* a beat arrived would be a branch in the renderer, which is where this would go wrong.
+ */
+const PROTOCOL = {
+  actors: [
+    { id: "a", text: "A" },
+    { id: "b", text: "B" },
+  ],
+  steps: [
+    { from: "a", to: "b", message: "one", say: "The first thing happens." },
+    { from: "b", to: "a", message: "two" },
+    { from: "a", to: "b", message: "three" },
+    { from: "a", to: "b", message: "four", say: "And then the last." },
+  ],
+} as const;
+
+function dwell(address: string, at: number, seconds: number): NarrationDwell {
+  return { address, scope: ROOT_SCOPE, offsetSeconds: at, durationSeconds: seconds };
+}
+
+test("every step of a protocol becomes a beat, narrated or not", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        protocol: PROTOCOL,
+        speech: [3, 4],
+        offsets: [0, 5],
+        activates: ["step-1", "step-4"],
+        dwells: [dwell("root/step-2", 3, 1), dwell("root/step-3", 4, 1)],
+        narrationSeconds: 9,
+        preSayMs: 0,
+        postSayMs: 0,
+        leadingSilence: 0,
+      }),
+    ]),
+  );
+
+  const scene = timeline.scenes[0];
+  assert.ok(scene !== undefined);
+  assert.equal(scene.layout, "transcript");
+  assert.deepEqual(
+    scene.beats.map((beat) => [beat.index, beat.from, beat.durationInFrames]),
+    [
+      // Narrated: the clip's own start, which is frame 0 of the narration.
+      [0, 0, 90],
+      // Silent: the dwell's placed frame, three seconds in.
+      [1, 90, 30],
+      [2, 120, 30],
+      // Narrated again, at the second clip's start.
+      [3, 150, 120],
+    ],
+  );
+  assert.deepEqual(
+    scene.beats.map((beat) => beat.clipIndex),
+    [0, undefined, undefined, 1],
+  );
+});
+
+test("a beat runs to its successor, and the last runs to the end of the narration", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        protocol: PROTOCOL,
+        speech: [2, 2],
+        offsets: [0, 4],
+        activates: ["step-1", "step-4"],
+        dwells: [dwell("root/step-2", 2, 1), dwell("root/step-3", 3, 1)],
+        narrationSeconds: 10,
+        preSayMs: 0,
+        postSayMs: 0,
+        leadingSilence: 0,
+      }),
+    ]),
+  );
+
+  const scene = timeline.scenes[0];
+  assert.ok(scene !== undefined);
+  const last = scene.beats.at(-1);
+  assert.ok(last !== undefined);
+  assert.equal(
+    last.from + last.durationInFrames,
+    scene.narrationFrom + scene.narrationDurationInFrames,
+  );
+  const beats = [...scene.beats];
+  for (let index = 1; index < beats.length; index += 1) {
+    const previous = beats[index - 1];
+    assert.ok(previous !== undefined);
+    assert.equal(previous.from + previous.durationInFrames, beats[index]?.from);
+  }
+});
+
+test("nothing but a protocol gains a beat", () => {
+  const timeline = buildTimeline(
+    presentation([slide({ ordinal: 1, bullets: [{ text: "a" }], narrationSeconds: 4 })]),
+  );
+  assert.deepEqual(timeline.scenes[0]?.beats, []);
 });

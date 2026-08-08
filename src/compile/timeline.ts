@@ -1,5 +1,6 @@
 import { bodyAddresses, type SlideBody } from "../presentation/body.ts";
-import { ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
+import { stepId } from "../presentation/protocol.ts";
+import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
 import type { CompiledPresentation } from "./compile.ts";
 import { freezeFacts, type CompilationFacts } from "./facts.ts";
@@ -210,6 +211,34 @@ export interface Span {
 }
 
 /**
+ * When one step of a protocol happens, and how long it owns the stage.
+ *
+ * The third temporal record, after `Anchor` (a frame) and `Span` (a range), and it exists because
+ * a step can get its frame in either of two ways: from the anchor of the sentence spoken over it,
+ * or from the dwell that stood in for the sentence nobody wrote. Merging the two here rather than
+ * in the composition keeps the rounding rule in the one module that owns it, and hands the
+ * renderer a single list in step order with no branch for how each entry was arrived at.
+ *
+ * **The duration is the interesting field.** An anchor's transient is a fixed envelope because the
+ * thing it is marking is an arrival; a step is not an arrival, it is *the current step*, and it
+ * stays current until the next one starts however long that takes. So a beat runs to its
+ * successor, and the last runs to the end of the narration — which is what lets a sentence four
+ * times longer than its own transition read as a held shot rather than as a flare that burned out
+ * with five seconds still to say.
+ */
+export interface Beat {
+  /** Index into the protocol's steps, in written order. */
+  readonly index: number;
+  readonly address: Scope;
+  /** Absolute frame at which the transition begins. */
+  readonly from: number;
+  /** To the next beat, or to the end of the narration. Never zero. */
+  readonly durationInFrames: number;
+  /** Index into `Scene.clips`, when something was said over this step. */
+  readonly clipIndex?: number;
+}
+
+/**
  * A resolved link between a moment in the narration and an element on the slide.
  *
  * Deliberately a record of the *relationship* rather than a field on the element saying when
@@ -252,6 +281,8 @@ export interface Scene {
   readonly calls: readonly Call[];
   /** Every population accumulating over a sentence. Empty on almost every deck. */
   readonly spans: readonly Span[];
+  /** Every step of a protocol, in written order. Empty unless the body is one. */
+  readonly beats: readonly Beat[];
   /** Absolute frame at which the slide appears. */
   readonly from: number;
   readonly durationInFrames: number;
@@ -329,11 +360,20 @@ export function buildTimeline(
         seconds: call.durationSeconds,
         call,
       })),
+      // A dwell walks the same cursor for the same reason a descent does. It is a silence with a
+      // position, and a position derived independently from seconds would drift against the clip
+      // in front of it by exactly the frame `ceil(a) + ceil(b) > ceil(a + b)` costs.
+      ...slide.narration.dwells.map((dwell) => ({
+        at: dwell.offsetSeconds,
+        seconds: dwell.durationSeconds,
+        dwell,
+      })),
     ].sort((a, b) => a.at - b.at);
 
     let cursor = 0;
     const clips: Clip[] = [];
     const calls: Call[] = [];
+    const placedDwells = new Map<Scope, number>();
     for (const entry of track) {
       cursor = Math.max(cursor, framesFor(entry.at, fps));
       const durationInFrames = framesFor(entry.seconds, fps);
@@ -344,6 +384,8 @@ export function buildTimeline(
           durationInFrames,
           scope: entry.clip.scope,
         };
+      } else if ("dwell" in entry) {
+        placedDwells.set(entry.dwell.address, narrationFrom + cursor);
       } else {
         calls.push({
           kind: entry.call.kind,
@@ -421,6 +463,40 @@ export function buildTimeline(
       framesFor(slide.narration.durationSeconds, fps),
     );
 
+    // Every step, in written order, however it came by its frame. A narrated one was already
+    // resolved above as an ordinary anchor; a silent one has a placed dwell. Neither branch knows
+    // anything the other does not, which is the point: the composition consumes one list.
+    const beats: Beat[] = [];
+    if (slide.body.kind === "protocol") {
+      const narrationUntil = narrationFrom + narrationDurationInFrames;
+      const byAddress = new Map(
+        anchors.map((anchor) => [anchor.address, anchor] as const),
+      );
+      const starts = slide.body.steps.map((_, index) => {
+        const address = childScope(ROOT_SCOPE, stepId(index));
+        const anchor = byAddress.get(address);
+        const from = anchor?.frame ?? placedDwells.get(address);
+        return { index, address, from, clipIndex: anchor?.clipIndex };
+      });
+      starts.forEach((start, position) => {
+        if (start.from === undefined) {
+          throw new Error(
+            `slide ${slide.ordinal}: step ${position + 1} was never placed on the narration track`,
+          );
+        }
+        const next = starts.slice(position + 1).find((entry) => entry.from !== undefined);
+        beats.push({
+          index: start.index,
+          address: start.address,
+          from: start.from,
+          // Never zero: a step that owned the stage for no frames would be a cut, and the
+          // shortest thing that can start one is a dwell with a floor on it.
+          durationInFrames: Math.max(1, (next?.from ?? narrationUntil) - start.from),
+          ...(start.clipIndex === undefined ? {} : { clipIndex: start.clipIndex }),
+        });
+      });
+    }
+
     const durationInFrames = Math.max(
       minimumFrames,
       preSayFrames + narrationDurationInFrames + postSayFrames,
@@ -434,6 +510,7 @@ export function buildTimeline(
       anchors,
       calls,
       spans,
+      beats,
       from,
       durationInFrames,
       narrationFrom,

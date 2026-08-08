@@ -58,7 +58,14 @@ function deck(
     minSlideMs: 3000,
     modules: [],
     sceneMs: 0,
-    narration: { clips, calls: [], durationSeconds: offset, voice: "af_heart", speed: 1 },
+    narration: {
+      clips,
+      calls: [],
+      dwells: [],
+      durationSeconds: offset,
+      voice: "af_heart",
+      speed: 1,
+    },
   };
   return { title: "A deck", slides: [slide], publicDir: "/tmp/public" };
 }

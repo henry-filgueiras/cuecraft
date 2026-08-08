@@ -66,6 +66,27 @@ export type NarrationCue =
   | { readonly kind: "pause"; readonly scope: Scope; readonly milliseconds: number }
   | {
       /**
+       * A silence one step of a protocol owns.
+       *
+       * Never authored, like `exit` and for a related reason: what it is measuring is the absence
+       * of narration, and a duration the author types for a step they chose not to narrate would
+       * be narration by another means. It behaves on the track exactly as a `pause` does — it is a
+       * silence — and differs in carrying the address of the thing the silence is *for*, which is
+       * what lets the compiler put a frame on a visual event nobody said anything over.
+       *
+       * The third silence-with-a-cause in the format, after `enter` and `exit`, and the first that
+       * exists because a *body* asked for it rather than because a scope changed. How long it is
+       * comes from `./beat.ts`, which is the only place in cuecraft where a duration is derived
+       * from text rather than measured from sound.
+       */
+      readonly kind: "dwell";
+      readonly scope: Scope;
+      readonly milliseconds: number;
+      /** The step this silence belongs to, as a structural address (`./scope.ts`). */
+      readonly address: Scope;
+    }
+  | {
+      /**
        * Go inside `target`'s child module, and let its narration take over.
        *
        * Authored as `enter: <entity>`. It occupies real time on the narration track — the
