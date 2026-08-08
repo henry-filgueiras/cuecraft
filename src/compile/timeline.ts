@@ -2,6 +2,7 @@ import { bodyAddresses, type SlideBody } from "../presentation/body.ts";
 import { stepId } from "../presentation/protocol.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
+import { subtitleTrack, type SubtitleCue } from "../render/subtitle.ts";
 import type { CompiledPresentation } from "./compile.ts";
 import { freezeFacts, type CompilationFacts } from "./facts.ts";
 
@@ -307,6 +308,14 @@ export interface Timeline {
    * `./facts.ts` for why that ordering is the whole of the acyclicity argument.
    */
   readonly facts: CompilationFacts;
+  /**
+   * The narration as text, on the frames it was already placed on. Empty unless the deck asked.
+   *
+   * Derived at the same point and for the same reason the facts are: everything above is settled,
+   * so a subtitle cannot be anything but a reading of it. It is not a second timeline and there is
+   * no second clock — see `../render/subtitle.ts`.
+   */
+  readonly subtitles: readonly SubtitleCue[];
 }
 
 export interface TimelineOptions {
@@ -524,6 +533,11 @@ export function buildTimeline(
 
   // The last statement, deliberately: everything above is settled, and nothing below may write
   // to what it produced. This is the freeze boundary (`./facts.ts`).
+  //
+  // The subtitle track is derived here and not earlier for exactly that reason. It needs both
+  // halves of every utterance — what was said and by whom, from `compiled`; where it landed, from
+  // `scenes` — and it must not be able to influence either. Placing it in this statement makes
+  // that structural rather than a rule somebody has to remember.
   return {
     title: compiled.title,
     fps,
@@ -532,5 +546,6 @@ export function buildTimeline(
     totalFrames: from,
     scenes,
     facts: freezeFacts(compiled, scenes, fps, from),
+    subtitles: subtitleTrack(compiled, scenes),
   };
 }

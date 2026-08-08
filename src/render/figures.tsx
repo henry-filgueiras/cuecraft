@@ -11,6 +11,7 @@ import {
 } from "../compile/facts.ts";
 import type { FigureKind } from "../presentation/figure.ts";
 import { anchorState, WORLD_TIMING } from "./anchor.ts";
+import { useSubtitleBand } from "./subtitles.tsx";
 import {
   CODE,
   COLORS,
@@ -115,6 +116,7 @@ function Chronicle({
   title: string;
   absoluteFrame: number;
 }) {
+  const band = useSubtitleBand();
   const frame = useCurrentFrame();
   const current = clipAt(facts, absoluteFrame);
   const at = (value: number) => (value / facts.totalFrames) * 100;
@@ -129,7 +131,7 @@ function Chronicle({
   );
   const quote = fitQuote(
     facts.clips.map((clip) => quoted(clip.text)),
-    bodyBox(title).width - measureWidth - SPACE.xl,
+    bodyBox(title, band).width - measureWidth - SPACE.xl,
   );
 
   const drawn = interpolate(frame, [0, MOTION.rise * 2], [0, 1], {
@@ -362,6 +364,7 @@ function Resolution({
   title: string;
   absoluteFrame: number;
 }) {
+  const band = useSubtitleBand();
   const frame = useCurrentFrame();
   const current = anchorAt(facts, absoluteFrame);
   const index = facts.anchors.findIndex(
@@ -370,10 +373,10 @@ function Resolution({
 
   const quote = fitQuote(
     facts.anchors.map((anchor) => quoted(anchor.text)),
-    rowQuoteWidth(bodyBox(title).width),
+    rowQuoteWidth(bodyBox(title, band).width),
   );
   const rowHeight = quoteHeight(quote.size, quote.lines) + 2 * SPACE.md;
-  const budget = bodyBox(title).height - SPACE.xxl - LEGEND_HEIGHT - SPACE.lg;
+  const budget = bodyBox(title, band).height - SPACE.xxl - LEGEND_HEIGHT - SPACE.lg;
   const rows = Math.max(
     FIGURE.minRows,
     Math.min(FIGURE.rows, Math.floor(budget / rowHeight)),

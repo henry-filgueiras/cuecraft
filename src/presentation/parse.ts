@@ -159,6 +159,18 @@ export interface Presentation {
    * that changing a narrator's voice is one edit rather than one per utterance (`./narrator.ts`).
    */
   readonly narrators: ReadonlyMap<string, Narrator>;
+  /**
+   * Whether the narration is also put on screen as text. Off unless the deck asks.
+   *
+   * The only thing an author may say about subtitles, and deliberately the only thing there is to
+   * say: a subtitle is a projection of narration that has already been compiled, so its words, its
+   * speaker and every frame it occupies are already settled by the time anybody could have an
+   * opinion about them (`../render/subtitle.ts`). What is left to choose is whether to show it.
+   *
+   * Opt-in rather than on, because persistent text is a real change to every composition in a deck
+   * and cuecraft's existing films were framed without it.
+   */
+  readonly subtitles: boolean;
   /** Valid source that will not do what it looks like it does. Printed, not thrown. */
   readonly warnings: readonly string[];
 }
@@ -1583,6 +1595,15 @@ function buildDefaultsSchema(resolution: Resolution) {
      * keeps using.
      */
     narrator: narratorReference(resolution.narrators).optional(),
+    /**
+     * Whether to put the narration on screen as text.
+     *
+     * A boolean and nothing else. There is no size, colour, position, alignment, font or timing
+     * here and no per-slide or per-cue counterpart, for the reason there is no `camera:` key
+     * (decision:22) and no font size anywhere (decision:10): a subtitle's words and its every
+     * frame are already derived from what was said, and its typography is cuecraft's decision.
+     */
+    subtitles: z.boolean().optional(),
     // Accepted because decision:6 put it in the format, ignored because Kokoro has no input
     // for it (dragon:3). compilePresentation warns rather than letting it look effective.
     instructions: nonEmptyString.optional(),
@@ -1714,6 +1735,7 @@ export function parsePresentation(
     voice: defaults.voice?.trim(),
     speed: defaults.speed ?? DEFAULT_SPEED,
     narrators,
+    subtitles: defaults.subtitles ?? false,
     warnings,
     slides: raw.slides.map((entry, index) => {
       // Who this slide speaks in, which is the slide's own choice or the deck's, and which is

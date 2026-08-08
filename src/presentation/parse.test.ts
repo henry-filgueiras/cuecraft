@@ -285,7 +285,7 @@ slides:
         "title: A deck\ndefaults:\n  voise: af_heart\nslides:\n  - slide: {title: One}\n    say: Hi.\n",
       )[0],
     ),
-    /^defaults: unknown field "voise" \(allowed: pre_say, post_say, min_slide_duration, voice, speed, narrator, instructions\)$/,
+    /^defaults: unknown field "voise" \(allowed: pre_say, post_say, min_slide_duration, voice, speed, narrator, subtitles, instructions\)$/,
   );
 });
 

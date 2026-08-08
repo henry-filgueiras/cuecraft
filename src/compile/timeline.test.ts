@@ -107,8 +107,11 @@ function slide(overrides: SlideOverrides): CompiledSlide {
   };
 }
 
-function presentation(slides: readonly CompiledSlide[]): CompiledPresentation {
-  return { title: "A deck", slides, publicDir: "/tmp/public" };
+function presentation(
+  slides: readonly CompiledSlide[],
+  subtitles = false,
+): CompiledPresentation {
+  return { title: "A deck", slides, publicDir: "/tmp/public", subtitles };
 }
 
 test("a duration occupies every frame it touches", () => {

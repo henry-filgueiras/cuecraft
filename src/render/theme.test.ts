@@ -10,11 +10,16 @@ import {
   fitHeading,
   fitQuote,
   fitSpecimen,
+  fitSubtitle,
   fitTerm,
   headingLines,
+  HEADING_WIDTH,
   mix,
   quoteHeight,
   quoteLines,
+  SPEAKER_COLORS,
+  SUBTITLE,
+  subtitleBand,
   TYPE,
 } from "./theme.ts";
 
@@ -153,6 +158,79 @@ test("the anchors figure has room for a neighbourhood of whole sentences", () =>
   const rows = Math.floor(budget / rowHeight);
   assert.ok(rows >= FIGURE.minRows, `only ${rows} rows fit under the heading`);
   assert.ok(rows <= FIGURE.rows);
+});
+
+/* -------------------------------------------- the room a subtitle takes, or does not */
+
+test("a deck without subtitles is laid out exactly as it always was", () => {
+  const title = "Author relationships. Derive mechanics.";
+  assert.deepEqual(bodyBox(title, 0), bodyBox(title));
+  assert.deepEqual(codeBox(title, 0), codeBox(title));
+  assert.equal(subtitleBand(undefined), 0);
+});
+
+test("the band comes out of the composition's height and nothing else", () => {
+  const title = "Author relationships. Derive mechanics.";
+  const band = subtitleBand({
+    size: SUBTITLE.maxSize,
+    lines: SUBTITLE.lines,
+    labelled: true,
+  });
+  assert.ok(band > 0);
+  assert.equal(bodyBox(title, band).height, bodyBox(title).height - band);
+  assert.equal(
+    bodyBox(title, band).width,
+    bodyBox(title).width,
+    "the measure is untouched",
+  );
+});
+
+test("a speaker label costs a row, and a deck without one does not pay for it", () => {
+  const fit = { size: SUBTITLE.maxSize, lines: SUBTITLE.lines };
+  assert.ok(
+    subtitleBand({ ...fit, labelled: true }) > subtitleBand({ ...fit, labelled: false }),
+  );
+});
+
+test("a subtitle steps its type down before it takes a third line", () => {
+  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH).size, SUBTITLE.maxSize);
+  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH).lines, SUBTITLE.lines);
+
+  // Fitted across the whole deck, so one long sentence sets the size for every sentence.
+  const deck = ["Short.", "x".repeat(220)];
+  assert.ok(fitSubtitle(deck, HEADING_WIDTH).size < SUBTITLE.maxSize);
+  assert.equal(
+    fitSubtitle(deck, HEADING_WIDTH).size,
+    fitSubtitle([deck[1] ?? ""], HEADING_WIDTH).size,
+  );
+
+  // And below the readable floor it takes the lines instead, because unreadably small is
+  // another way of discarding an utterance (decision:28).
+  const enormous = fitSubtitle(["x".repeat(4000)], HEADING_WIDTH);
+  assert.equal(enormous.size, SUBTITLE.minSize);
+  assert.ok(enormous.lines > SUBTITLE.lines);
+  assert.ok(
+    subtitleBand({ ...enormous, labelled: false }) >
+      subtitleBand({ size: SUBTITLE.minSize, lines: SUBTITLE.lines, labelled: false }),
+    "a deck that needs more lines reserves more room, rather than overflowing into the frame",
+  );
+});
+
+test("a fitted subtitle always has room for every line it was measured at", () => {
+  for (const length of [10, 60, 120, 400]) {
+    const fitted = fitSubtitle(["x".repeat(length)], HEADING_WIDTH);
+    assert.ok(quoteLines(length, HEADING_WIDTH, fitted.size) <= fitted.lines);
+  }
+});
+
+test("every narrator colour is one of the deck's own, and they are distinct", () => {
+  assert.equal(
+    SPEAKER_COLORS[0],
+    COLORS.accent,
+    "the first voice is the deck's own voice",
+  );
+  assert.equal(new Set(SPEAKER_COLORS).size, SPEAKER_COLORS.length);
+  for (const color of SPEAKER_COLORS) assert.match(color, /^#[0-9a-fA-F]{6}$/);
 });
 
 test("a matrix of four terms is set larger than a matrix of six", () => {

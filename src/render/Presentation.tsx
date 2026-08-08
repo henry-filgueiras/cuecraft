@@ -11,7 +11,8 @@ import {
 import type { Timeline } from "../compile/timeline.ts";
 import { FactsContext } from "./figures.tsx";
 import { Slide } from "./layouts.tsx";
-import { COLORS, MOTION } from "./theme.ts";
+import { SubtitleBandContext, Subtitles, subtitleFit } from "./subtitles.tsx";
+import { COLORS, MOTION, subtitleBand } from "./theme.ts";
 
 /**
  * The composition: the timeline laid out in frames, plus one restrained transition.
@@ -61,75 +62,90 @@ export function PresentationVideo({ timeline }: PresentationProps) {
           extrapolateRight: "clamp",
         });
 
+  // One number for the whole deck: the room every bordered composition gives up so that nothing is
+  // ever laid out underneath the narration. Zero when the deck asked for no subtitles, which is
+  // what makes every existing film render exactly as it did before.
+  const band =
+    timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
+
   return (
     // The compilation's own facts, offered to any composition that asks. Read-only, frozen by
     // `buildTimeline`, and reaching the renderer only after everything they describe is settled.
     <FactsContext value={timeline.facts}>
-      <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
-        <AbsoluteFill style={{ opacity: deckOpacity }}>
-          {scenes.map((scene, index) => {
-            const isFirst = index === 0;
-            const isLast = index === scenes.length - 1;
+      <SubtitleBandContext value={band}>
+        <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
+          <AbsoluteFill style={{ opacity: deckOpacity }}>
+            {scenes.map((scene, index) => {
+              const isFirst = index === 0;
+              const isLast = index === scenes.length - 1;
 
-            // Room before narration starts, and room after it ends. Everything visual has
-            // to happen in one of these two windows.
-            const before = scene.narrationFrom - scene.from;
-            const after =
-              scene.from +
-              scene.durationInFrames -
-              (scene.narrationFrom + scene.narrationDurationInFrames);
+              // Room before narration starts, and room after it ends. Everything visual has
+              // to happen in one of these two windows.
+              const before = scene.narrationFrom - scene.from;
+              const after =
+                scene.from +
+                scene.durationInFrames -
+                (scene.narrationFrom + scene.narrationDurationInFrames);
 
-            const appearAt = isFirst ? 0 : Math.min(MOTION.hold, Math.max(0, before - 1));
-            const fadeIn = Math.max(
-              1,
-              Math.min(isFirst ? MOTION.opener : MOTION.fadeIn, before - appearAt),
-            );
-            // The last slide leaves via the deck-wide closer instead, so it does not fade
-            // twice.
-            const fadeOut = isLast ? 0 : Math.max(0, Math.min(MOTION.fadeOut, after));
+              const appearAt = isFirst
+                ? 0
+                : Math.min(MOTION.hold, Math.max(0, before - 1));
+              const fadeIn = Math.max(
+                1,
+                Math.min(isFirst ? MOTION.opener : MOTION.fadeIn, before - appearAt),
+              );
+              // The last slide leaves via the deck-wide closer instead, so it does not fade
+              // twice.
+              const fadeOut = isLast ? 0 : Math.max(0, Math.min(MOTION.fadeOut, after));
 
-            return (
-              <Sequence
-                key={scene.ordinal}
-                from={scene.from}
-                durationInFrames={scene.durationInFrames}
-                layout="none"
-                name={`slide-${scene.ordinal}`}
-              >
-                <SceneLayer
-                  appearAt={appearAt}
-                  fadeIn={fadeIn}
-                  fadeOut={fadeOut}
+              return (
+                <Sequence
+                  key={scene.ordinal}
+                  from={scene.from}
                   durationInFrames={scene.durationInFrames}
+                  layout="none"
+                  name={`slide-${scene.ordinal}`}
                 >
-                  {/* Shifts the local frame so entrance motion starts when the slide
+                  <SceneLayer
+                    appearAt={appearAt}
+                    fadeIn={fadeIn}
+                    fadeOut={fadeOut}
+                    durationInFrames={scene.durationInFrames}
+                  >
+                    {/* Shifts the local frame so entrance motion starts when the slide
                     becomes visible rather than while it is still transparent. */}
-                  <Sequence from={appearAt} layout="none" name="content">
-                    <Slide
-                      scene={scene}
-                      slideCount={scenes.length}
-                      absoluteFrame={frame}
-                    />
-                  </Sequence>
-                </SceneLayer>
-              </Sequence>
-            );
-          })}
-        </AbsoluteFill>
+                    <Sequence from={appearAt} layout="none" name="content">
+                      <Slide
+                        scene={scene}
+                        slideCount={scenes.length}
+                        absoluteFrame={frame}
+                      />
+                    </Sequence>
+                  </SceneLayer>
+                </Sequence>
+              );
+            })}
 
-        {scenes.flatMap((scene) =>
-          scene.clips.map((clip, index) => (
-            <Sequence
-              key={`${scene.ordinal}-${index}`}
-              from={clip.from}
-              durationInFrames={clip.durationInFrames}
-              name={`narration-${scene.ordinal}-${index + 1}`}
-            >
-              <Audio src={staticFile(clip.src)} />
-            </Sequence>
-          )),
-        )}
-      </AbsoluteFill>
+            {/* Above every scene and inside none of them: no camera transform, no world scale and
+              no per-slide fade can reach it, which is the whole of why it stays still while the
+              picture moves. Inside the deck opacity, so the film still settles to background. */}
+            <Subtitles cues={timeline.subtitles} frame={frame} />
+          </AbsoluteFill>
+
+          {scenes.flatMap((scene) =>
+            scene.clips.map((clip, index) => (
+              <Sequence
+                key={`${scene.ordinal}-${index}`}
+                from={clip.from}
+                durationInFrames={clip.durationInFrames}
+                name={`narration-${scene.ordinal}-${index + 1}`}
+              >
+                <Audio src={staticFile(clip.src)} />
+              </Sequence>
+            )),
+          )}
+        </AbsoluteFill>
+      </SubtitleBandContext>
     </FactsContext>
   );
 }

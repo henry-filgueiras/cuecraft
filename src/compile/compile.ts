@@ -132,6 +132,15 @@ export interface CompiledPresentation {
   readonly slides: readonly CompiledSlide[];
   /** Handed to Remotion as its public directory; every `src` above is relative to it. */
   readonly publicDir: string;
+  /**
+   * Whether the deck asked for its narration on screen as well as in the air.
+   *
+   * Carried the way `title` is — forward, unread — because it is authored intent that only the
+   * renderer acts on. Nothing in this file branches on it, and that is the point: a subtitle is
+   * derived from the clips below *after* they exist, so it cannot reach anything that decides how
+   * long they are or where they go (`../render/subtitle.ts`).
+   */
+  readonly subtitles: boolean;
 }
 
 /**
@@ -320,5 +329,10 @@ export async function compilePresentation(
     });
   }
 
-  return { title: presentation.title, slides, publicDir };
+  return {
+    title: presentation.title,
+    slides,
+    publicDir,
+    subtitles: presentation.subtitles,
+  };
 }

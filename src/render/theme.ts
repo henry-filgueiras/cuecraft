@@ -568,6 +568,136 @@ export const FIGURE = {
  */
 export const BODY_CHAR_WIDTH = 0.52;
 
+/**
+ * How the narration is set when it is put on screen (`./subtitle.ts`).
+ *
+ * Presentation type, not caption type. Every other size in this file was chosen for a viewer
+ * across a room, and a subtitle set at the 34px a figure quotes a sentence at would be the one
+ * thing on the frame nobody could read from the back — which is the opposite of what it is for.
+ *
+ * The measure is `HEADING_WIDTH`, deliberately: every heading in the deck is capped at it, so a
+ * subtitle wraps on the same text edge as the title above it rather than on an edge of its own.
+ * Left-aligned against the same margin for the same reason. cuecraft has no centred text anywhere
+ * and a centred subtitle is the single strongest visual signal that captions were bolted on.
+ *
+ * `bottom` clears the progress rule; `gap` is the air between the composition and the band, and it
+ * is the deck's largest ordinary gap because the two are unrelated things that happen to share a
+ * frame.
+ */
+export const SUBTITLE = {
+  /** Largest a subtitle is ever set at. */
+  maxSize: 42,
+  /** Below this it stops being presentation type. */
+  minSize: 30,
+  lineHeight: 1.34,
+  /**
+   * Lines a subtitle is set to before the type steps down instead.
+   *
+   * A preference, not a limit. A sentence that will not fit in two lines at `minSize` takes the
+   * lines it needs, because unreadably small and cut off are two ways of doing the same forbidden
+   * thing to an utterance (decision:28).
+   */
+  lines: 2,
+  /** The speaker's name, in the deck's small-caps idiom. */
+  label: 24,
+  labelTracking: "0.18em",
+  labelGap: 14,
+  /** Above the progress rule. */
+  bottom: 44,
+  /** Between the composition and the band beneath it. */
+  gap: SPACE.lg,
+  /**
+   * The difference between counting characters and breaking at spaces.
+   *
+   * Every fitting rule in this file estimates a line break by dividing a character count by an
+   * average advance width, because composition has to resolve without a browser. That estimate is
+   * good for a *measure* and optimistic for a *wrap*: a real line ends at the last space that
+   * fits, so it gives back up to a word. A figure absorbs the difference by growing a row. A
+   * subtitle cannot — the room it occupies was subtracted from the composition above it before
+   * anything was drawn, so a third line where two were reserved would hang off the bottom of the
+   * frame.
+   *
+   * So the fit is computed against a slightly narrower measure than the one the text is set to.
+   * Six percent of `HEADING_WIDTH` at the largest size is about four characters, which is a long
+   * word, and stepping down two pixels early is invisible where an overflowing line is not.
+   */
+  wrapSlack: 0.94,
+} as const;
+
+/**
+ * A colour per narrator, in the order the film first hears them.
+ *
+ * Four, and every one of them is a colour this deck already owns: the accent that means "narration
+ * has been here" everywhere else in cuecraft, then the three the figures use to separate what was
+ * authored from what was derived from what was measured. Nothing new was mixed, and no hue rotation
+ * or generated ramp stands behind this — narrators are a small closed set in a deck, not a
+ * continuum, so a list is the honest shape.
+ *
+ * The first entry is the accent because the first voice is the deck's own voice. Past the fourth
+ * the list repeats, which is a limit rather than a failure: colour here is a *second* carrier of
+ * identity and never the only one, so a fifth narrator sharing the first one's hue still has their
+ * name written above every line they speak.
+ */
+export const SPEAKER_COLORS: readonly string[] = [
+  COLORS.accent,
+  FIGURE.authored,
+  FIGURE.time,
+  "#C6CBEA",
+];
+
+/**
+ * The largest size at which every subtitle in the deck fits its measure in `SUBTITLE.lines`.
+ *
+ * Fitted across every sentence the film will show rather than one at a time — `fitQuote`'s move,
+ * for `fitQuote`'s reason, and it matters more here than it does there. Type that resized whenever
+ * the narration moved on would put a change of size under every full stop, and a subtitle is
+ * supposed to be the least eventful thing on the frame.
+ */
+export function fitSubtitle(
+  displayed: readonly string[],
+  width: number,
+): { readonly size: number; readonly lines: number } {
+  const longest = Math.max(1, ...displayed.map((text) => text.length));
+  const measure = width * SUBTITLE.wrapSlack;
+  for (let size = SUBTITLE.maxSize; size >= SUBTITLE.minSize; size -= 2) {
+    if (quoteLines(longest, measure, size) <= SUBTITLE.lines) {
+      return { size, lines: SUBTITLE.lines };
+    }
+  }
+  return {
+    size: SUBTITLE.minSize,
+    lines: quoteLines(longest, measure, SUBTITLE.minSize),
+  };
+}
+
+/**
+ * The room a composition gives up so that a subtitle is never read over it.
+ *
+ * The alternative — lay the deck out exactly as before and put the words on top — is what a caption
+ * track does to a video it was added to afterwards, and it is wrong here for a specific reason:
+ * cuecraft's compositions do not leave space, they *fill* the box they are given. A specimen is
+ * sized to its box, a formula to its height, a figure counts how many whole sentences fit under its
+ * heading. Every one of them would run underneath a subtitle, and the subtitle would be sitting on
+ * the part of the explanation the sentence was about.
+ *
+ * So the band is subtracted from the box before anything is laid out, and it is deck-wide and
+ * derived: one number, from the fitted size and the lines the deck's longest sentence needs, so
+ * that the composition above it never moves between slides.
+ *
+ * Zero when the deck asked for no subtitles, which is every deck written before they existed.
+ */
+export function subtitleBand(
+  fitted: { size: number; lines: number; labelled: boolean } | undefined,
+): number {
+  if (fitted === undefined) return 0;
+  return (
+    SUBTITLE.bottom +
+    Math.ceil(fitted.size * SUBTITLE.lineHeight * fitted.lines) +
+    (fitted.labelled ? SUBTITLE.labelGap + Math.ceil(SUBTITLE.label * 1.1) : 0) +
+    SUBTITLE.gap
+  );
+}
+
 /** Leading a quoted sentence is set on, and the height a block of `lines` of it occupies. */
 export const QUOTE_LEADING = 1.26;
 
@@ -631,21 +761,23 @@ export const HEADING_WIDTH = 1500;
  * that calls `fitSpecimen` (`./projection.ts`), and so does a figure deciding how many rows of
  * complete sentences it has room for (`./figures.tsx`).
  */
-export function bodyBox(title: string): { width: number; height: number } {
+export function bodyBox(title: string, band = 0): { width: number; height: number } {
   const titleSize = fitHeading(title.length, TYPE.title);
   const titleHeight =
     headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
   return {
     width: 1920 - 2 * FRAME.marginX,
     // The 6 is the accent rule above the heading; SPACE.lg sits under it, SPACE.xl under
-    // the title.
-    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl,
+    // the title. `band` is the room a subtitle takes out of the bottom (`subtitleBand`), and it
+    // is zero unless the deck asked for one — which is what makes every existing deck lay out
+    // exactly as it did before.
+    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl - band,
   };
 }
 
 /** The same box, less the gutter a specimen keeps for its activation marks. */
-export function codeBox(title: string): { width: number; height: number } {
-  const box = bodyBox(title);
+export function codeBox(title: string, band = 0): { width: number; height: number } {
+  const box = bodyBox(title, band);
   return { width: box.width - CODE.gutter, height: box.height };
 }
 

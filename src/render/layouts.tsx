@@ -57,6 +57,7 @@ import {
   type ProtocolLayout,
 } from "./protocol.ts";
 import { tenantAt } from "./tenancy.ts";
+import { useSubtitleBand } from "./subtitles.tsx";
 import {
   CODE,
   CODE_COLORS,
@@ -175,6 +176,11 @@ function Frame({
   bleed?: boolean;
   children: ReactNode;
 }) {
+  // What a subtitle costs the composition: nothing at all unless the deck asked for one, and
+  // otherwise a strip along the bottom that nothing is laid out into (`./subtitles.tsx`). A
+  // bleeding composition has no margin to give up and is overlaid instead — dragon:21.
+  const band = useSubtitleBand();
+
   if (bleed) {
     return (
       <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
@@ -186,7 +192,7 @@ function Frame({
     <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
       <AbsoluteFill
         style={{
-          padding: `${FRAME.marginY}px ${FRAME.marginX}px`,
+          padding: `${FRAME.marginY}px ${FRAME.marginX}px ${FRAME.marginY + band}px`,
           display: "flex",
           flexDirection: "column",
         }}
@@ -589,6 +595,7 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
  */
 function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const band = useSubtitleBand();
   const body = scene.body;
   if (body.kind !== "code") return null;
 
@@ -599,7 +606,7 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 
   const fit = fitProjection(
     lines.map((line) => [line]),
-    codeBox(scene.title),
+    codeBox(scene.title, band),
   );
   const fragments = projectLines(lines, fit.columns);
   const size = fit.size;
@@ -730,6 +737,7 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
  */
 function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const band = useSubtitleBand();
   const body = scene.body;
   const derived = useMemo(
     () =>
@@ -752,7 +760,7 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
         ? [row.text]
         : [row.removed, row.added].filter((text): text is string => text !== undefined),
     ),
-    codeBox(scene.title),
+    codeBox(scene.title, band),
   );
   const size = fit.size;
   const rowHeight = size * CODE.lineHeight;

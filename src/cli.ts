@@ -172,6 +172,7 @@ async function runRender(
         `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
         `  narration kept in ${summary.workspace}\n` +
+        describeSubtitles(timeline) +
         describeLanes(timeline) +
         describeDescent(timeline),
     );
@@ -199,6 +200,26 @@ async function runRender(
 function describeVoices(narration: { clips: readonly { voice: string }[] }): string {
   const voices = [...new Set(narration.clips.map((clip) => clip.voice))];
   return voices.length === 0 ? "no speech" : voices.join(", ");
+}
+
+/**
+ * The subtitle track, when the deck asked for one.
+ *
+ * Silent otherwise, like every other line here that reports something a deck did not do. What is
+ * worth printing is the count and the cast, because both are *derived*: the cues are one per
+ * synthesized clip, and whether a speaker is labelled at all depends on whether the film changes
+ * hands rather than on what the deck declared. An author who expected a label and got none should
+ * be able to see why without opening a video.
+ */
+function describeSubtitles(timeline: Timeline): string {
+  const cues = timeline.subtitles;
+  if (cues.length === 0) return "";
+  const speakers = [...new Set(cues.map((cue) => cue.speaker?.name).filter(Boolean))];
+  return (
+    `  subtitles ${cues.length} cue${cues.length === 1 ? "" : "s"}` +
+    (speakers.length === 0 ? ", unlabelled" : `, labelled ${speakers.join(", ")}`) +
+    "\n"
+  );
 }
 
 /**

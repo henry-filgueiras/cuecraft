@@ -38,6 +38,7 @@ const PLACEHOLDER: Timeline = {
     clips: [],
     anchors: [],
   },
+  subtitles: [],
 };
 
 function Root() {
