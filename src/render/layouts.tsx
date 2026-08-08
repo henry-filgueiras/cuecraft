@@ -59,6 +59,7 @@ import {
 import { tenantAt } from "./tenancy.ts";
 import { useSubtitleBand } from "./subtitles.tsx";
 import {
+  CASCADE,
   CODE,
   CODE_COLORS,
   COLORS,
@@ -67,14 +68,19 @@ import {
   FONT_STACK,
   FRAME,
   HEADING_WIDTH,
+  INDEX,
   MONO_STACK,
   MOTION,
   SPACE,
   TRANSCRIPT,
   TYPE,
   WORLD,
+  bodyBox,
   codeBox,
+  frameBottom,
+  fitCascade,
   fitHeading,
+  fitIndex,
   fitTerm,
   flowColor,
   mix,
@@ -192,7 +198,7 @@ function Frame({
     <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
       <AbsoluteFill
         style={{
-          padding: `${FRAME.marginY}px ${FRAME.marginX}px ${FRAME.marginY + band}px`,
+          padding: `${FRAME.marginY}px ${FRAME.marginX}px ${frameBottom(band)}px`,
           display: "flex",
           flexDirection: "column",
         }}
@@ -407,6 +413,14 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
   const frame = useCurrentFrame();
   const rows = items(scene.body);
   const stateOf = anchorStatesFor(scene, absoluteFrame);
+  // How much room there is, and what size and air the rows can afford in it. This composition
+  // used to answer both questions with constants, which was invisible for as long as the box was
+  // always the same box — see `fitIndex` for what a subtitle band did to that. sprint:14.
+  const band = useSubtitleBand();
+  const fitted = fitIndex(
+    rows.map((row) => row.text),
+    bodyBox(scene.title, band),
+  );
 
   return (
     <>
@@ -414,6 +428,11 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
       <div
         style={{
           flex: 1,
+          // Without this the stack keeps its intrinsic height and runs straight past `Frame`'s
+          // bottom padding — which is the band — because a flex item's `min-height` resolves to
+          // `auto`. `fitIndex` is what stops it coming to that; this is what stops it being a
+          // collision when it does.
+          minHeight: 0,
           display: "flex",
           flexDirection: "column",
           justifyContent: "flex-end",
@@ -429,9 +448,9 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
                 position: "relative",
                 display: "flex",
                 alignItems: "baseline",
-                gap: SPACE.xl,
-                paddingTop: SPACE.lg,
-                paddingBottom: SPACE.lg,
+                gap: INDEX.gutter,
+                paddingTop: fitted.pad,
+                paddingBottom: fitted.pad,
                 borderTop: `1px solid ${COLORS.hairline}`,
                 // The closing rule belongs to the last row, not to the container: on the
                 // container it draws before any row has arrived, leaving a line under an
@@ -459,7 +478,7 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
               <span
                 style={{
                   flex: "none",
-                  width: 92,
+                  width: INDEX.ordinal,
                   fontSize: TYPE.ordinal,
                   fontWeight: 700,
                   letterSpacing: "0.06em",
@@ -471,10 +490,10 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
               </span>
               <span
                 style={{
-                  fontSize: TYPE.row,
+                  fontSize: fitted.size,
                   fontWeight: 400,
                   letterSpacing: "-0.014em",
-                  lineHeight: 1.16,
+                  lineHeight: INDEX.lineHeight,
                   ...establishedText(state, COLORS.paper),
                 }}
               >
@@ -506,6 +525,14 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // Far enough that the descent is unmistakably diagonal rather than a slightly ragged
   // left edge; close enough that the last stage's rule still has real length.
   const step = stages.length > 4 ? SPACE.xxl : SPACE.huge;
+  // The staircase, sized to the room it actually has. Air goes before type, because the descent
+  // is carried by the indent and the rules rather than by the space around them. sprint:14.
+  const band = useSubtitleBand();
+  const fitted = fitCascade(
+    stages.map((stage) => stage.text),
+    bodyBox(scene.title, band),
+    step,
+  );
 
   return (
     <>
@@ -513,11 +540,17 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
       <div
         style={{
           flex: 1,
+          // See `IndexList`: a flex item's `min-height` is `auto`, so without this the staircase
+          // keeps its intrinsic height and descends through the narration.
+          minHeight: 0,
           display: "flex",
           flexDirection: "column",
+          // Whatever `fitCascade` did not have to spend is spread between the stages rather than
+          // pooled under the last one, which is what keeps a short staircase from sitting in the
+          // top half of an empty frame.
           justifyContent: "space-between",
           marginTop: SPACE.xl,
-          paddingBottom: SPACE.md,
+          paddingBottom: fitted.gap,
         }}
       >
         {stages.map((stage, index) => {
@@ -535,10 +568,10 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
             >
               <div
                 style={{
-                  fontSize: TYPE.stage,
+                  fontSize: fitted.size,
                   fontWeight: 500,
                   letterSpacing: "-0.018em",
-                  lineHeight: 1.1,
+                  lineHeight: CASCADE.lineHeight,
                   ...establishedText(state, COLORS.paper),
                 }}
               >
@@ -547,8 +580,8 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
               <div
                 style={{
                   position: "relative",
-                  marginTop: SPACE.md,
-                  height: 3,
+                  marginTop: fitted.gap,
+                  height: CASCADE.ruleHeight,
                   backgroundColor: COLORS.hairline,
                 }}
               >
@@ -1335,6 +1368,22 @@ function Atlas({
 }) {
   const frame = useCurrentFrame();
   const world = worldOf(scene.body);
+  // The one composition that has no margin to give up, so it gives up the shot instead.
+  //
+  // `Frame` lets an atlas bleed because a place larger than the window has no edges to respect,
+  // and dragon:21 accepted that a subtitle would therefore be *overlaid* on it. Watched on
+  // `examples/orpheus-failover.yaml`, that turned out to be worse than it sounds: a world node is
+  // a filled plate with its own glow, and `HALO` is tuned for text over a field, so the node's
+  // label and the sentence annihilate each other rather than one winning. The frame that decided
+  // it prints "traffic" on top of "that now".
+  //
+  // So the camera is handed the region the narration left rather than the whole frame. It is told
+  // about a smaller *viewport*, and nothing else: the same events, the same span, the same shots
+  // in the same order at the same frames. Zero without subtitles, which is why every world deck
+  // written before this renders byte-identical.
+  const band = useSubtitleBand();
+  const viewport = { width: 1920, height: 1080 - band };
+  const aspect = viewport.width / viewport.height;
   const layout = useMemo(
     () => (world === undefined ? undefined : layoutWorld(world)),
     [world],
@@ -1369,18 +1418,17 @@ function Atlas({
         };
       }),
       { from: span?.from ?? scene.from, until: span?.until ?? revealFrom(scene) },
-      16 / 9,
+      aspect,
       {
         calls: scheduledCalls(scene, scope),
         ...(span?.revealTravel === undefined ? {} : { revealTravel: span.revealTravel }),
       },
     );
-  }, [layout, world, scene, scope, span]);
+  }, [layout, world, scene, scope, span, aspect]);
 
   if (layout === undefined || world === undefined || plan === undefined) return null;
 
   const view = cameraAt(plan.track, absoluteFrame);
-  const viewport = { width: 1920, height: 1080 };
   const scale = viewport.width / view.width;
   /** How wide the shot that holds the whole world is, for judging how wide this one is. */
   const whole = plan.track[0]?.view.width ?? view.width;
@@ -2278,21 +2326,30 @@ function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: num
     () => (protocol === undefined ? undefined : layoutProtocol(protocol)),
     [protocol],
   );
+  // The atlas's argument, applied to the other composition that bleeds. A transcript has never
+  // actually been caught printing traffic on a sentence — `TRANSCRIPT.lookaheadRows` keeps a row
+  // of unhappened messages below the active one, so the bottom of the frame is usually field —
+  // but "usually" is what dragon:21 said about the atlas too, and the same one-line answer is
+  // available here. Zero without subtitles.
+  const band = useSubtitleBand();
+  const viewport = { width: 1920, height: 1080 - band };
+  const aspect = viewport.width / viewport.height;
   const plan = useMemo(
     () =>
       layout === undefined
         ? undefined
-        : transcriptPlan(layout, scene.beats, {
-            from: scene.from,
-            until: scene.from + scene.durationInFrames,
-          }),
-    [layout, scene],
+        : transcriptPlan(
+            layout,
+            scene.beats,
+            { from: scene.from, until: scene.from + scene.durationInFrames },
+            aspect,
+          ),
+    [layout, scene, aspect],
   );
 
   if (layout === undefined || plan === undefined) return null;
 
   const view = cameraAt(plan.track, absoluteFrame);
-  const viewport = { width: 1920, height: 1080 };
   const scale = viewport.width / view.width;
 
   // Which step the film is on, and therefore how far back every other one is. One number, read
@@ -2418,7 +2475,14 @@ function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: num
         }}
       />
 
-      <Rail layout={layout} view={view} lit={lit} opening={opening} current={current} />
+      <Rail
+        layout={layout}
+        view={view}
+        aspect={aspect}
+        lit={lit}
+        opening={opening}
+        current={current}
+      />
 
       <div
         style={{
@@ -2842,17 +2906,20 @@ function MessageLabel({
 function Rail({
   layout,
   view,
+  aspect,
   lit,
   opening,
   current,
 }: {
   layout: ProtocolLayout;
   view: Viewport;
+  /** The shot's own aspect, which is the frame's only when no subtitle has taken a strip of it. */
+  aspect: number;
   lit: (lane: Lane) => boolean;
   opening: number;
   current: number;
 }) {
-  const shown = viewRect(view);
+  const shown = viewRect(view, aspect);
   const cast = layout.cast;
   const visible =
     Math.max(

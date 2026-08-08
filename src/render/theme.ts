@@ -186,10 +186,25 @@ export function fitHeading(length: number, base: number): number {
 /**
  * Average advance width of the heading face, as a fraction of the font size.
  *
- * Helvetica Neue Bold at display sizes, measured across the deck's own titles. Close enough to
- * predict a line break, which is all it is for.
+ * Helvetica Neue Bold at display sizes. Close enough to predict a line break, which is all it is
+ * for — and now actually measured rather than estimated: "WitnessGlass records the work" is 29
+ * characters set at 104px and renders 1475px wide, which is 0.489.
+ *
+ * The 0.5 it replaces was a guess, and a guess that rounded the wrong way at exactly one boundary:
+ * 29 characters at 104px came out one character over the measure, so `headingLines` reported two
+ * lines for a title that renders on one, and `bodyBox` handed the composition beneath it 110px
+ * less than it had. That is harmless where the answer is a slightly smaller specimen and visible
+ * where the answer is a numbered row stepping down two sizes (`fitIndex`, sprint:14).
+ *
+ * Two of the 55 titles in `examples/` change line count under this correction — "WitnessGlass
+ * records the work" and "Coding agents are black boxes", both 29 characters, both rendering on one
+ * line in every cut of the film. No specimen, formula or figure moves.
+ *
+ * It is still an estimate of a proportional face and it is still host-dependent (dragon:4). What
+ * it must not become is *optimistic*: a heading that wraps where this says it does not takes room
+ * the body was promised.
  */
-const HEADING_CHAR_WIDTH = 0.5;
+const HEADING_CHAR_WIDTH = 0.49;
 
 /**
  * How many lines a heading of this length wraps to.
@@ -569,6 +584,170 @@ export const FIGURE = {
 export const BODY_CHAR_WIDTH = 0.52;
 
 /**
+ * How a numbered row and a staircase stage are set, and how tight either may get.
+ *
+ * These two archetypes are the last stacked compositions in the deck that sized themselves from
+ * constants rather than from the box they were handed. That was invisible for as long as the box
+ * was always the same box. It stopped being invisible when a subtitle started taking a strip out
+ * of the bottom of it: `Frame` applies the band as bottom padding, the padding is honoured, and a
+ * `flex: 1` container whose `min-height` resolves to `auto` refuses to shrink below its intrinsic
+ * height — so the stack ran straight past the padding and printed on the narration. Measured on
+ * `witnessglass`, subtitles off put the closing hairline at y=971 against a content box ending at
+ * 972; subtitles on put it at y=879 against a box ending at 734.
+ *
+ * So both now do what `fitSpecimen`, `fitQuote`, `fitFigure` and `fitFormula` have always done:
+ * ask how much room there is and take that much. Same shape as the rest — step the type down,
+ * stop at a floor where it stops being presentation type.
+ *
+ * `pad` is a row's own air and it is spent *before* the type is, which is the one asymmetry worth
+ * explaining. A row loses air more gracefully than it loses size: a viewer at the back of a room
+ * cannot read 34px from a slide, and cannot tell 40px of leading from 24px at all.
+ */
+export const INDEX = {
+  /** The air above and below a row when the box is not asking for any of it back. */
+  pad: SPACE.lg,
+  /** ...and the least it keeps before the type starts stepping down instead. */
+  minPad: SPACE.xs,
+  /** Below this a numbered row stops being presentation type. */
+  minSize: 38,
+  /** The leading a row is set on. The same number `IndexList` sets, and it has to stay that way. */
+  lineHeight: 1.16,
+  /** The ordinal's column, and the gutter between it and the row. */
+  ordinal: 92,
+  gutter: SPACE.xl,
+} as const;
+
+export const CASCADE = {
+  /** Below this a stage stops carrying a slide. */
+  minSize: 44,
+  lineHeight: 1.1,
+  ruleHeight: 3,
+  /** The air a stage keeps above its rule and below the stage before it, given the room. */
+  gap: SPACE.md,
+  /** ...and the least it keeps before the type steps down instead. */
+  minGap: SPACE.xs,
+} as const;
+
+/**
+ * The largest size at which every numbered row fits the box, and the air each row keeps.
+ *
+ * Rows that wrap are counted as the lines they take, at the measure left once the ordinal column
+ * and its gutter are gone — the same estimate every other fitter in this file works from.
+ *
+ * `bodyBox` models the gap under a heading as `SPACE.xl` and `IndexList` spends `SPACE.lg` on it,
+ * so this fit is conservative by 24px and deliberately left that way. A fitter that under-reports
+ * its room gives a slide slightly more air than it asked for; one that over-reports prints on the
+ * narration.
+ */
+export function fitIndex(
+  rows: readonly string[],
+  box: { readonly width: number; readonly height: number },
+): { readonly size: number; readonly pad: number } {
+  for (let size = TYPE.row; size >= INDEX.minSize; size -= 2) {
+    const pad = indexPad(rows, size, box);
+    if (pad >= INDEX.minPad) return { size, pad: Math.min(pad, INDEX.pad) };
+  }
+  return { size: INDEX.minSize, pad: INDEX.minPad };
+}
+
+/** The air each row can afford at this size, before it is capped at what a row actually wants. */
+function indexPad(
+  rows: readonly string[],
+  size: number,
+  box: { readonly width: number; readonly height: number },
+): number {
+  const spare = box.height - indexText(rows, size, box.width) - (rows.length + 1);
+  return Math.floor(spare / (2 * Math.max(1, rows.length)));
+}
+
+function indexText(rows: readonly string[], size: number, width: number): number {
+  const measure = width - INDEX.ordinal - INDEX.gutter;
+  return rows.reduce(
+    (sum, row) =>
+      sum + Math.ceil(quoteLines(row.length, measure, size) * size * INDEX.lineHeight),
+    0,
+  );
+}
+
+/** The height `fitIndex`'s answer actually occupies, which is what has to fit. */
+export function indexHeight(
+  rows: readonly string[],
+  fitted: { readonly size: number; readonly pad: number },
+  width: number,
+): number {
+  return (
+    indexText(rows, fitted.size, width) + rows.length + 1 + 2 * fitted.pad * rows.length
+  );
+}
+
+/**
+ * The largest size at which the whole staircase fits, and the air it keeps between stages.
+ *
+ * A stage's measure narrows as it descends, because the staircase is built by indenting each one
+ * further than the last — so the bottom stage is the one that wraps first, which is exactly the
+ * stage sitting closest to the narration.
+ *
+ * Air before type, for `fitIndex`'s reason: the staircase's structure is carried by the indent and
+ * the rules, so it survives being tightened in a way it would not survive being shrunk.
+ */
+export function fitCascade(
+  stages: readonly string[],
+  box: { readonly width: number; readonly height: number },
+  step: number,
+): { readonly size: number; readonly gap: number } {
+  for (let size = TYPE.stage; size >= CASCADE.minSize; size -= 2) {
+    const gap = cascadeGap(stages, size, box, step);
+    if (gap >= CASCADE.minGap) return { size, gap: Math.min(gap, CASCADE.gap) };
+  }
+  return { size: CASCADE.minSize, gap: CASCADE.minGap };
+}
+
+/**
+ * Every stage keeps one gap above its rule and one below itself, so `2n` of them in all.
+ *
+ * `bodyBox` already spent `SPACE.xl` on the gap under the heading, which is exactly what
+ * `Cascade`'s container puts there, so unlike `fitIndex` this arithmetic is exact.
+ */
+function cascadeGap(
+  stages: readonly string[],
+  size: number,
+  box: { readonly width: number; readonly height: number },
+  step: number,
+): number {
+  const fixed =
+    cascadeText(stages, size, box.width, step) + stages.length * CASCADE.ruleHeight;
+  return Math.floor((box.height - fixed) / (2 * Math.max(1, stages.length)));
+}
+
+function cascadeText(
+  stages: readonly string[],
+  size: number,
+  width: number,
+  step: number,
+): number {
+  return stages.reduce((sum, stage, index) => {
+    const measure = Math.max(1, width - index * step);
+    return (
+      sum + Math.ceil(quoteLines(stage.length, measure, size) * size * CASCADE.lineHeight)
+    );
+  }, 0);
+}
+
+/** The height a fitted staircase occupies, counting the air `fitCascade` gave it. */
+export function cascadeHeight(
+  stages: readonly string[],
+  fitted: { readonly size: number; readonly gap: number },
+  width: number,
+  step: number,
+): number {
+  return (
+    cascadeText(stages, fitted.size, width, step) +
+    stages.length * CASCADE.ruleHeight +
+    2 * fitted.gap * stages.length
+  );
+}
+
+/**
  * How the narration is set when it is put on screen (`./subtitle.ts`).
  *
  * Presentation type, not caption type. Every other size in this file was chosen for a viewer
@@ -792,11 +971,29 @@ export function bodyBox(title: string, band = 0): { width: number; height: numbe
   return {
     width: 1920 - 2 * FRAME.marginX,
     // The 6 is the accent rule above the heading; SPACE.lg sits under it, SPACE.xl under
-    // the title. `band` is the room a subtitle takes out of the bottom (`subtitleBand`), and it
-    // is zero unless the deck asked for one — which is what makes every existing deck lay out
-    // exactly as it did before.
-    height: 1080 - 2 * FRAME.marginY - 6 - SPACE.lg - titleHeight - SPACE.xl - band,
+    // the title. `frameBottom` is what the bottom of the frame is spent on, which is the margin
+    // or the band, whichever is larger — never both.
+    height:
+      1080 - FRAME.marginY - frameBottom(band) - 6 - SPACE.lg - titleHeight - SPACE.xl,
   };
+}
+
+/**
+ * What the bottom of the frame is spent on: the margin, or the band, whichever is larger.
+ *
+ * Never both, which is what it used to be. `Frame` padded `marginY + band` and `bodyBox` subtracted
+ * the same, so a subtitled composition gave up 108px of margin *underneath* a band that already
+ * ends in `SUBTITLE.gap` — 148px of air where 40 was designed, on every subtitled deck. It went
+ * unnoticed because nothing was drawn in it; it stopped being free the moment `fitIndex` started
+ * spending a slide's type and air against what was left (sprint:14).
+ *
+ * A band is always larger than the margin in practice — the smallest one a deck can produce is
+ * around 200px — so this is `band` whenever there is one and `marginY` whenever there is not. The
+ * `max` is there so that a hypothetically tiny band cannot pull the composition past the margin
+ * every other slide in the deck shares.
+ */
+export function frameBottom(band: number): number {
+  return band === 0 ? FRAME.marginY : Math.max(FRAME.marginY, band);
 }
 
 /** The same box, less the gutter a specimen keeps for its activation marks. */

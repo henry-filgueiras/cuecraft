@@ -2,8 +2,9 @@
 id: drg_01KZHKCC9ZA0JBFAJN0DZDA9P4
 sequence: 21
 kind: dragon
-status: open
+status: closed
 created: 2026-08-08
+resolved-by: "[[dec_01KZHTVPFQ43296K26YHCKP26E|Let a composition be laid out inside the box it was given]]"
 ---
 
 # A bleeding composition has no room to give a subtitle

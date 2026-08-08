@@ -3,20 +3,29 @@ import { test } from "node:test";
 
 import {
   bodyBox,
+  CASCADE,
+  cascadeHeight,
   codeBox,
   CODE,
   COLORS,
   FIGURE,
+  FRAME,
+  fitCascade,
+  fitIndex,
+  indexHeight,
+  INDEX,
   fitHeading,
   fitQuote,
   fitSpecimen,
   fitSubtitle,
   fitTerm,
+  frameBottom,
   headingLines,
   HEADING_WIDTH,
   mix,
   quoteHeight,
   quoteLines,
+  SPACE,
   SPEAKER_COLORS,
   SUBTITLE,
   subtitleBand,
@@ -169,16 +178,34 @@ test("a deck without subtitles is laid out exactly as it always was", () => {
   assert.equal(subtitleBand(undefined), 0);
 });
 
-test("the band comes out of the composition's height and nothing else", () => {
+test("the band replaces the bottom margin rather than stacking on top of it", () => {
+  // sprint:14. This used to assert `- band`, and `Frame` padded `marginY + band` to match, so a
+  // subtitled composition gave up 108px of margin *underneath* a band that already ends in
+  // `SUBTITLE.gap`. Free while nothing was laid out against what was left; not free once
+  // `fitIndex` was.
   const title = "Author relationships. Derive mechanics.";
   const band = subtitleBand({ size: SUBTITLE.maxSize, lines: SUBTITLE.lines });
-  assert.ok(band > 0);
-  assert.equal(bodyBox(title, band).height, bodyBox(title).height - band);
+  assert.ok(
+    band > FRAME.marginY,
+    "a real band is always deeper than the margin it replaces",
+  );
+  assert.equal(frameBottom(0), FRAME.marginY);
+  assert.equal(frameBottom(band), band);
+  assert.ok(
+    Math.abs(
+      bodyBox(title, band).height - (bodyBox(title).height - (band - FRAME.marginY)),
+    ) < 0.001,
+  );
   assert.equal(
     bodyBox(title, band).width,
     bodyBox(title).width,
     "the measure is untouched",
   );
+});
+
+test("a band shallower than the margin never pulls the composition past it", () => {
+  assert.equal(frameBottom(10), FRAME.marginY);
+  assert.equal(bodyBox("A title", 10).height, bodyBox("A title").height);
 });
 
 test("the band reserves the metadata row whether or not anybody was named", () => {
@@ -226,6 +253,157 @@ test("a fitted subtitle always has room for every line it was measured at", () =
     const fitted = fitSubtitle(["x".repeat(length)], HEADING_WIDTH);
     assert.ok(quoteLines(length, HEADING_WIDTH, fitted.size) <= fitted.lines);
   }
+});
+
+/* ------------------------------- a stacked composition inside the box it was given */
+
+/**
+ * The four decks that mattered, at the shapes that mattered.
+ *
+ * `witnessglass` is the case that always fitted — a one-line title over four short rows — and its
+ * job here is to prove the fitters give a deck with room to spare the full size and the full air.
+ * The other three are the shapes that overflowed: a wrapped title over a full-width stack, which
+ * is what `index` and `cascade` had never been given before a subtitle took a strip out of the
+ * bottom of the frame. sprint:14.
+ */
+const STACKS = [
+  {
+    title: "WitnessGlass records the work",
+    rows: [
+      "Which tool the agent invoked",
+      "How long the call took",
+      "What the tool returned",
+      "Why it was called at all",
+    ],
+  },
+  {
+    title: "Risk posture: circulated at 08:00",
+    rows: [
+      "Data loss — low",
+      "Rollback duration — medium",
+      "Operator fatigue — low",
+      "Unknown dependencies — not observed",
+    ],
+  },
+  {
+    title: "The decision the exercise is supposed to inform",
+    rows: [
+      "Preserve customer writes",
+      "Meet the recovery objective",
+      "Verify one primary region",
+      "Authorize automated failover",
+    ],
+  },
+  {
+    title: "Reconciliation findings at 14:30, 14:19, and Tuesday",
+    rows: [
+      "Customer balances — consistent",
+      "Order identifiers — mostly unique",
+      "Incident commander — active in both regions",
+      "Lunch — consumed twice",
+    ],
+  },
+] as const;
+
+/** Every band these decks actually produce, plus none at all. */
+const BANDS = [0, 197, 206, 238] as const;
+
+test("a numbered list is laid out inside the box, at every band", () => {
+  for (const band of BANDS) {
+    for (const deck of STACKS) {
+      const box = bodyBox(deck.title, band);
+      const fitted = fitIndex(deck.rows, box);
+      assert.ok(
+        indexHeight(deck.rows, fitted, box.width) <= box.height,
+        `${deck.title} at band ${band} overflows by ` +
+          `${indexHeight(deck.rows, fitted, box.width) - box.height}px`,
+      );
+      assert.ok(fitted.size >= INDEX.minSize);
+      assert.ok(fitted.pad >= INDEX.minPad);
+    }
+  }
+});
+
+test("the overflow this round fixed is the one the renders showed", () => {
+  // What the archetype did before it asked: `TYPE.row` and `SPACE.lg`, unconditionally. Pinned
+  // rather than described, because "it used to overflow" is the claim the fix rests on, and the
+  // frames that proved it are not in the repository.
+  const deck = STACKS[2];
+  if (deck === undefined) throw new Error("fixture missing");
+  const box = bodyBox(deck.title, 206);
+  assert.ok(
+    indexHeight(deck.rows, { size: TYPE.row, pad: SPACE.lg }, box.width) > box.height,
+    "the unfitted constants must not fit, or this test is not watching the defect",
+  );
+  assert.ok(indexHeight(deck.rows, fitIndex(deck.rows, box), box.width) <= box.height);
+});
+
+test("a deck with room to spare keeps full size and full air", () => {
+  const deck = STACKS[0];
+  if (deck === undefined) throw new Error("fixture missing");
+  const fitted = fitIndex(deck.rows, bodyBox(deck.title, 0));
+  assert.equal(fitted.size, TYPE.row, "nothing steps down until something has to");
+  assert.equal(fitted.pad, INDEX.pad);
+});
+
+test("a staircase is laid out inside the box, at every band", () => {
+  const stairs = [
+    {
+      title: "Assumptions requiring confirmation",
+      stages: [
+        "All write paths are known",
+        "The schema migration is reversible",
+        "The on-call team will remain conscious",
+        "Time stays linear during the freeze window",
+      ],
+    },
+    {
+      title: "Risk posture after consulting the version of us from tomorrow",
+      stages: [
+        "Data loss remains low",
+        "Causality loss is unquantified",
+        "Rollback may create another Wednesday",
+        "Operator fatigue has achieved replication",
+      ],
+    },
+    {
+      title: "Approved recovery sequence and one unauthorized event",
+      stages: [
+        "Freeze writes in West",
+        "Promote the East replica",
+        "Shift customer traffic east",
+        "Reconcile and fail back",
+      ],
+    },
+  ];
+  for (const band of BANDS) {
+    for (const deck of stairs) {
+      const box = bodyBox(deck.title, band);
+      const step = deck.stages.length > 4 ? SPACE.xxl : SPACE.huge;
+      const fitted = fitCascade(deck.stages, box, step);
+      assert.ok(
+        cascadeHeight(deck.stages, fitted, box.width, step) <= box.height,
+        `${deck.title} at band ${band} overflows by ` +
+          `${cascadeHeight(deck.stages, fitted, box.width, step) - box.height}px`,
+      );
+      assert.ok(fitted.size >= CASCADE.minSize);
+    }
+  }
+});
+
+test("the bottom stage is the one that wraps, because it is the most indented", () => {
+  // Which is also the stage sitting closest to the narration, so this is the measurement the
+  // fitter most needs to get right.
+  const stages = [
+    "A stage long enough that the measure it is given decides how many lines it takes",
+    "A stage long enough that the measure it is given decides how many lines it takes",
+  ];
+  const fitted = { size: TYPE.stage, gap: SPACE.md };
+  assert.ok(
+    cascadeHeight(stages, fitted, 1656, SPACE.huge) >
+      cascadeHeight(stages, fitted, 1656, 0),
+    "indenting a staircase costs measure, and measure costs lines",
+  );
 });
 
 test("every narrator colour is one of the deck's own, and they are distinct", () => {
