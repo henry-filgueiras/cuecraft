@@ -46,6 +46,10 @@ const FORBIDDEN_KEYS: Record<string, string> = {
   defaults:
     "theme, voice and timing are the root presentation's, inherited whole; a module that could " +
     "set its own would be a second deck wearing an entity's name",
+  accessibility:
+    "accessibility is a fact about who is watching the film, not about one entity inside it; " +
+    "it belongs at the presentation root and applies to everything the deck reaches, including " +
+    "this module",
 };
 
 /**

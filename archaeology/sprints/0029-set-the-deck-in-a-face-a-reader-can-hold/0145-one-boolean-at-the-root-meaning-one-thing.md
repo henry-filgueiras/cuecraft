@@ -2,9 +2,10 @@
 id: tsk_01KZM5GH36655SVCAPHY0WB0AZ
 sequence: 145
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZM5EXSYFDBB87YWSEQSC0V0
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # One boolean, at the root, meaning one thing

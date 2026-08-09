@@ -19,8 +19,10 @@ import { renderPresentationFile, StageError, workspaceFor } from "./pipeline.ts"
 import { formatAudition } from "./render/audition.ts";
 import { auditionSheet } from "./render/auditionsheet.ts";
 import { explainMachines, formatExplanation } from "./render/explain.ts";
+import { readFontPin } from "./render/faces.ts";
 import { protocolOf } from "./render/protocol.ts";
 import { allocateLanes } from "./render/tenancy.ts";
+import { typographyOf } from "./render/typography.ts";
 import { SynthesisError, synthesize } from "./tts/kokoro.ts";
 import { KOKORO_VOICES } from "./tts/voices.ts";
 
@@ -216,6 +218,7 @@ async function runRender(
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
         `  narration kept in ${summary.workspace}\n` +
         describeExhibits(summary.exhibits) +
+        describeTypography(timeline) +
         describeSubtitles(timeline) +
         describeLanes(timeline) +
         describeRecalls(timeline) +
@@ -371,6 +374,27 @@ function addressable(resource: ExhibitResource): readonly string[] {
  * hands rather than on what the deck declared. An author who expected a label and got none should
  * be able to see why without opening a video.
  */
+/**
+ * Which faces the film was set in, when that is not the deck's ordinary answer.
+ *
+ * Printed only for a deck that asked, for the reason `describeSubtitles` prints nothing for a deck
+ * that did not: a summary line that appears on every render in order to say "nothing unusual" is a
+ * line people stop reading.
+ *
+ * The pinned version is here rather than in a provenance subsystem, which cuecraft does not have
+ * and this round is not the reason to build one. A film's typography is now a function of two
+ * things — the profile the deck selected and the bytes of the face it names — and this is where
+ * cuecraft already reports what it decided.
+ */
+function describeTypography(timeline: Timeline): string {
+  if (timeline.typography === "default") return "";
+  const type = typographyOf(timeline.typography);
+  const pinned = readFontPin()
+    .families.map((family) => `${family.family} ${family.version}`)
+    .join(", ");
+  return `  typography ${type.id} (${pinned})\n`;
+}
+
 function describeSubtitles(timeline: Timeline): string {
   const cues = timeline.subtitles;
   if (cues.length === 0) return "";

@@ -34,11 +34,7 @@ import {
   seriesTotal,
 } from "./series.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "./scope.ts";
-import {
-  NO_ACCESSIBILITY,
-  typographyFor,
-  type TypographyId,
-} from "../render/typography.ts";
+import { typographyFor, type TypographyId } from "../render/typography.ts";
 import {
   languageOf,
   onceReader,
@@ -1726,6 +1722,38 @@ const narratorsSchema = z.unknown().superRefine((value, context) => {
   }
 });
 
+/**
+ * What a presentation may say about who has to be able to read it.
+ *
+ * One key, one boolean, at the root, and every part of that is load-bearing.
+ *
+ * **Not `defaults:`.** Everything in `defaults` is a per-slide answer the deck happens to be
+ * stating once — `pre_say`, `voice` and `narrator` all have slide-level counterparts, and
+ * `subtitles` is deck-wide only because a projection of narration has nowhere smaller to live. A
+ * reader's constraint is not a default at all. It is a fact about the audience of the whole film,
+ * it can never be overridden for one slide without producing exactly the mid-film change of face
+ * it exists to prevent, and putting it under `defaults` would invite somebody to try.
+ *
+ * **Not `font:`, and not a theme.** decision:2 rules out a theming system and decision:10 rules
+ * out an author setting a size, a colour or a position. This does not reopen either: an author
+ * cannot name a typeface, a weight, a size, a tracking or a line height, and the set of profiles
+ * the boolean can select is closed and internal (`../render/typography.ts`). What is being
+ * expressed is a *constraint about a reader*; what it looks like stays cuecraft's decision.
+ *
+ * **An object rather than a bare `dyslexia:` key**, because it is the shape a second accessibility
+ * constraint would arrive in. That is a seam kept open, not an abstraction built: there is exactly
+ * one key today and adding a second is a decision, not a fill-in-the-blank.
+ *
+ * Strict, so `dislexia:` is reported as an unknown field rather than silently doing nothing —
+ * which for an accessibility setting is the worst possible failure, since the deck renders
+ * beautifully and helps nobody.
+ */
+function buildAccessibilitySchema() {
+  return z.strictObject({
+    dyslexia: z.boolean().optional(),
+  });
+}
+
 function buildDefaultsSchema(resolution: Resolution) {
   return z.strictObject({
     pre_say: durationLiteral.optional(),
@@ -1765,6 +1793,7 @@ function buildDefaultsSchema(resolution: Resolution) {
 function buildDocumentSchema(resolution: Resolution) {
   const entrySchema = buildEntrySchema(resolution);
   const defaultsSchema = buildDefaultsSchema(resolution);
+  const accessibilitySchema = buildAccessibilitySchema();
   // The one check that lives on the document rather than on a slide, because it is the one
   // reference in this format that crosses a slide boundary (`./recall.ts`). It runs only once every
   // slide has parsed, which is the right order: a recall pointing at a slide that is itself broken
@@ -1773,6 +1802,7 @@ function buildDocumentSchema(resolution: Resolution) {
     .strictObject({
       title: nonEmptyString,
       narrators: narratorsSchema.optional(),
+      accessibility: accessibilitySchema.optional(),
       defaults: defaultsSchema.optional(),
       slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
     })
@@ -1794,6 +1824,7 @@ function buildDocumentSchema(resolution: Resolution) {
    */
   const allowedKeys: Record<string, readonly string[]> = {
     "": Object.keys(documentSchema.shape),
+    accessibility: Object.keys(accessibilitySchema.shape),
     defaults: Object.keys(defaultsSchema.shape),
     "slides[]": Object.keys(entrySchema.shape),
     "slides[].slide": Object.keys(entrySchema.shape.slide.shape),
@@ -1900,7 +1931,10 @@ export function parsePresentation(
     speed: defaults.speed ?? DEFAULT_SPEED,
     narrators,
     subtitles: defaults.subtitles ?? false,
-    typography: typographyFor(NO_ACCESSIBILITY),
+    // Resolved once, here, for the whole deck. Everything downstream — a module three levels
+    // down, a recalled frame from slide one, an interior drawn inside a portal — reads the answer
+    // rather than the question, because none of them has a question of its own to ask.
+    typography: typographyFor({ dyslexia: raw.accessibility?.dyslexia ?? false }),
     warnings,
     slides: raw.slides.map((entry, index) => {
       // Who this slide speaks in, which is the slide's own choice or the deck's, and which is

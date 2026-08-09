@@ -275,7 +275,7 @@ slides:
     say: Hello.
 `),
     [
-      'presentation: unknown field "duration" (allowed: title, narrators, defaults, slides)',
+      'presentation: unknown field "duration" (allowed: title, narrators, accessibility, defaults, slides)',
     ],
   );
 

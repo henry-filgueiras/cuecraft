@@ -1,7 +1,7 @@
 import type { Scene, Timeline } from "../compile/timeline.ts";
 import { auditionLayouts, type Audition } from "./audition.ts";
 import { ledgerBand, fitLedger, type LedgerFit } from "./ledger.ts";
-import { typographyOf, type Typography } from "./typography.ts";
+import { typographyOf, type Typography, type TypographyId } from "./typography.ts";
 import { machineOf, reductionOf, machinePlan, type MachineShot } from "./machine.ts";
 import { viewRect, type Rect, type Viewport } from "./camera.ts";
 import { subtitleFit } from "./subtitle.ts";
@@ -145,6 +145,15 @@ export interface MachineExplanation {
   readonly ordinal: number;
   readonly title: string;
   readonly fps: number;
+  /**
+   * The typography profile this film's geometry was computed under.
+   *
+   * Reported because every number below it depends on the answer: a plate is sized from a label's
+   * estimated width, the shots are sized from the plates, and the legibility caps are in screen
+   * pixels of a face. An instrument that printed those without saying which face would be printing
+   * numbers that cannot be reproduced.
+   */
+  readonly typography: TypographyId;
   /** The window the camera was actually given, after chrome, subtitles and the ledger. */
   readonly viewport: { readonly width: number; readonly height: number };
   readonly aspect: number;
@@ -283,6 +292,7 @@ function explainScene(
   return {
     ordinal: scene.ordinal,
     title: scene.title,
+    typography: type.id,
     fps: timeline.fps,
     viewport,
     aspect,
@@ -372,7 +382,7 @@ export function formatExplanation(explanation: MachineExplanation): string {
   );
   lines.push(
     `  viewport   ${explanation.viewport.width} x ${explanation.viewport.height} px ` +
-      `(${explanation.aspect.toFixed(2)}:1)`,
+      `(${explanation.aspect.toFixed(2)}:1), typography ${explanation.typography}`,
   );
   lines.push(
     `  overview   ${Math.round(explanation.overview.view.width)} units, ` +
