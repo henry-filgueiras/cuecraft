@@ -11,6 +11,7 @@ import {
 } from "remotion";
 
 import { deriveChange } from "../presentation/change.ts";
+import type { ExhibitRegion } from "../presentation/exhibit.ts";
 import {
   interiorRange,
   type AuthoredEntity,
@@ -99,6 +100,7 @@ import {
   CODE,
   CODE_COLORS,
   COLORS,
+  EXHIBIT,
   FIELD,
   FORMULA,
   FONT_STACK,
@@ -4169,7 +4171,7 @@ function LedgerEntry({
  * can be inspected without being materialized, and a component that throws in that case would make
  * every future inspection tool carry a special case.
  */
-function Exhibit({ scene }: { scene: Scene }) {
+function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
   const body = scene.body.kind === "exhibit" ? scene.body : undefined;
   const resource = body?.resource;
@@ -4198,19 +4200,121 @@ function Exhibit({ scene }: { scene: Scene }) {
             {body?.program ?? "no exhibit"}
           </div>
         ) : (
-          <Img
-            src={staticFile(resource.src)}
+          // The wrapper carries the picture's own aspect ratio with both maxima, which makes it
+          // *become* the box `object-fit: contain` would have produced. That is the whole reason
+          // a region can be a percentage: the letterboxing is the browser's problem, so nothing
+          // here measures the DOM and nothing renders a frame late.
+          <div
             style={{
-              display: "block",
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
+              position: "relative",
+              aspectRatio: `${resource.width} / ${resource.height}`,
+              maxWidth: "100%",
+              maxHeight: "100%",
+              margin: "auto",
+              // Clips the veil to the picture. A `box-shadow` spread of 9999px is how a region
+              // becomes a hole in a dimming layer, and left unclipped it reaches the whole frame:
+              // the first render dimmed the heading along with the chart, while the subtitle band
+              // stayed bright because it is composited elsewhere. Half the chrome responding to an
+              // exhibit's internals is a treatment nobody designed. What dims is the picture.
+              overflow: "hidden",
             }}
-          />
+          >
+            <Img
+              src={staticFile(resource.src)}
+              style={{ display: "block", width: "100%", height: "100%" }}
+            />
+            <Regions
+              scene={scene}
+              absoluteFrame={absoluteFrame}
+              regions={resource.regions}
+            />
+          </div>
         )}
       </div>
     </>
   );
+}
+
+/**
+ * The parts of a picture narration has reached, and the one it is reaching now.
+ *
+ * Two treatments from the one envelope `anchor.ts` already publishes, and the split between them is
+ * decision:23 exactly: **heat veils, degree marks**. Heat is the moment — the rest of the picture
+ * goes dark for about eight tenths of a second and comes back — and degree is what is left
+ * afterwards, a quiet rule around a region that has been spoken about. A veil driven by `degree`
+ * would persist, and a slide that ends with three quarters of its chart in shadow has declared
+ * three quarters of its chart irrelevant.
+ *
+ * Emphasis is subtractive because a raster leaves no other option: an image cannot show part of
+ * itself at a different opacity, so the veil is a `box-shadow` spread far past the frame with the
+ * region as its hole. That is the only mechanism a picture allows; the *vocabulary* — how long, how
+ * bright, on which frame — is the one every other archetype uses.
+ *
+ * A region the narration never anchors is drawn as nothing at all. `anchorStatesFor` reports
+ * `ESTABLISHED` for an element nobody reaches, which is right for a bullet that should simply be
+ * legible and wrong here: it would put a permanent box around every region of every exhibit whose
+ * deck happens to declare `shows:` without talking about any of it.
+ */
+function Regions({
+  scene,
+  absoluteFrame,
+  regions,
+}: {
+  scene: Scene;
+  absoluteFrame: number;
+  regions: readonly ExhibitRegion[];
+}) {
+  const stateOf = anchorStatesFor(scene, absoluteFrame);
+  const anchored = new Set(scene.anchors.map((anchor) => anchor.elementIndex));
+
+  const marks = regions
+    .map((region, index) => ({ region, index, state: stateOf(index) }))
+    .filter((mark) => anchored.has(mark.index));
+
+  // One veil, at whichever region is hottest. Two overlapping shadows would darken the picture
+  // twice where they overlap, and the second-hottest region is by construction on its way out.
+  const hottest = marks.reduce<(typeof marks)[number] | undefined>(
+    (best, mark) =>
+      best === undefined || mark.state.heat > best.state.heat ? mark : best,
+    undefined,
+  );
+
+  return (
+    <>
+      {hottest !== undefined && hottest.state.heat > 0 ? (
+        <div
+          style={{
+            ...box(hottest.region),
+            boxShadow: `0 0 0 9999px ${withAlpha(COLORS.ink, hottest.state.heat * EXHIBIT.veil)}`,
+          }}
+        />
+      ) : null}
+      {marks.map((mark) => (
+        <div
+          key={mark.region.name}
+          style={{
+            ...box(mark.region),
+            outline: `${EXHIBIT.markWidth}px solid ${withAlpha(
+              mix(COLORS.accent, COLORS.flare, mark.state.heat),
+              EXHIBIT.markAlpha * mark.state.degree,
+            )}`,
+            outlineOffset: EXHIBIT.markStandoff,
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+/** A region as a rectangle inside the picture, in the only units that survive being resized. */
+function box(region: ExhibitRegion): CSSProperties {
+  return {
+    position: "absolute",
+    left: `${region.left * 100}%`,
+    top: `${region.top * 100}%`,
+    width: `${(region.right - region.left) * 100}%`,
+    height: `${(region.bottom - region.top) * 100}%`,
+  };
 }
 
 function Gate({ hue, degree }: { hue: string; degree: number }) {
@@ -4303,7 +4407,7 @@ function Composition({
       </div>
     </>
   ) : scene.layout === "exhibit" ? (
-    <Exhibit scene={scene} />
+    <Exhibit scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "series" ? (
     <Series scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "formula" ? (

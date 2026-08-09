@@ -37,6 +37,22 @@ export interface AuthoredExhibitInput {
   readonly file: string;
 }
 
+/**
+ * Somewhere in the picture the deck can talk about, once the program has said where it is.
+ *
+ * Fractions of the drawn image, top-left origin — see `../compute/r.ts`. The composition positions
+ * these as percentages inside a wrapper carrying the picture's own aspect ratio, which is why there
+ * is no arithmetic anywhere and why a region survives the picture being fitted into a room the
+ * program was never told about.
+ */
+export interface ExhibitRegion {
+  readonly name: string;
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 /** What materialization put where, once the program has actually run. */
 export interface ExhibitResource {
   /** Relative to the render workspace's public directory, for `staticFile()`. */
@@ -46,12 +62,15 @@ export interface ExhibitResource {
   readonly width: number;
   readonly height: number;
   readonly bytes: number;
+  /** In the order the slide declared them, which is the order anchors resolve against. */
+  readonly regions: readonly ExhibitRegion[];
 }
 
-export const EXHIBIT_KEYS = ["run", "with"] as const;
+export const EXHIBIT_KEYS = ["run", "with", "shows"] as const;
 
 export const EXHIBIT_HINT =
-  "{ run: <path to an .R program>, with: { <name>: <path to an input> } }";
+  "{ run: <path to an .R program>, with: { <name>: <path to an input> }, " +
+  "shows: [<identity the program will declare>] }";
 
 /** What cuecraft can run. One entry, and the extension is how a deck says which. */
 export const EXHIBIT_PROGRAM_EXTENSIONS = [".R", ".r"] as const;
@@ -78,6 +97,20 @@ export interface AuthoredExhibit {
    */
   readonly source: string;
   readonly inputs: readonly AuthoredExhibitInput[];
+  /**
+   * The identities the picture will have, declared by the slide rather than discovered.
+   *
+   * Forced by an ordering rather than chosen (decision:57): `activates:` resolves against
+   * `bodyElements` at parse time, and an exhibit's elements do not exist until a subprocess has
+   * finished. The alternative was deferring anchor resolution for one body kind, which is a special
+   * case cut deep into the parser.
+   *
+   * It is not a second copy of something cuecraft could know, because cuecraft cannot know it yet —
+   * and materialization refuses a mismatch in **either** direction, so the deck and the program
+   * cannot drift apart. Empty on an exhibit nobody talks into, which is every one shipped before
+   * this existed.
+   */
+  readonly shows: readonly string[];
 }
 
 export interface ExhibitIssue {
@@ -159,6 +192,42 @@ export function resolveExhibit(
     }
   }
 
+  const shows: string[] = [];
+  const declaredNames = record["shows"];
+  if (declaredNames !== undefined) {
+    if (!Array.isArray(declaredNames)) {
+      issues.push({
+        path: ["shows"],
+        message: "must be a list of identities the program will declare",
+      });
+    } else if (declaredNames.length === 0) {
+      issues.push({
+        path: ["shows"],
+        message: "must name at least one identity, or be left out entirely",
+      });
+    } else {
+      declaredNames.forEach((name: unknown, index: number) => {
+        if (typeof name !== "string" || !INPUT_NAME.test(name)) {
+          issues.push({
+            path: ["shows", index],
+            message:
+              `${JSON.stringify(name)} is not a usable identity; a name starts with a letter and ` +
+              "continues with letters, digits, hyphens or underscores",
+          });
+          return;
+        }
+        if (shows.includes(name)) {
+          issues.push({
+            path: ["shows", index],
+            message: `duplicate identity ${JSON.stringify(name)}`,
+          });
+          return;
+        }
+        shows.push(name);
+      });
+    }
+  }
+
   if (issues.length > 0) return { issues };
 
   // Read last, so a deck with two mistakes reports both rather than failing on the filesystem
@@ -175,7 +244,7 @@ export function resolveExhibit(
     };
   }
 
-  return { exhibit: { program: program as string, source, inputs }, issues: [] };
+  return { exhibit: { program: program as string, source, inputs, shows }, issues: [] };
 }
 
 /**

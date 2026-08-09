@@ -322,7 +322,11 @@ function describeExhibits(exhibits: readonly MaterializedExhibit[]): string {
   const lines = exhibits.map(
     (exhibit) =>
       `    slide ${exhibit.ordinal}: ${exhibit.program} computed ` +
-      `${exhibit.resource.name} in ${exhibit.elapsedSeconds.toFixed(1)}s`,
+      `${exhibit.resource.name} in ${exhibit.elapsedSeconds.toFixed(1)}s` +
+      // What the picture can be talked about, and therefore what a `shows:` was checked against.
+      (exhibit.resource.regions.length === 0
+        ? ""
+        : `, showing ${exhibit.resource.regions.map((region) => region.name).join(", ")}`),
   );
   return `  exhibits\n${lines.join("\n")}\n`;
 }

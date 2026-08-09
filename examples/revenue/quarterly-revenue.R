@@ -7,6 +7,10 @@
 #   in    CUECRAFT_INPUT_TRANSACTIONS   the raw CSV: date, region, product, revenue
 #   out   CUECRAFT_OUTPUT_DIR           where to write; also this process's directory
 #
+# It also says *where* it drew each panel, so the narration can talk about one of them
+# (decision:57). cuecraft decides what being talked about looks like; this only reports
+# geometry it had to compute anyway.
+#
 # Base R only, deliberately: no packages are installed by the bootstrap, and everything
 # below is read.csv, aggregate, xtabs and barplot.
 
@@ -102,6 +106,17 @@ for (i in seq_len(panels)) {
     axis(2, at = ticks, labels = format(ticks, big.mark = ","), tick = FALSE, line = -0.2, cex.axis = 0.92)
   }
   title(main = region, cex.main = 1.15, font.main = 2, line = 0.9)
+
+  # Where this panel ended up, as fractions of the whole picture. `grconvertX/Y` reports the
+  # plot region in normalized device coordinates, which is exactly the fraction cuecraft wants.
+  # The y values are flipped because R's device origin is bottom-left and a frame's is top-left;
+  # that flip belongs here, on R's side, because it is a fact about R.
+  cat(sprintf(
+    "#cuecraft region %s %.4f %.4f %.4f %.4f\n",
+    gsub("[^a-z0-9]+", "-", tolower(region)),
+    grconvertX(par("usr")[1], "user", "ndc"), 1 - grconvertY(par("usr")[4], "user", "ndc"),
+    grconvertX(par("usr")[2], "user", "ndc"), 1 - grconvertY(par("usr")[3], "user", "ndc")
+  ))
 }
 
 mtext(

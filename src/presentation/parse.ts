@@ -1292,6 +1292,7 @@ function bodyOf(
       program: exhibit.program,
       source: exhibit.source,
       inputs: exhibit.inputs,
+      shows: exhibit.shows,
     };
   }
   if (slide.formula !== undefined) {

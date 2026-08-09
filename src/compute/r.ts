@@ -159,8 +159,28 @@ export interface ROutput {
   readonly height: number;
 }
 
+/**
+ * Somewhere the program says it drew something, in fractions of the picture it produced.
+ *
+ * The second and last thing that crosses the boundary (decision:57). Fractions rather than pixels so
+ * that a region survives the picture being fitted into a room whose size the program was never told
+ * — the same reason the composition positions it in percentages and does no arithmetic.
+ *
+ * Top-left origin, because that is what a frame uses. R's device origin is bottom-left, so a program
+ * emits `1 - grconvertY(...)`; that flip is a fact about R and stays on R's side.
+ */
+export interface RRegion {
+  readonly name: string;
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 export interface RResult {
   readonly outputs: readonly ROutput[];
+  /** Every place the program named. Empty on a program that declares none, which is most. */
+  readonly regions: readonly RRegion[];
   /** Everything on stdout that was not a declaration, so a `print()` is not swallowed. */
   readonly notes: string;
   readonly stderr: string;
@@ -182,6 +202,17 @@ const DECLARATION =
 
 /** How a program is expected to write one. Quoted in errors so the fix is on screen. */
 export const DECLARATION_SHAPE = "#cuecraft output <type> <name> <file>";
+
+/**
+ * The region line — the same grammar with four numbers instead of a filename tail.
+ *
+ * Fixed arity, because unlike a filename there is nothing here that could contain a space, so there
+ * is no reason to leave a remainder unconstrained.
+ */
+const REGION =
+  /^#cuecraft\s+region\s+([A-Za-z][A-Za-z0-9_-]*)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$/;
+
+export const REGION_SHAPE = "#cuecraft region <name> <left> <top> <right> <bottom>";
 
 /** The first eight bytes of every PNG. Checked so that "it exists" is not mistaken for "it is one". */
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -271,7 +302,86 @@ export async function runR(request: RRequest): Promise<RResult> {
     stdout: notes,
   });
 
-  return { outputs, notes, stderr: captured.err, elapsedSeconds };
+  const regions = resolveRegions(declared, request.label, {
+    stderr: captured.err,
+    stdout: notes,
+  });
+
+  return { outputs, regions, notes, stderr: captured.err, elapsedSeconds };
+}
+
+/** Which protocol verb a line carries, so two resolvers can walk one list without a pre-filter. */
+function verbOf(line: string): string | undefined {
+  return /^#cuecraft\s+(\S+)/.exec(line)?.[1];
+}
+
+/**
+ * Every place a run said it drew something.
+ *
+ * Walks the same list `resolveOutputs` does and takes only its own lines, so neither resolver needs
+ * the caller to sort the protocol out first. The unknown-verb refusal lives in `resolveOutputs`
+ * because it runs first; a line neither of them claims never reaches here.
+ *
+ * Fractions are checked hard for the reason a declared file is: a region outside the picture, or
+ * inverted, or not a number, produces a highlight over the wrong part of a chart — and a highlight
+ * over the wrong part of a chart is a film that teaches something false while rendering perfectly.
+ */
+export function resolveRegions(
+  declared: readonly string[],
+  label: string,
+  said: { stderr: string; stdout: string } = { stderr: "", stdout: "" },
+): readonly RRegion[] {
+  const regions: RRegion[] = [];
+  const seen = new Set<string>();
+
+  const refuse = (message: string): never => {
+    throw new RError("protocol", `${label}: ${message}`, said);
+  };
+
+  for (const line of declared) {
+    if (verbOf(line) !== "region") continue;
+
+    const match = REGION.exec(line);
+    if (match === null) {
+      return refuse(
+        `cannot read the region declaration ${JSON.stringify(line.trim())}; ` +
+          `a region is ${JSON.stringify(REGION_SHAPE)}, where <name> is an identifier and the ` +
+          "four numbers are fractions of the picture",
+      );
+    }
+
+    const [, name = "", ...raw] = match;
+    const numbers = raw.map(Number);
+    if (numbers.some((value) => !Number.isFinite(value))) {
+      return refuse(
+        `region ${JSON.stringify(name)} has a coordinate that is not a number: ` +
+          raw.map((value) => JSON.stringify(value)).join(" "),
+      );
+    }
+    if (numbers.some((value) => value < 0 || value > 1)) {
+      return refuse(
+        `region ${JSON.stringify(name)} is outside the picture; a coordinate is a fraction ` +
+          `between 0 and 1, and these are ${numbers.join(" ")}`,
+      );
+    }
+
+    const [left = 0, top = 0, right = 0, bottom = 0] = numbers;
+    if (left >= right || top >= bottom) {
+      return refuse(
+        `region ${JSON.stringify(name)} has no area: left must be less than right and top less ` +
+          `than bottom, and these are ${numbers.join(" ")}`,
+      );
+    }
+    if (seen.has(name)) {
+      return refuse(
+        `declared two regions named ${JSON.stringify(name)}; each name must be distinct`,
+      );
+    }
+
+    seen.add(name);
+    regions.push({ name, left, top, right, bottom });
+  }
+  return regions;
 }
 
 /**
@@ -291,6 +401,20 @@ export async function resolveOutputs(
   const outputs: ROutput[] = [];
   const seen = new Set<string>();
   for (const line of declared) {
+    const verb = verbOf(line);
+    if (verb === "region") continue;
+    // The one place a mistyped verb is caught. `#cuecraft outputs ...` would otherwise be dropped
+    // silently by both resolvers and the slide would fail with "declared no output", which names
+    // the symptom instead of the typo.
+    if (verb !== "output") {
+      throw new RError(
+        "protocol",
+        `${label}: ${JSON.stringify(line.trim())} is not something cuecraft understands; ` +
+          `a program declares ${JSON.stringify(DECLARATION_SHAPE)} or ` +
+          `${JSON.stringify(REGION_SHAPE)}`,
+        said,
+      );
+    }
     const output = await resolveDeclaration(line, resolve(outputDir), label, said);
     if (seen.has(output.name)) {
       throw new RError(

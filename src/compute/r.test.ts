@@ -11,6 +11,7 @@ import {
   pngSize,
   RError,
   resolveOutputs,
+  resolveRegions,
   split,
 } from "./r.ts";
 
@@ -253,16 +254,28 @@ test("a filename with spaces survives the protocol", async () => {
 test("a malformed declaration is refused, and the shape is quoted back", async () => {
   const dir = await outputDirWith({ "chart.png": pngHeader(4, 4) });
 
+  // A line whose verb IS `output` but whose fields are wrong. A line whose verb is not a verb at
+  // all is a different mistake with a different message — see the mistyped-verb test below.
   for (const line of [
     "#cuecraft output png chart.png",
-    "#cuecraft chart.png",
     "#cuecraft output png 4chart chart.png",
     "#cuecraft output png chart",
-    "#cuecraft",
   ]) {
     const error = await refusal([line], dir);
-    assert.match(error.message, /cannot read the output declaration/);
+    assert.match(error.message, /cannot read the output declaration/, line);
     assert.match(error.message, /#cuecraft output <type> <name> <file>/);
+  }
+});
+
+test("a line that is not a declaration at all names both shapes", async () => {
+  const dir = await outputDirWith({ "chart.png": pngHeader(4, 4) });
+  for (const line of [
+    "#cuecraft chart.png",
+    "#cuecraft",
+    "#cuecraft outputs png a a.png",
+  ]) {
+    const error = await refusal([line], dir);
+    assert.match(error.message, /is not something cuecraft understands/, line);
   }
 });
 
@@ -343,3 +356,108 @@ test("a refusal carries what the program said, so the program can be fixed", asy
     assert.match(error.report(), /468 transactions/);
   }
 });
+
+/* ------------------------------------------------ regions (decision:57) */
+
+test("a region is read as four fractions of the picture", () => {
+  const regions = resolveRegions(
+    [
+      "#cuecraft output png chart chart.png",
+      "#cuecraft region asia-pacific 0.5430 0.1377 0.7543 0.8192",
+    ],
+    "chart.R",
+  );
+
+  // The output line is walked past rather than choking it: both resolvers read the same list.
+  assert.deepEqual(regions, [
+    { name: "asia-pacific", left: 0.543, top: 0.1377, right: 0.7543, bottom: 0.8192 },
+  ]);
+});
+
+test("a program that names nowhere declares no regions", () => {
+  assert.deepEqual(
+    resolveRegions(["#cuecraft output png chart chart.png"], "chart.R"),
+    [],
+  );
+});
+
+test("regions keep the order the program declared them in", () => {
+  const regions = resolveRegions(
+    [
+      "#cuecraft region b 0.4 0 0.6 1",
+      "#cuecraft region a 0.0 0 0.2 1",
+      "#cuecraft region c 0.8 0 1.0 1",
+    ],
+    "chart.R",
+  );
+  assert.deepEqual(
+    regions.map((region) => region.name),
+    ["b", "a", "c"],
+  );
+});
+
+test("a coordinate outside the picture is refused", async () => {
+  for (const line of [
+    "#cuecraft region r -0.1 0 0.5 1",
+    "#cuecraft region r 0 0 1.4 1",
+    "#cuecraft region r 0 0 0.5 1.0001",
+  ]) {
+    const error = regionRefusal([line]);
+    assert.match(error.message, /outside the picture/, line);
+  }
+});
+
+test("a coordinate that is not a number is refused", () => {
+  const error = regionRefusal(["#cuecraft region r NaN 0 0.5 1"]);
+  assert.match(error.message, /coordinate that is not a number/);
+});
+
+test("a region with no area is refused, in either direction", () => {
+  for (const line of [
+    "#cuecraft region r 0.6 0 0.4 1",
+    "#cuecraft region r 0.4 0 0.4 1",
+    "#cuecraft region r 0 0.9 1 0.2",
+  ]) {
+    assert.match(regionRefusal([line]).message, /has no area/, line);
+  }
+});
+
+test("a malformed region quotes the shape back", () => {
+  for (const line of [
+    "#cuecraft region r 0 0 1",
+    "#cuecraft region 0 0 1 1",
+    "#cuecraft region r 0 0 1 1 1",
+  ]) {
+    const error = regionRefusal([line]);
+    assert.match(error.message, /cannot read the region declaration/, line);
+    assert.match(error.message, /#cuecraft region <name> <left> <top> <right> <bottom>/);
+  }
+});
+
+test("two regions with one name are refused", () => {
+  const error = regionRefusal([
+    "#cuecraft region r 0 0 0.4 1",
+    "#cuecraft region r 0.5 0 1 1",
+  ]);
+  assert.match(error.message, /declared two regions named "r"/);
+});
+
+test("a mistyped verb names both shapes, so the typo is visible", async () => {
+  const dir = await outputDirWith({ "chart.png": pngHeader(4, 4) });
+  const error = await refusal(["#cuecraft regions r 0 0 1 1"], dir);
+  assert.match(error.message, /#cuecraft output <type> <name> <file>/);
+  assert.match(error.message, /#cuecraft region <name>/);
+});
+
+function regionRefusal(declared: readonly string[]): RError {
+  try {
+    resolveRegions(declared, "chart.R");
+  } catch (error) {
+    assert.ok(error instanceof RError, `expected an RError, got ${String(error)}`);
+    assert.equal(error.failure, "protocol");
+    return error;
+  }
+  throw new assert.AssertionError({
+    message: `expected a refusal for ${declared.join(" | ")}`,
+  });
+}

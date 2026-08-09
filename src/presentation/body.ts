@@ -131,6 +131,8 @@ export type SlideBody =
       /** The program itself, read at parse time and handed to the runner over stdin. */
       readonly source: string;
       readonly inputs: readonly AuthoredExhibitInput[];
+      /** The identities the picture will have. These are what narration can reach — decision:57. */
+      readonly shows: readonly string[];
       /**
        * What the program produced, and where it landed.
        *
@@ -184,10 +186,11 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       // from it, so it declares no endpoint narration could reach and adds nothing to measure.
       return [];
     case "exhibit":
-      // Nothing, for a different reason. A figure has no elements because naming one would make
-      // the derivation circular; an exhibit has none because cuecraft cannot see inside the image
-      // it was handed. Reaching a part of a plot would mean an author writing a coordinate.
-      return [];
+      // Whatever the picture will be able to say it contains, and nothing else. A figure has no
+      // elements at all because naming one would make its derivation circular; an exhibit has
+      // exactly the ones the slide declared and the program is obliged to draw (decision:57).
+      // An author still writes no coordinate — only a name, checked against R on every render.
+      return body.shows.map((id) => ({ id }));
     case "world":
       return [...body.entities, ...body.entities.flatMap(interiorElements)];
     case "protocol":
@@ -287,8 +290,9 @@ export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAd
   switch (body.kind) {
     case "none":
     case "figure":
-    case "exhibit":
       return [];
+    case "exhibit":
+      return body.shows.map((id) => named(id));
     case "code":
       return body.marks.map((mark) => named(mark.id));
     case "change":

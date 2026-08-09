@@ -81,6 +81,7 @@ slides:
         activates: data
       - pause: 350ms
       - "No size, no colours, no output filename, and no image."
+      - "The names are the only other thing: what the picture will be able to talk about."
 
   # An exhibit -> the picture a foreign process computed, during this render.
   - slide:
@@ -89,6 +90,7 @@ slides:
         run: examples/revenue/quarterly-revenue.R
         with:
           transactions: examples/revenue/transactions.csv
+        shows: [north-america, europe, asia-pacific, latin-america]
 
     say:
       - "While cuecraft was building this video, it handed that file to R."
@@ -97,7 +99,10 @@ slides:
       - pause: 500ms
       - "This is what came back."
       - pause: 900ms
-      - "Asia Pacific doubles across the year. Latin America does not move."
+      - speech: "Asia Pacific doubles across the year."
+        activates: asia-pacific
+      - speech: "Latin America does not move."
+        activates: latin-america
 
   # Title and nothing else -> statement.
   - slide:

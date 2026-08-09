@@ -65,6 +65,7 @@ function deck(exhibit: string): Presentation {
 function runner(
   outputs: readonly { name: string; file: string; width?: number; height?: number }[],
   seen?: RRequest[],
+  regions: readonly string[] = [],
 ): (request: RRequest) => Promise<RResult> {
   return async (request) => {
     seen?.push(request);
@@ -78,6 +79,13 @@ function runner(
         bytes: 4096,
         width: output.width ?? 3312,
         height: output.height ?? 1328,
+      })),
+      regions: regions.map((name, index) => ({
+        name,
+        left: index * 0.25,
+        top: 0.1,
+        right: index * 0.25 + 0.2,
+        bottom: 0.9,
       })),
       notes: "",
       stderr: "",
@@ -118,6 +126,7 @@ test("only the exhibit slides are run, and the rest come through untouched", asy
   assert.deepEqual(body?.kind === "exhibit" ? body.resource : undefined, {
     src: "exhibits/slide-02-chart/chart.png",
     name: "chart",
+    regions: [],
     width: 3312,
     height: 1328,
     bytes: 4096,
@@ -252,3 +261,68 @@ async function failing(
   }
   throw new assert.AssertionError({ message: "expected materialization to fail" });
 }
+
+/* ------------------------------------------ shows / regions (decision:57) */
+
+test("what the slide shows and what the program drew are matched, in the slide's order", async () => {
+  const { presentation } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R\n  shows: [b, a]"),
+    {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      // Declared in the other order on purpose: the resource must come back in the slide's order,
+      // because that is the order `bodyElements` published and every anchor index already means.
+      run: runner([{ name: "chart", file: "chart.png" }], undefined, ["a", "b"]),
+    },
+  );
+
+  const body = presentation.slides[1]?.body;
+  assert.equal(body?.kind, "exhibit");
+  const regions = body?.kind === "exhibit" ? body.resource?.regions : undefined;
+  assert.deepEqual(
+    regions?.map((region) => region.name),
+    ["b", "a"],
+  );
+  assert.equal(regions?.[0]?.top, 0.1);
+});
+
+test("an identity the program never drew fails the render", async () => {
+  const error = await failing(
+    deck("exhibit:\n  run: chart.R\n  shows: [asia-pacific]"),
+    await repoWith({}),
+    runner([{ name: "chart", file: "chart.png" }], undefined, []),
+  );
+  assert.match(error.report(), /disagree about what the picture shows/);
+  assert.match(
+    error.report(),
+    /the slide shows "asia-pacific", which the program did not draw/,
+  );
+});
+
+test("a region the slide never asked for also fails the render", async () => {
+  // Both directions, because a program that has quietly renamed something is not a program that
+  // has quietly added something — and a deck that tolerated the extra would be trusting whichever
+  // names happened to match.
+  const error = await failing(
+    deck("exhibit:\n  run: chart.R\n  shows: [europe]"),
+    await repoWith({}),
+    runner([{ name: "chart", file: "chart.png" }], undefined, ["europe", "eurpoe"]),
+  );
+  assert.match(
+    error.report(),
+    /the program drew "eurpoe", which the slide does not show/,
+  );
+});
+
+test("an exhibit that shows nothing is not asked about regions at all", async () => {
+  const { presentation } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R"),
+    {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      run: runner([{ name: "chart", file: "chart.png" }]),
+    },
+  );
+  const body = presentation.slides[1]?.body;
+  assert.deepEqual(body?.kind === "exhibit" ? body.resource?.regions : undefined, []);
+});

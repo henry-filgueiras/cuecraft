@@ -2,8 +2,9 @@
 id: drg_01KZKPYZK7NCN0XMT9KSDR15JA
 sequence: 32
 kind: dragon
-status: open
+status: closed
 created: 2026-08-09
+resolved-by: "[[dec_01KZKRZZSP4JCP7A8AMPD1E1WR|Let the program say where it drew things, and the film say what that looks like]]"
 ---
 
 # Narration cannot reach inside a picture, and no key could let it

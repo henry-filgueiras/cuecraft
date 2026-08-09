@@ -217,7 +217,66 @@ test("a slide carries at most one body, and an exhibit is one of them", () => {
   assert.match(message, /"bullets" and "exhibit"/);
 });
 
-test("an exhibit declares nothing narration can reach", () => {
+test("a slide declares the identities its picture will have", () => {
+  const { exhibit, issues } = resolveExhibit(
+    {
+      run: "examples/revenue/quarterly-revenue.R",
+      shows: ["north-america", "asia-pacific"],
+    },
+    read,
+  );
+  assert.deepEqual(issues, []);
+  assert.deepEqual(exhibit?.shows, ["north-america", "asia-pacific"]);
+});
+
+test("an exhibit that shows nothing is still an exhibit", () => {
+  const { exhibit } = resolveExhibit(
+    { run: "examples/revenue/quarterly-revenue.R" },
+    read,
+  );
+  assert.deepEqual(exhibit?.shows, []);
+});
+
+test("what a slide shows is checked the way an input name is", () => {
+  for (const [shows, pattern] of [
+    [["2025"], /is not a usable identity/],
+    [["a", "a"], /duplicate identity "a"/],
+    [[], /at least one identity, or be left out/],
+    ["asia-pacific", /must be a list of identities/],
+  ] as const) {
+    const { issues } = resolveExhibit(
+      { run: "examples/revenue/quarterly-revenue.R", shows },
+      read,
+    );
+    assert.match(issues[0]?.message ?? "", pattern, JSON.stringify(shows));
+  }
+});
+
+test("narration reaches what the slide shows, and nothing else", () => {
+  const deck = parsePresentation(
+    [
+      "title: T",
+      "slides:",
+      "  - slide:",
+      "      title: A chart",
+      "      exhibit:",
+      "        run: examples/revenue/quarterly-revenue.R",
+      "        shows: [north-america, asia-pacific]",
+      "    say:",
+      '      - speech: "Asia Pacific doubles."',
+      "        activates: asia-pacific",
+    ].join("\n"),
+    "deck.yaml",
+    { read },
+  );
+  // Resolved at parse time, against names the program has not been asked for yet — which is the
+  // whole reason `shows:` exists, and why materialization checks it against R on every render.
+  const cue = deck.slides[0]?.say[0];
+  assert.equal(cue?.kind, "speech");
+  assert.equal(cue?.kind === "speech" ? cue.activates : undefined, "asia-pacific");
+});
+
+test("an exhibit declares nothing narration can reach beyond what it shows", () => {
   const message = failure(() =>
     parsePresentation(
       [
@@ -227,6 +286,7 @@ test("an exhibit declares nothing narration can reach", () => {
         "      title: A chart",
         "      exhibit:",
         "        run: examples/revenue/quarterly-revenue.R",
+        "        shows: [asia-pacific]",
         "    say:",
         '      - speech: "Look at the third bar."',
         "        activates: bar",
@@ -235,8 +295,10 @@ test("an exhibit declares nothing narration can reach", () => {
       { read },
     ),
   );
-  // The refusal an author should get: there is nothing inside a picture cuecraft can see.
+  // The refusal an author should get, and the boundary of decision:57: narration reaches what the
+  // program will name and nothing finer. There is no coordinate an author could write instead.
   assert.match(message, /bar/);
+  assert.match(message, /asia-pacific/);
 });
 
 function failure(run: () => unknown): string {

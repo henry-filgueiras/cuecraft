@@ -227,6 +227,13 @@ the deck's own palette — width, height, base type size, background, foreground
 through its environment, which is [`decision:42`](archaeology/decisions/) reaching across a process
 boundary. There is no key that could override one of them.
 
+And the narration can talk into it. The program says _where_ it drew each panel; cuecraft decides
+what being talked about looks like, in the vocabulary every other composition already uses — so when
+the sentence "Asia Pacific doubles across the year" is spoken, the rest of the chart dims for eight
+tenths of a second and that panel keeps a quiet mark afterwards. The deck writes
+`activates: asia-pacific`, and no coordinate, no colour and no duration
+([`decision:57`](archaeology/decisions/)).
+
 Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
 
 ### 7. Self-demo — the practical core
@@ -258,6 +265,7 @@ narration cues                which composition each slide gets
 which cue is about what       type size, position, colour
 whether to show subtitles     which sentence is on screen, and when
 a program, and its inputs     the box and palette that program is handed
+what a picture can be asked   where a computed picture dims, what it marks, and when
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
@@ -541,6 +549,7 @@ slide:
     run: examples/revenue/quarterly-revenue.R
     with:
       transactions: examples/revenue/transactions.csv
+    shows: [north-america, europe, asia-pacific, latin-america]
 ```
 
 The program runs during `cuecraft render`, in a stage of its own **before** any narration is
@@ -550,9 +559,9 @@ and the picture it produces becomes the slide's whole visual.
 **There is no `image:` key.** A deck cannot name a PNG in the checkout and show it, by decision
 rather than by omission ([`decision:55`](archaeology/decisions/)): a slide that could display a
 checked-in image could display a stale one, and the whole claim an exhibit makes is that the
-picture was computed from the source data on this run. `run:` and `with:` are the only two keys,
-both paths must be inside the checkout, and there is nothing to write about size, position, colour,
-format or output filename.
+picture was computed from the source data on this run. `run:`, `with:` and `shows:` are the only
+three keys, every path must be inside the checkout, and there is nothing to write about size,
+position, colour, format or output filename.
 
 **What the program is told**, through its environment — it parses nothing:
 
@@ -583,8 +592,44 @@ a declaration cannot reach outside it. Every other line of stdout is ordinary R 
 declared file is checked all the way to its bytes: it must exist, be a file, be non-empty, and
 begin with a PNG signature and header, whose width and height cuecraft reads back out.
 
-A slide shows one picture, so a program declares exactly one output. PNG is the only type; SVG can
-wait.
+A slide shows one picture, so a program declares exactly one output. PNG is the only type; SVG is
+parked with its reasons attached ([`idea:24`](archaeology/ideas/)).
+
+**Talking into the picture.** A program may also say _where_ it drew something, in fractions of the
+image it produced:
+
+```
+#cuecraft region asia-pacific 0.5430 0.1377 0.7543 0.8192
+```
+
+and the deck reaches it with the vocabulary it already has:
+
+```yaml
+say:
+  - speech: "Asia Pacific doubles across the year."
+    activates: asia-pacific
+```
+
+Cuecraft then draws its **existing** activation treatment there — the rest of the picture dims for
+the moment the sentence lands, and the region keeps a quiet mark once it has been spoken about,
+which is [`decision:23`](archaeology/decisions/) applied to a raster. There is no key for a colour,
+a border, a duration or a coordinate, and emphasis is subtractive because an image cannot show part
+of itself at a different opacity.
+
+`shows:` is the identities the picture will have, and it exists because of an ordering: `activates:`
+resolves at parse time and R runs afterwards. It is not a second copy of something cuecraft could
+know — cuecraft cannot know it yet — and **materialization refuses a mismatch in either direction**,
+so the deck and the program cannot drift apart:
+
+```
+cuecraft: materialize failed: slide 4: quarterly-revenue.R and this slide disagree about what the
+picture shows; the slide shows "latin-america", which the program did not draw; the program drew
+"latin_america", which the slide does not show
+```
+
+Narration reaches whatever the program was willing to name, and nothing finer. It cannot reach the
+third bar unless the program declares the third bar
+([`decision:57`](archaeology/decisions/)).
 
 **There is no cache.** The program runs on every render. Correct invalidation would have to cover
 the source, every input, R's version and whatever packages it has, and getting it wrong shows a
@@ -859,9 +904,9 @@ Early, opinionated, and honest about it.
 - **`exhibit` is the newest experiment and the least settled.** It runs an R program during
   compilation, which means a deck can execute code and is reproducible only up to whatever R is
   installed — the Kokoro weights are pinned by a lock file and R is not
-  ([`dragon:33`](archaeology/dragons/)). Narration cannot reach inside a computed picture and no key
-  could let it ([`dragon:32`](archaeology/dragons/)), and the box the program is drawn for is
-  settled before the room it lands in is known ([`dragon:31`](archaeology/dragons/)).
+  ([`dragon:33`](archaeology/dragons/)). The box the program draws for is settled before the room it
+  lands in is known ([`dragon:31`](archaeology/dragons/)), and narration reaches only what the
+  program was willing to name ([`decision:57`](archaeology/decisions/)).
 - **Child modules, `series` and `protocol` are experiments, not supported features.** A handful of
   artifacts and one pair of eyes. The compiler recurses; the demonstrated contract is a child and a
   grandchild, and no claim is made about anything deeper

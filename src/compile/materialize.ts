@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
-import type { ExhibitResource } from "../presentation/exhibit.ts";
+import type { ExhibitRegion, ExhibitResource } from "../presentation/exhibit.ts";
 import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
 import { resolveRepositoryPath, SourceError } from "../presentation/source.ts";
 import { repositoryRoot } from "../repository.ts";
@@ -187,9 +187,36 @@ export async function materializePresentation(
       );
     }
 
+    // The two halves of decision:57's bargain, checked against each other. The slide declares which
+    // identities its picture will have because anchors resolve before R runs; the program declares
+    // where they are. Either side saying something the other did not is a failure, and it has to be
+    // both directions — a region the deck never asked for is a program that has quietly renamed
+    // something, and a name the program never drew is a highlight over nothing.
+    const drawn = new Map(result.regions.map((region) => [region.name, region]));
+    const missing = body.shows.filter((name) => !drawn.has(name));
+    const unasked = result.regions
+      .map((region) => region.name)
+      .filter((name) => !body.shows.includes(name));
+
+    if (missing.length > 0 || unasked.length > 0) {
+      throw new MaterializeError(
+        slide.ordinal,
+        `${body.program} and this slide disagree about what the picture shows` +
+          (missing.length === 0
+            ? ""
+            : `; the slide shows ${missing.map(quote).join(", ")}, which the program did not draw`) +
+          (unasked.length === 0
+            ? ""
+            : `; the program drew ${unasked.map(quote).join(", ")}, which the slide does not show`),
+      );
+    }
+
     const resource: ExhibitResource = {
       src: `${EXHIBIT_DIR}/${slug}/${output.file}`,
       name: output.name,
+      // In the slide's order, not the program's, because that is the order `bodyElements`
+      // published and therefore the order every anchor index already means.
+      regions: body.shows.map((name) => drawn.get(name) as ExhibitRegion),
       width: output.width,
       height: output.height,
       bytes: output.bytes,
@@ -208,6 +235,11 @@ export async function materializePresentation(
   }
 
   return { presentation: { ...presentation, slides }, exhibits };
+}
+
+/** Quoting a name in a diagnostic, so a message reads as a list rather than as prose. */
+function quote(name: string): string {
+  return JSON.stringify(name);
 }
 
 /** Whether a deck has anything to materialize at all, so the stage can stay silent when it does not. */

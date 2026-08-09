@@ -371,6 +371,28 @@ test("the revenue deck's spoken reading of the chart is what the data does", () 
   );
 });
 
+test("what the revenue deck shows is what the R program names", () => {
+  const path = join(REVENUE_DIR, "revenue.yaml");
+  const deck = parsePresentation(readFileSync(path, "utf8"), path);
+  const body = deck.slides.find((slide) => slide.body.kind === "exhibit")?.body;
+  assert.ok(body?.kind === "exhibit", "the revenue deck no longer carries an exhibit");
+
+  // Materialization checks this against R on every render (decision:57). This checks it against
+  // the *data*, without running anything: the program names its regions after the regions in the
+  // CSV, so a region added to the data with no `shows:` entry fails here rather than in a render.
+  const regions = [...new Set(transactions().map((row) => row.region))]
+    .map((region) => region.toLowerCase().replace(/[^a-z0-9]+/g, "-"))
+    .sort();
+  assert.deepEqual([...body.shows].sort(), regions);
+
+  // And the two the narration actually reaches are among them, spelled the same way.
+  const spoken = readFileSync(path, "utf8");
+  for (const reached of ["asia-pacific", "latin-america"]) {
+    assert.ok(spoken.includes(`activates: ${reached}`), `nothing activates ${reached}`);
+    assert.ok(body.shows.includes(reached), `${reached} is reached but not shown`);
+  }
+});
+
 test("no image is committed beside the deck that claims none is", () => {
   const entries = readdirSync(REVENUE_DIR);
   const images = entries.filter((entry) =>

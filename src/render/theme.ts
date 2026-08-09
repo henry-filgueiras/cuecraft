@@ -334,6 +334,26 @@ export const EXHIBIT = {
   height: 552,
   scale: 2,
   pointSize: 30,
+  /**
+   * How dark the rest of the picture goes while a region is being talked about.
+   *
+   * Emphasis on a raster has to be **subtractive**: an image cannot show part of itself at a
+   * different opacity, so the only way to lift one region is to put a veil over everything else.
+   * Driven by `heat` rather than by `degree`, which is decision:23 — spend the contrast on the
+   * moment, and let established be normal. A veil that persisted would end the slide having
+   * declared three quarters of the chart irrelevant.
+   */
+  veil: 0.66,
+  /** The mark a reached region keeps afterwards. Quiet on purpose; the moment already happened. */
+  markAlpha: 0.5,
+  markWidth: 3,
+  /**
+   * How far the mark stands off the region, so it frames rather than clips.
+   *
+   * An `outline` rather than a `border`, because a border would have to be laid out and this must
+   * not move the rectangle it is describing by a single pixel.
+   */
+  markStandoff: 8,
 } as const;
 
 /**
