@@ -2,9 +2,10 @@
 id: tsk_01KZJ8SKGGPPT5ZBJ52HEDS9Y0
 sequence: 90
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # The composition: a map, a traveller, and a wake

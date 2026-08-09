@@ -2,8 +2,9 @@
 id: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 sequence: 19
 kind: sprint
-status: active
+status: closed
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # A state machine as a map, and the scenario as a traveller
@@ -127,3 +128,101 @@ Refused in advance, and refused *because* the semantic contract is what is being
   open it.
 - **Any change to `world`, `protocol` or the sequence policies to accommodate this.** If something
   has to give, that is a finding to record, not a refactor to slip in.
+
+## Outcome
+
+Both films render through the ordinary pipeline, from a grammar with no coordinate, no colour, no
+duration and no camera instruction in it:
+
+    examples/elevator.yaml   133 lines   6 states, 7 transitions, 8 occurrences   2095 frames, 01:09.9
+    examples/leases.yaml     181 lines   9 states, 14 transitions, 13 occurrences 2639 frames, 01:28.0
+
+    layout            elevator 1350 x 1526 (0.88:1)      leases 3840 x 1332 (2.88:1)
+    overview          3628 units, state name 26.5px      4109 units, state name 23.4px
+    shots             2030 – 3661, event label 18–32px   1250 – 3458, event label 19–52px
+    collisions        none                               none
+
+Both were laid out once from the topology alone, and a test permutes, reverses, empties and doubles
+each scenario to assert that nothing moves.
+
+### The hypothesis held, and the part that did not is the finding
+
+The sprint's hypothesis was that a machine is `world`'s stable atlas plus `protocol`'s ordered
+occurrences plus **persistent occupancy**, and that the first two would compose. They did, and more
+cheaply than expected:
+
+- **The derived clock transferred without a constant changing.** decision:35 was written about
+  arrows between lanes and turns out never to have been about arrows: the label is whatever the
+  picture asks a viewer to read, the transit is whatever crosses the frame first, and the run decay
+  is a fact about silence. One function, two callers, and a test that asserts they agree at every
+  run depth rather than merely agreeing today.
+- **The hold policy transferred untouched for the third time.** A run that stays in one
+  neighbourhood emits no camera keys after the first — four occurrences of one self-loop are four
+  beats and one shot — and no rule was written to make that happen. decision:24 has now survived a
+  world, a band and a cyclic graph.
+- **The element, address and beat machinery needed nothing.** States and occurrences publish by the
+  rule actors and steps already follow; `buildTimeline` grew no second path.
+
+The third leg is where the hypothesis was **wrong about cost**. Occupancy was expected to be a
+reading of the existing activation model, and it cannot be: `heat` is a transient by construction
+and `degree` is monotone and never released, so between them an anchor can say *this was reached*
+and can never say *this is where the machine is now, and that other one no longer is*. Occupancy is
+a fourth quantity (decision:47) — and having it forced two of decision:23's findings to be re-hung
+rather than reused, because both silently assume the moment **ends**. Surround attenuation went
+from half a stop to a quarter and now rides the arrival transient instead of the occupancy; hue
+stopped encoding identity and encodes occupancy alone, because a frame where nine states are nine
+colours has no colour left to say which one is current. Three numbers were not enough for the
+thirteenth body, which is the first time that has been true, and idea:20 records why the
+generalisation is parked rather than taken.
+
+### What the frames changed
+
+Three defects, found by looking, in an order that matters: none of them was visible in a test and
+all three were visible in one frame.
+
+1. **The deck title printed across the first transition's label** on the elevator's establishing
+   shot. decision:26 diagnosed this in general and its answer — fade the caption by how much of the
+   world is on screen — does not transfer, because a machine's chrome is most necessary exactly when
+   the whole machine is on screen. Fixed by handing the camera a viewport that stops short of the
+   chrome, which is `useSubtitleBand`'s trick at the other end of the frame. It costs a tall machine
+   about a third more width in every shot and a wide one nothing at all (dragon:29).
+2. **The wake could not answer its own question.** At the closing overview the transition the run
+   *opened with* was indistinguishable from one it never took. Untaken came down and taken went up
+   to roughly two to one in alpha and stroke weight, while `available` deliberately stayed the
+   smallest step on the frame.
+3. **The closing overview barely existed** — the 130-frame pull-back consumed all but eight frames
+   of a 156-frame `post_say`. Raised to 9000ms in both examples, which is the right lever:
+   decision:22 already made that shot something an author asks for by writing enough silence.
+
+One suspected defect was not one. A label looked clipped at the frame edge in the leases overview;
+the frame had been sampled fifty frames into the pull-back, and the settled shot has 63 pixels of
+margin there.
+
+### The paused-frame test, answered honestly
+
+> Where is the machine now? How did it get here? What else could happen from here?
+
+**`examples/elevator.yaml`: yes, on every frame sampled.** Occupancy is unmistakable and exclusive;
+the wake plus the `×2` counters reconstruct the whole route without the readout; the untaken branch
+to Out of service is legible in the same frame as the branch being taken, and nothing about the
+ending is styled as an ending.
+
+**`examples/leases.yaml`: yes during the run, and only partly at the overview.** The travelling
+shots answer all three. The closing overview answers the first two and answers the third *for the
+states the camera visited*: at 4109 units the event labels are 16 pixels, so four transitions in
+that film — including both of the two ways the job could have finished — are never legible in any
+frame. That is the adversarial specimen doing exactly what it was written to do, and it is
+dragon:28 rather than a defect to paper over.
+
+### What was refused and stayed refused
+
+Every non-goal held. No pseudostates, no composite states, no second traveller, no guards as
+separate concepts, no trace-only shorthand, no authored geometry, no scenario reset, and no generic
+diagram engine — `world`, `protocol` and `machine` share `camera.ts`, `polyline.ts` and the dwell
+policy, and share no control flow at all (decision:48). Nothing in `world`, `protocol` or the
+sequence policies was changed to accommodate this; the one thing that moved, the polyline geometry,
+moved because a second caller demonstrated the sharing and is re-exported so no importer changed.
+
+One refusal was added during the round rather than in advance: **a machine may not be an entity's
+interior**, in either spelling, because the chamber would have to run a second camera inside the one
+already looking at it.

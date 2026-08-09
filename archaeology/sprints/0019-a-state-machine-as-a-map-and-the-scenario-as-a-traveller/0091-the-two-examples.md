@@ -2,9 +2,10 @@
 id: tsk_01KZJ8SKGNB10E4CJJ1VRRXRR5
 sequence: 91
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # The two examples

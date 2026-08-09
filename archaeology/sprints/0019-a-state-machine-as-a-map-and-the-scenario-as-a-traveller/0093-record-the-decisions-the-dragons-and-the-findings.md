@@ -2,9 +2,10 @@
 id: tsk_01KZJ8SKGYQ973J6M6NNP50CM4
 sequence: 93
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Record the decisions, the dragons, and the findings
