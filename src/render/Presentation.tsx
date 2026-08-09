@@ -18,6 +18,7 @@ import {
   COLORS,
   FONT_STACK,
   FRAME,
+  MONO_STACK,
   MOTION,
   RECALL,
   SUBTITLE,
@@ -135,6 +136,7 @@ export function PresentationVideo({ timeline }: PresentationProps) {
                 {...quotation}
                 width={timeline.width}
                 height={timeline.height}
+                fps={timeline.fps}
               />
             )}
 
@@ -386,8 +388,9 @@ export function RecalledCanvas({
 function QuotationCard({
   width,
   height,
+  fps,
   ...canvas
-}: ReplayProps & { width: number; height: number }) {
+}: ReplayProps & { width: number; height: number; fps: number }) {
   const { recall } = canvas;
 
   // The card, in screen space. Rounded to whole pixels so the outline lands on a pixel boundary
@@ -445,55 +448,135 @@ function QuotationCard({
         </div>
       </div>
 
-      <QuotationLabel ordinal={recall.sourceOrdinal} left={x} bottom={height - y} />
+      <QuotationFooter
+        recall={recall}
+        frame={canvas.frame}
+        fps={fps}
+        left={x}
+        width={w}
+        top={y + h + RECALL.footerGap}
+      />
     </AbsoluteFill>
   );
 }
 
 /**
- * Which slide is being quoted, in the exposed margin above the card.
+ * How long the quotation is, and how far through it we are.
  *
- * Renderer-owned chrome, derived entirely from `Recall.sourceOrdinal`. There is no key that could
- * set it, no text an author writes, and it consumes no part of any composition's box — it is drawn
- * in the room the inset gave up, which is room no slide was ever laid out into.
+ * The one thing the card by itself cannot say. It answers "this is the past" and "which slide", and
+ * a viewer is then holding an open question — a quotation is a hold on the present, and a hold of
+ * unknown length reads as an interruption rather than as evidence. Everything needed to close that
+ * is already compiled: a `Recall` has a first frame and a measured duration, and the current frame
+ * is the third number. So this is a **reading** of the interval and adds nothing to it.
  *
- * Set in the deck's existing small-caps idiom — the subtitle's metadata row, at the same tracking
- * and the same weight — so it reads as a label of the same kind rather than as a new register. The
- * mark is the accent bar `Rule` draws at the top of every slide and the subtitle draws when nobody
- * was named, turned to point back: cuecraft already has a mark that means *a block begins here*, and
- * this is that mark saying the block began earlier.
+ * ## What it is not
+ *
+ * Not a player. There is no play mark, no pause mark, no handle on the rail and no shape that
+ * invites a click, because none of those would be true — this is a rendered MP4 and the frame
+ * cannot honour an affordance. cuecraft has never drawn a control it does not have.
+ *
+ * ## Why the rail is thinner than a progress rule
+ *
+ * With the footer on, the frame carries three horizontal accent bars, and they mean three different
+ * things: the present slide's position in the deck along the bottom edge, the quoted slide's
+ * position in the deck inside the card, and recall-local progress here between them. That is the
+ * risk the round was opened to test. Weight is what separates them — `RECALL.rail` is thinner than
+ * `FRAME.progressHeight`, and this one is inset between two blocks of type rather than running the
+ * full bleed, so it reads as part of a caption rather than as a third edge of the frame.
+ *
+ * The time is set in `MONO_STACK` in the seconds idiom `figures.tsx` already uses for a derived
+ * number, at one decimal: two decimals at 30fps is a digit changing three times a second in the
+ * corner of a frame somebody is trying to read a quotation on.
  */
-function QuotationLabel({
-  ordinal,
+function QuotationFooter({
+  recall,
+  frame,
+  fps,
   left,
-  bottom,
+  width,
+  top,
 }: {
-  ordinal: number;
+  recall: Recall;
+  frame: number;
+  fps: number;
   left: number;
-  /** Distance from the bottom of the frame to the card's top edge. */
-  bottom: number;
+  width: number;
+  top: number;
 }) {
+  // Clamped rather than trusted: the card is only mounted inside the interval, so this is belt and
+  // braces against a caller that mounts it elsewhere — and a rail that overshot would be a rail
+  // reporting something the compiler did not say.
+  const elapsed = Math.min(Math.max(frame - recall.from, 0), recall.durationInFrames);
+  const through = recall.durationInFrames === 0 ? 1 : elapsed / recall.durationInFrames;
+
   return (
     <div
       style={{
         position: "absolute",
         left,
-        bottom: bottom + RECALL.labelGap,
+        top,
+        width,
+        height: RECALL.label,
         display: "flex",
         alignItems: "center",
-        gap: RECALL.labelGap,
+        gap: RECALL.railGap,
         fontFamily: FONT_STACK,
-        fontSize: RECALL.label,
-        fontWeight: 700,
-        letterSpacing: SUBTITLE.labelTracking,
-        textTransform: "uppercase",
         color: COLORS.accent,
       }}
     >
-      <Backmark />
-      {`Recall · Slide ${ordinal}`}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: RECALL.labelGap,
+          flex: "none",
+          fontSize: RECALL.label,
+          fontWeight: 700,
+          letterSpacing: SUBTITLE.labelTracking,
+          textTransform: "uppercase",
+        }}
+      >
+        <Backmark />
+        {`Recall · Slide ${recall.sourceOrdinal}`}
+      </div>
+
+      <div
+        style={{
+          flex: "none",
+          width: RECALL.railWidth,
+          height: RECALL.rail,
+          backgroundColor: COLORS.track,
+        }}
+      >
+        <div
+          style={{
+            width: `${through * 100}%`,
+            height: "100%",
+            backgroundColor: COLORS.accent,
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          textAlign: "right",
+          fontFamily: MONO_STACK,
+          fontSize: RECALL.time,
+          // The elapsed half is the one that moves; the total is context, so it recedes.
+          color: COLORS.dim,
+        }}
+      >
+        <span style={{ color: COLORS.accent }}>{seconds(elapsed / fps)}</span>
+        {` / ${seconds(recall.durationInFrames / fps)}`}
+      </div>
     </div>
   );
+}
+
+/** One decimal: at 30fps, two would put a digit changing three times a second on the frame. */
+function seconds(value: number): string {
+  return `${value.toFixed(1)}s`;
 }
 
 /**

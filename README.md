@@ -448,12 +448,12 @@ must name exactly one _earlier_ root-level anchor; missing, ambiguous, forward a
 references are all compile errors that name what they found.
 
 It is drawn as a **quotation card**. The present slide stays on screen and recedes; the recalled
-canvas is inset, outlined in the deck's accent, and labelled with the slide it came from — so the
-frame carries two progress positions at once, the present one along the bottom edge and the
-historical one inside the card. The recalled sentence is captioned inside the card too, in the words
+canvas is inset and outlined in the deck's accent, with a footer beneath it naming the slide it came
+from and counting the quotation out — so the frame carries two progress positions at once, the
+present one along the bottom edge and the historical one inside the card. The recalled sentence is captioned inside the card too, in the words
 and the voice it was first said in. Playing it full-bleed was tried first and read as ordinary
-progression rather than as evidence ([`decision:44`](archaeology/decisions/)); there is no filter,
-no fade and no authored control over any of it. [`examples/retry.yaml`](examples/retry.yaml) is a
+progression rather than as evidence ([`decision:44`](archaeology/decisions/), extended by
+`decision:45`); there is no filter, no fade and no authored control over any of it. [`examples/retry.yaml`](examples/retry.yaml) is a
 minute of two people disagreeing about a duplicate charge, settled by playing one of them back.
 
 **What the content is.** A slide carries at most one body, and which one it is says what the

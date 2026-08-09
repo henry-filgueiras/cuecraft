@@ -551,16 +551,17 @@ test(
     // And the recalled subtitle is drawn once. The deck-level band is the strip *below* the card;
     // during a replay it must carry no text at all, because the sentence belongs to the quotation.
     //
-    // Measured rather than asserted, and the two things legitimately down there set the threshold:
-    // the receded present slide, and — deliberately *not* receded — the present slide's own
-    // progress rule, which is the second clock the card exists to keep visible. The rule is
-    // excluded by stopping the probe above it; everything left is scrimmed content, which cannot
-    // come near paper's 245.
+    // Measured rather than asserted, and what is legitimately down there sets the threshold. Three
+    // things are: the receded present slide; the present slide's own progress rule, deliberately
+    // *not* receded because it is the second clock; and the quotation footer. The rule is excluded
+    // by stopping the probe above it. The other two are accent and scrimmed ink, which top out at
+    // `COLORS.accent`'s luma of 169 — comfortably below paper's 245, which is what a subtitle drawn
+    // here would be.
     const below = cardTop + Math.round(timeline.height * inset) + 2;
     const band = timeline.height - 5 - below;
     assert.ok(band > 20, `no deck band left to probe: ${band}px`);
     assert.ok(
-      (await brightest(framedPath, timeline.width, band, 0, below)) < 150,
+      (await brightest(framedPath, timeline.width, band, 0, below)) < 200,
       "a subtitle is drawn in the deck band as well as in the card",
     );
 

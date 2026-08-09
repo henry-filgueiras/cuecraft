@@ -93,3 +93,7 @@ addition below the renderer is `recallAt`, which reads.
   part.
 - **A bleeding present slide has no second clock at all**, because `Frame`'s bleed branch draws no
   progress rule. Pre-existing and unchanged by this round, but the card is where it becomes visible.
+- **Extended by decision:45**, which adds a footer beneath the card carrying the label, a rail and
+  elapsed / total recall-local time. Nothing on this page is retracted by it: the label moved from
+  the margin above the card into that footer, and everything else — the inset, the scrim, the
+  outline, the subtitle ownership and the hard cut — stands as decided here.

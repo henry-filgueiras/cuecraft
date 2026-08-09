@@ -866,6 +866,21 @@ export const RECALL = {
   labelGap: 14,
   /** How far the return stroke rises off the accent bar. */
   backmarkRise: 14,
+  /**
+   * The footer, in the room the inset gave up beneath the card.
+   *
+   * The rail is deliberately thinner than `FRAME.progressHeight`. With the footer on, the frame
+   * carries three horizontal accent bars — the present slide's deck position along the bottom edge,
+   * the quoted slide's deck position inside the card, and recall-local progress here between them —
+   * and weight is what keeps them from reading as three edges of one thing. This one is also inset
+   * between two blocks of type rather than run full bleed, so it reads as part of a caption.
+   */
+  footerGap: 12,
+  rail: 4,
+  railWidth: 300,
+  railGap: 28,
+  /** The elapsed / total readout, in the monospace `figures.tsx` sets a derived number in. */
+  time: 20,
 } as const;
 
 /**
