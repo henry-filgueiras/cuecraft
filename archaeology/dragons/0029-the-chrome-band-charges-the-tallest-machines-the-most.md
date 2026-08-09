@@ -2,8 +2,9 @@
 id: drg_01KZJBFQ8HVNP9X0HM0000V2TJ
 sequence: 29
 kind: dragon
-status: open
+status: closed
 created: 2026-08-08
+resolved-by: "[[dec_01KZJHNFNYJCX8MPF0EYC3J6DC|Choose the shot sequence, not each shot]]"
 ---
 
 # The chrome band charges the tallest machines the most
@@ -53,3 +54,28 @@ Close as **correct** if a third and fourth machine both pay the band without the
 noticeable — that is, if no shot in either is judged too wide because of it. Close as **wrong** if
 a machine appears whose shots are visibly compromised, in which case the answer is probably the
 gutter rather than a smaller number.
+
+## Resolution
+
+**Closed as wrong, and the gutter was the answer** — the one this dragon named and called "a bigger
+change than it sounds". sprint:20, decision:51.
+
+What made it affordable was not a change of mind about the cost. It was that the round had to build
+a gutter anyway: decision:49's execution ledger is a screen-fixed rail down the left of the frame,
+and once a `circuit` has one of those the deck title has somewhere to live that is not on top of
+anything. The band's whole justification was that a caption fixed to the frame collides with
+whatever is behind it; a caption in a gutter is behind nothing.
+
+So the reservation is now entirely horizontal and the asymmetry reverses:
+
+    elevator   height-bound. Paid the band in full, pays the gutter nothing.  26.5px -> 37.5px
+    leases     width-bound.  Paid the band nothing, pays the gutter in full.  23.4px -> 23.9px
+
+The elevator's forty percent is the band being refunded; the leased runner's small gain is
+decision:52's layout audition paying for the gutter out of a better-fitted map. Both films also lost
+the title fading out thirty seconds in, which was never a feature — a film whose title disappears is
+a film a viewer cannot name from a paused frame.
+
+The cost did not vanish, it moved: the composition now charges its **widest** machines rather than
+its tallest, and for a chronology that is on screen for the whole film rather than a caption that is
+on screen for a second. That is a better trade and it is still a trade, which is dragon:30.

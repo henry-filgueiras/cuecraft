@@ -44,6 +44,33 @@ telling a story the scenario did not.
 
 ## Candidate direction
 
+## What sprint:20 measured, without closing it
+
+The question was posed against a layout that had been asked for once, with defaults. decision:52
+searched 144 of them, and the answer moved but did not arrive:
+
+    incumbent, at the frame it now gets   19.1px state name, 13.0px event label
+    elected                               23.9px state name, 16.3px event label
+    best candidate found, on any axis     ~24px state name, ~17px event label
+
+So roughly a quarter more, in world units, and about half of that handed back to decision:49's
+ledger rail, which takes a fifth of the width off a machine that is width-bound. The event label at
+the canonical overview is still under the floor and **four transitions in that film are still never
+legible in any frame**.
+
+Two things did change, and both are about the diagnosis rather than the number.
+
+**It is now known to be a property of the machine rather than of the layout.** Nine states and
+fourteen labelled edges, of which one rank has to hold five siblings and seven captions side by
+side, is about 8000 world units of text; no arrangement of it fits a 16:9 frame at a readable size.
+The search says so with 144 data points instead of one.
+
+**And the composition stopped needing the overview to carry that weight.** decision:49's ledger
+answers *what happened and in what order* in screen-fixed type at 27px, and decision:51's planner
+now gets close enough to read the label on twelve of thirteen occurrences rather than three. What is
+left unreadable at the overview is exactly the four untaken transitions — the "what else could
+happen" half — which is where this dragon started and is now the *only* thing it is about.
+
 ## Resolution criteria
 
 Close as **inherent** if the answer is that a machine wider than about eight legible states cannot
