@@ -20,6 +20,7 @@ import {
   type Rect,
   type Viewport,
 } from "./camera.ts";
+import { polylineLength, smoothPath, trimToBoxes } from "./polyline.ts";
 import { WORLD } from "./theme.ts";
 
 /**
@@ -56,6 +57,11 @@ import { WORLD } from "./theme.ts";
  * Nothing in here is reachable from the source. The author writes what exists and what relates
  * to what; every number below is derived from that plus the viewport.
  */
+
+// The polyline geometry a routed graph is drawn with moved to `./polyline.ts` when a second
+// composition wanted every line of it (decision:36's rule, applied again). Re-exported so no
+// existing importer changed, and so the history of what used to live here stays legible.
+export { polylineLength, smoothPath } from "./polyline.ts";
 
 export {
   CAMERA,
@@ -278,10 +284,10 @@ export function layoutWorld(world: {
 
   const edges: WorldEdge[] = world.relations.map((relation) => {
     const routed = graph.edge(relation.from, relation.to) as { points: Point[] };
-    const points = trimToPlates(
+    const points = trimToBoxes(
       routed.points,
-      nodes.find((node) => node.id === relation.from),
-      nodes.find((node) => node.id === relation.to),
+      nodes.find((node) => node.id === relation.from)?.rect,
+      nodes.find((node) => node.id === relation.to)?.rect,
     );
     return {
       from: relation.from,
@@ -309,89 +315,6 @@ export function layoutWorld(world: {
     byId: new Map(nodes.map((node) => [node.id, node])),
     neighbours: adjacency(world.relations, nodes),
   };
-}
-
-/**
- * Pull an edge's ends back to the plates it joins.
- *
- * dagre routes to node centres, so an undisturbed path runs underneath both plates. Everything
- * about the drawing wants the edge to *start at an edge* — the dash that travels along it, the
- * arrow head, and the eye following it — so the first and last points are moved to where the
- * polyline crosses the plate boundary.
- */
-function trimToPlates(
-  points: readonly Point[],
-  from: WorldNode | undefined,
-  to: WorldNode | undefined,
-): Point[] {
-  const trimmed = [...points];
-  if (from !== undefined && trimmed.length >= 2) {
-    trimmed[0] = exitPoint(from.rect, trimmed[1] as Point);
-  }
-  if (to !== undefined && trimmed.length >= 2) {
-    trimmed[trimmed.length - 1] = exitPoint(
-      to.rect,
-      trimmed[trimmed.length - 2] as Point,
-    );
-  }
-  return trimmed;
-}
-
-/** Where the segment from a plate's centre towards `towards` leaves the plate. */
-function exitPoint(rect: Rect, towards: Point): Point {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height / 2;
-  const dx = towards.x - cx;
-  const dy = towards.y - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-
-  const scaleX = dx === 0 ? Infinity : rect.width / 2 / Math.abs(dx);
-  const scaleY = dy === 0 ? Infinity : rect.height / 2 / Math.abs(dy);
-  const scale = Math.min(scaleX, scaleY);
-  return { x: cx + dx * scale, y: cy + dy * scale };
-}
-
-/**
- * A path through the routing points, rounded at the bends.
- *
- * Quadratic segments through the midpoints of the polyline, which is the standard way to round a
- * polyline without moving its ends: the curve passes through every midpoint and uses the original
- * vertices as controls, so a straight run stays straight and a corner becomes an arc.
- */
-function smoothPath(points: readonly Point[]): string {
-  if (points.length === 0) return "";
-  const [first, ...rest] = points;
-  if (first === undefined) return "";
-  if (rest.length === 0) return `M ${round(first.x)} ${round(first.y)}`;
-  if (rest.length === 1) {
-    const only = rest[0] as Point;
-    return `M ${round(first.x)} ${round(first.y)} L ${round(only.x)} ${round(only.y)}`;
-  }
-
-  let d = `M ${round(first.x)} ${round(first.y)}`;
-  for (let index = 0; index < points.length - 2; index += 1) {
-    const control = points[index + 1] as Point;
-    const next = points[index + 2] as Point;
-    const midX = (control.x + next.x) / 2;
-    const midY = (control.y + next.y) / 2;
-    d += ` Q ${round(control.x)} ${round(control.y)} ${round(midX)} ${round(midY)}`;
-  }
-  const end = points[points.length - 1] as Point;
-  return `${d} L ${round(end.x)} ${round(end.y)}`;
-}
-
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-export function polylineLength(points: readonly Point[]): number {
-  let total = 0;
-  for (let index = 1; index < points.length; index += 1) {
-    const previous = points[index - 1] as Point;
-    const current = points[index] as Point;
-    total += Math.hypot(current.x - previous.x, current.y - previous.y);
-  }
-  return total;
 }
 
 function adjacency(

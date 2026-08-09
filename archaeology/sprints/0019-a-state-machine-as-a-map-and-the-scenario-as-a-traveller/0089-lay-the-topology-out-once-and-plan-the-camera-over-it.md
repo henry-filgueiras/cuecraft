@@ -2,9 +2,10 @@
 id: tsk_01KZJ8SKGB59Y7Z28VWTCTHWSB
 sequence: 89
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Lay the topology out once, and plan the camera over it

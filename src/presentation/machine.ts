@@ -163,7 +163,10 @@ export interface ScenarioPath {
   readonly stop: string;
 }
 
-export function scenarioPath(machine: AuthoredMachine): ScenarioPath {
+export function scenarioPath(machine: {
+  readonly transitions: readonly AuthoredTransition[];
+  readonly scenario: readonly AuthoredOccurrence[];
+}): ScenarioPath {
   const byId = new Map(machine.transitions.map((entry) => [entry.id, entry] as const));
   const transitions = machine.scenario.map(
     (occurrence) => byId.get(occurrence.take) as AuthoredTransition,

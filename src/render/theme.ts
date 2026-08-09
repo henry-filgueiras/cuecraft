@@ -517,6 +517,168 @@ export const TRANSCRIPT = {
 } as const;
 
 /**
+ * How a state machine is set, in world units.
+ *
+ * The third inhabitant of the second coordinate system, and the first where the axes mean nothing.
+ * A world's x is how far along the flow a concept sits; a protocol's x is *who* and its y is
+ * *when*. A machine's coordinates mean nothing at all — dagre put a state where it fitted, and the
+ * only claim the picture makes about position is that **it never changes**. Everything below
+ * defends either that stability or the one thing the geometry is not saying, which is where the
+ * machine currently is.
+ *
+ * ## Why the palette is a brightness ramp and not a hue ramp
+ *
+ * The atlas reads an entity's hue off the flow, and the transcript reads a lane's off its column.
+ * Both work because in those compositions hue is a redundant encoding of *identity* — a fact that
+ * never changes about a thing that never moves. A machine has nothing like that to encode. What it
+ * needs a viewer to find, in a tenth of a second, from anywhere on the frame, is which single node
+ * is occupied — and a frame where nine nodes are nine colours has no colour left to say that with.
+ *
+ * So hue here encodes **occupancy and nothing else**. The topology is one neutral steel, at three
+ * brightnesses that mean possible, visited and current, and the deck's accent is spent entirely on
+ * the one state the machine is in. That is decision:23's rule — spend the contrast on the moment —
+ * with the crucial difference that the moment does not end.
+ *
+ * ## Why nothing is attenuated for not having happened
+ *
+ * An atlas draws unreached entities dim because narration is going to reach them, and dimness is a
+ * promise. A machine makes no such promise: a transition the scenario never takes is not a spoiler
+ * and not a failure, it is the answer to "what else could happen from here", and it has to be
+ * legible in the same frame as the one being taken. `possible` is therefore a real, readable
+ * contrast rather than a hint of one, and the separation between it and `current` is bought with
+ * the accent, a fill and a ring rather than by pushing the rest of the machine into the dark.
+ */
+export const MACHINE = {
+  /** A state's name. Large in world units, because a state is read from the whole-machine shot. */
+  label: 50,
+  lineHeight: 1.2,
+  charWidth: 0.55,
+  maxLines: 2,
+  plateAspect: 2.6,
+  linePenalty: 0.4,
+  padX: 42,
+  padY: 38,
+  minPlateWidth: 330,
+  plateRadius: 999,
+  plateStroke: 3,
+
+  /**
+   * A transition's event label, and the measure it wraps to.
+   *
+   * Smaller than a state's name by a third, which is the hierarchy this composition has: the map
+   * has to be readable at the overview, and an event only has to be readable in the shot that is
+   * about it. `labelMeasure` is in characters rather than world units because the wrap has to
+   * happen *before* dagre is told how much room the label needs, and at that point there is no
+   * geometry to measure against — only the string.
+   */
+  event: 34,
+  eventLineHeight: 1.24,
+  eventCharWidth: 0.53,
+  labelMeasure: 26,
+  labelMaxLines: 3,
+  labelPadX: 18,
+  labelPadY: 10,
+
+  /**
+   * Space between ranks, between states within a rank, and between parallel edges.
+   *
+   * `ranksep` is generous where a world's is tight, and the reason is edge labels: dagre gives a
+   * labelled edge a rank of its own to sit in, so the number here is really "how much room between
+   * a state and the label of the transition leaving it". `nodesep` is what keeps two parallel
+   * transitions from sharing a line of sight, and `edgesep` is what separates the two of them.
+   */
+  ranksep: 80,
+  nodesep: 120,
+  edgesep: 60,
+
+  /**
+   * The room a state with a self-transition reserves beside itself.
+   *
+   * dagre does route self-edges, and what it produces is a crossed ribbon that reads as a mistake.
+   * So a self-loop is drawn rather than routed — but the *room* for it is still reserved through
+   * dagre, by making the state's box wider by exactly this much and drawing the plate at the left
+   * of it. The loop then lives in space no other edge and no other label can be given, which is the
+   * only collision policy for a hand-drawn shape that actually holds.
+   */
+  loopReach: 150,
+  loopSpread: 0.6,
+
+  /** The blueprint field behind it, as the atlas and the transcript have. */
+  gridStep: 130,
+  gridParallax: 0.55,
+
+  /* ---- the palette: one neutral topology, and the accent spent on occupancy ---- */
+
+  /** A state nothing in the run has occupied. Ordinary possibility, and fully legible. */
+  possible: "#8CA0BC",
+  /** A state the run has been in and left. Ordinary topology again, with a little more presence. */
+  visited: "#B9C8DD",
+  /** Where the machine is. The only warm thing on the frame, and it does not decay. */
+  current: "#E9A85E",
+  /** The arrival transient, on top of occupancy rather than instead of it. */
+  ignite: "#FFE3B8",
+  /** A transition nobody has taken. */
+  edge: "#5C6D87",
+  /** A transition the run has taken, at its freshest. */
+  taken: "#C7D6E8",
+
+  edgeStroke: 3.6,
+  takenStroke: 5,
+  arrowHead: 24,
+  /** The traveller: a spark that crosses the edge it is taking. */
+  travellerSize: 26,
+  /** How much of the beat the crossing occupies, before the destination is simply occupied. */
+  crossing: 0.42,
+
+  /* ---- what the camera is told about the space ---- */
+
+  /**
+   * Breathing room around a shot, and the widest one the camera will take.
+   *
+   * `widest` is derived from typography rather than picked, the way a transcript's is: a state's
+   * name is set at `label` world units, below about nineteen screen pixels a name stops being
+   * readable at 1080p, so the widest legible shot is `1920 * label / 19`. A machine wider than
+   * that cannot be shown whole, and the closing overview would be a promise the frame cannot keep.
+   */
+  shotPad: 0.16,
+  widest: 5050,
+  /**
+   * ...and the widest a shot may get by *adding context to it*, which is a different number.
+   *
+   * `widest` is the hard cap, derived from a state's name: past it a plate stops being a plate. But
+   * an occurrence's subject is not a plate, it is an **event label**, set a third smaller, and a
+   * shot wide enough to read a state name is not necessarily wide enough to read the sentence on
+   * the edge being taken. So the alternatives an arrival brings with it stop being taken here:
+   * `1920 * event / 20`, which is where the label the shot is *about* stops being readable.
+   *
+   * The distinction is not pedantic and the specimen made it. Arriving at the leased runner's hub,
+   * all five of its exits fit inside `widest` — so the shot that was supposed to be about one
+   * transition silently became the overview an act early, at seventeen pixels a word. The essential
+   * subject is never trimmed by this; only what is being added to it is.
+   */
+  context: 3260,
+  /**
+   * How long the opening overview is held before the camera may move.
+   *
+   * Longer than a protocol's, and for a reason that is specific to this composition: the whole
+   * topology is on screen from frame one, and it is the only thing the film ever asks a viewer to
+   * learn *as a shape*. A machine that started travelling before its map had been seen would be
+   * giving directions to somebody who had not been shown the map.
+   */
+  establish: 38,
+  /**
+   * A beat between the camera arriving and the traveller setting off.
+   *
+   * The one rule in this composition that had to be written rather than inherited. `shotFor`
+   * decides *whether* to move and `paceOf` decides how long it takes, and neither of them has an
+   * opinion about what happens next — but a camera still settling while a traveller crosses an
+   * edge produces two motions the eye has to separate, and it separates them badly. So a move
+   * lands this many frames before the occurrence it is about, out of the tail of the one before.
+   */
+  lead: 8,
+} as const;
+
+/**
  * How the compilation's own facts are set.
  *
  * Two colours carry the whole argument and neither is decorative: **authored** is the cool of a
