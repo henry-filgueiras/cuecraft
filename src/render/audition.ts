@@ -12,6 +12,7 @@ import {
   type MachineLayout,
 } from "./machine.ts";
 import { MACHINE, contextShot } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * Auditioning a layout instead of tuning one.
@@ -245,7 +246,11 @@ const CROSSING_PRICE = 0.6;
  * execution ledger have taken theirs — and it is the input that makes this a global decision
  * rather than a local one.
  */
-export function auditionLayouts(machine: Machine, viewport: Viewport): Audition {
+export function auditionLayouts(
+  machine: Machine,
+  viewport: Viewport,
+  type: Typography,
+): Audition {
   const weights = traversalWeights(machine);
   const scenarioWeighted = weights.size > 0;
 
@@ -279,11 +284,11 @@ export function auditionLayouts(machine: Machine, viewport: Viewport): Audition 
   }
 
   const candidates = policies.map(({ name, policy }): LayoutCandidate => {
-    const layout = layoutMachine(machine, policy);
+    const layout = layoutMachine(machine, type, policy);
     return { name, policy, layout, score: scoreLayout(layout, machine, viewport) };
   });
 
-  const incumbentLayout = layoutMachine(machine, DEFAULT_LAYOUT);
+  const incumbentLayout = layoutMachine(machine, type, DEFAULT_LAYOUT);
   const incumbent: LayoutCandidate = {
     name: "incumbent",
     policy: DEFAULT_LAYOUT,
@@ -312,8 +317,12 @@ export function auditionLayouts(machine: Machine, viewport: Viewport): Audition 
  * One entry point for the composition, the instrument and the tests, so there is exactly one
  * answer to "where is this state" in the whole system.
  */
-export function electLayout(machine: Machine, viewport: Viewport): MachineLayout {
-  return auditionLayouts(machine, viewport).winner.layout;
+export function electLayout(
+  machine: Machine,
+  viewport: Viewport,
+  type: Typography,
+): MachineLayout {
+  return auditionLayouts(machine, viewport, type).winner.layout;
 }
 
 /** How many times the scenario takes each transition. Used to score, and on probation to place. */

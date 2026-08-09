@@ -35,6 +35,11 @@ import {
 } from "./series.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "./scope.ts";
 import {
+  NO_ACCESSIBILITY,
+  typographyFor,
+  type TypographyId,
+} from "../render/typography.ts";
+import {
   languageOf,
   onceReader,
   quoteSlide,
@@ -182,6 +187,19 @@ export interface Presentation {
    * and cuecraft's existing films were framed without it.
    */
   readonly subtitles: boolean;
+  /**
+   * Which typography profile this presentation resolved to (`../render/typography.ts`).
+   *
+   * An **identity**, not a font. Carried the way `subtitles` is — forward, unread by anything in
+   * this module — because it is authored intent that only layout acts on. What an author may say
+   * about it is one boolean about a reader; what that boolean resolves to is cuecraft's decision,
+   * and nothing downstream of here can name a typeface.
+   *
+   * It belongs to the presentation and to nothing smaller. A module, a slide and a recalled frame
+   * all set in whatever the root resolved, because a film that changed face partway through would
+   * be exactly the reading difficulty the constraint exists to remove.
+   */
+  readonly typography: TypographyId;
   /** Valid source that will not do what it looks like it does. Printed, not thrown. */
   readonly warnings: readonly string[];
 }
@@ -1882,6 +1900,7 @@ export function parsePresentation(
     speed: defaults.speed ?? DEFAULT_SPEED,
     narrators,
     subtitles: defaults.subtitles ?? false,
+    typography: typographyFor(NO_ACCESSIBILITY),
     warnings,
     slides: raw.slides.map((entry, index) => {
       // Who this slide speaks in, which is the slide's own choice or the deck's, and which is

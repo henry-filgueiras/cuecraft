@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -48,7 +49,7 @@ const SIMPLE = {
 /* ----------------------------------------------------------------- lanes */
 
 test("lane order is the written order, and the pitch is uniform", () => {
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   assert.deepEqual(
     layout.lanes.map((lane) => lane.id),
     ["client", "gateway", "auth", "worker"],
@@ -60,26 +61,32 @@ test("lane order is the written order, and the pitch is uniform", () => {
 });
 
 test("a lane sits in exactly one place, whatever the traffic does", () => {
-  const quiet = layoutProtocol(SIMPLE);
-  const busy = layoutProtocol({
-    ...SIMPLE,
-    steps: [...SIMPLE.steps, ...SIMPLE.steps, send("worker", "worker", "retry")],
-  });
+  const quiet = layoutProtocol(SIMPLE, TYPO);
+  const busy = layoutProtocol(
+    {
+      ...SIMPLE,
+      steps: [...SIMPLE.steps, ...SIMPLE.steps, send("worker", "worker", "retry")],
+    },
+    TYPO,
+  );
   for (const lane of quiet.lanes) {
     assert.equal(busy.byId.get(lane.id)?.x, lane.x, `${lane.id} moved`);
   }
 });
 
 test("the widest name sets the pitch, and a longer one widens every lane equally", () => {
-  const narrow = layoutProtocol(SIMPLE);
-  const wide = layoutProtocol({
-    ...SIMPLE,
-    actors: SIMPLE.actors.map((actor) =>
-      actor.id === "auth"
-        ? { ...actor, text: "Authorization and consent service" }
-        : actor,
-    ),
-  });
+  const narrow = layoutProtocol(SIMPLE, TYPO);
+  const wide = layoutProtocol(
+    {
+      ...SIMPLE,
+      actors: SIMPLE.actors.map((actor) =>
+        actor.id === "auth"
+          ? { ...actor, text: "Authorization and consent service" }
+          : actor,
+      ),
+    },
+    TYPO,
+  );
   assert.ok(wide.lanePitch > narrow.lanePitch);
   const gaps = wide.lanes
     .slice(1)
@@ -90,7 +97,7 @@ test("the widest name sets the pitch, and a longer one widens every lane equally
 /* ------------------------------------------------------------------ rows */
 
 test("every arrow starts and ends on a lifeline", () => {
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   for (const message of layout.messages) {
     assert.equal(message.x1, layout.byId.get(message.from)?.x);
     assert.equal(message.x2, layout.byId.get(message.to)?.x);
@@ -98,20 +105,23 @@ test("every arrow starts and ends on a lifeline", () => {
 });
 
 test("rows descend, and no two of them overlap", () => {
-  const layout = layoutProtocol({
-    actors: cast("A", "B", "C"),
-    steps: [
-      send("a", "b", "short"),
-      send(
-        "b",
-        "c",
-        "a rather longer payload that will certainly have to wrap somewhere",
-      ),
-      send("c", "a", "back"),
-      { from: "b", to: "b", message: "retry with exponential backoff" },
-      send("a", "b", "again"),
-    ],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("A", "B", "C"),
+      steps: [
+        send("a", "b", "short"),
+        send(
+          "b",
+          "c",
+          "a rather longer payload that will certainly have to wrap somewhere",
+        ),
+        send("c", "a", "back"),
+        { from: "b", to: "b", message: "retry with exponential backoff" },
+        send("a", "b", "again"),
+      ],
+    },
+    TYPO,
+  );
   layout.messages.slice(1).forEach((message, index) => {
     const previous = layout.messages[index] as { band: Rect; y: number };
     assert.ok(
@@ -123,20 +133,26 @@ test("rows descend, and no two of them overlap", () => {
 });
 
 test("a long label wraps rather than overflowing, and its row grows to hold it", () => {
-  const short = layoutProtocol({
-    actors: cast("A", "B"),
-    steps: [send("a", "b", "go")],
-  });
-  const long = layoutProtocol({
-    actors: cast("A", "B"),
-    steps: [
-      send(
-        "a",
-        "b",
-        "POST /orders with the full basket, the idempotency key and the caller's trace context",
-      ),
-    ],
-  });
+  const short = layoutProtocol(
+    {
+      actors: cast("A", "B"),
+      steps: [send("a", "b", "go")],
+    },
+    TYPO,
+  );
+  const long = layoutProtocol(
+    {
+      actors: cast("A", "B"),
+      steps: [
+        send(
+          "a",
+          "b",
+          "POST /orders with the full basket, the idempotency key and the caller's trace context",
+        ),
+      ],
+    },
+    TYPO,
+  );
   const shortRow = short.messages[0];
   const longRow = long.messages[0];
   assert.ok(shortRow !== undefined && longRow !== undefined);
@@ -146,14 +162,20 @@ test("a long label wraps rather than overflowing, and its row grows to hold it",
 });
 
 test("a wider arrow buys a wider measure, so the same label wraps less", () => {
-  const near = layoutProtocol({
-    actors: cast("A", "B", "C", "D", "E"),
-    steps: [send("a", "b", "an eight word label that has to go somewhere")],
-  });
-  const far = layoutProtocol({
-    actors: cast("A", "B", "C", "D", "E"),
-    steps: [send("a", "e", "an eight word label that has to go somewhere")],
-  });
+  const near = layoutProtocol(
+    {
+      actors: cast("A", "B", "C", "D", "E"),
+      steps: [send("a", "b", "an eight word label that has to go somewhere")],
+    },
+    TYPO,
+  );
+  const far = layoutProtocol(
+    {
+      actors: cast("A", "B", "C", "D", "E"),
+      steps: [send("a", "e", "an eight word label that has to go somewhere")],
+    },
+    TYPO,
+  );
   assert.ok(
     (far.messages[0]?.lines.length ?? 0) < (near.messages[0]?.lines.length ?? 0),
     "the distance between lanes should be the label's measure",
@@ -163,15 +185,18 @@ test("a wider arrow buys a wider measure, so the same label wraps less", () => {
 test("wrapping never drops a word, whatever the measure", () => {
   const text = "POST /orders with basket, idempotency-key and trace context";
   for (const measure of [80, 200, 400, 900, 4000]) {
-    assert.equal(wrapToMeasure(text, measure).join(" "), text);
+    assert.equal(wrapToMeasure(text, measure, TYPO).join(" "), text);
   }
 });
 
 test("a self-message is a hook beside its own lane, not a zero-length arrow", () => {
-  const layout = layoutProtocol({
-    actors: cast("A", "B"),
-    steps: [send("a", "b", "start"), { from: "b", to: "b", message: "retry" }],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("A", "B"),
+      steps: [send("a", "b", "start"), { from: "b", to: "b", message: "retry" }],
+    },
+    TYPO,
+  );
   const hook = layout.messages[1];
   assert.ok(hook !== undefined);
   assert.equal(hook.self, true);
@@ -203,7 +228,7 @@ const RECLAIMING = {
 test("a protocol that reclaims nothing lays out exactly as it always did", () => {
   // The licence the whole experiment runs under: the healthy case pays nothing. Positions are the
   // written order, lifelines run the length of the film, and no column is ever terminated.
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   assert.equal(layout.allocation.reuses, 0);
   layout.lanes.forEach((lane, index) => {
     assert.equal(
@@ -225,7 +250,7 @@ test("a protocol that reclaims nothing lays out exactly as it always did", () =>
 });
 
 test("a reclaimed column is the same column, and the newcomer is below the terminator", () => {
-  const layout = layoutProtocol(RECLAIMING);
+  const layout = layoutProtocol(RECLAIMING, TYPO);
   const early = layout.byId.get("early") as Lane;
   const late = layout.byId.get("late") as Lane;
 
@@ -242,7 +267,7 @@ test("a reclaimed column is the same column, and the newcomer is below the termi
 });
 
 test("an arrival is not part of the establishing shot", () => {
-  const layout = layoutProtocol(RECLAIMING);
+  const layout = layoutProtocol(RECLAIMING, TYPO);
   const late = layout.byId.get("late") as Lane;
   assert.ok(
     late.plate.y > layout.cast.y + layout.cast.height,
@@ -253,7 +278,7 @@ test("an arrival is not part of the establishing shot", () => {
 });
 
 test("an arrival gets room of its own, and no row lands in it", () => {
-  const layout = layoutProtocol(RECLAIMING);
+  const layout = layoutProtocol(RECLAIMING, TYPO);
   const late = layout.byId.get("late") as Lane;
   for (const message of layout.messages) {
     const clear =
@@ -270,7 +295,7 @@ test("an arrival gets room of its own, and no row lands in it", () => {
 });
 
 test("rows still descend and never overlap once a handover is reserving room", () => {
-  const layout = layoutProtocol(RECLAIMING);
+  const layout = layoutProtocol(RECLAIMING, TYPO);
   layout.messages.slice(1).forEach((message, index) => {
     const previous = layout.messages[index] as { band: Rect; y: number };
     assert.ok(
@@ -282,13 +307,16 @@ test("rows still descend and never overlap once a handover is reserving room", (
 });
 
 test("reuse narrows the world without narrowing the pitch", () => {
-  const reused = layoutProtocol(RECLAIMING);
-  const spread = layoutProtocol({
-    ...RECLAIMING,
-    // The same protocol with the reuse made impossible: `late` now speaks early too, so its
-    // interval overlaps `early`'s and the two cannot share a column.
-    steps: [send("late", "b", "a word first"), ...RECLAIMING.steps],
-  });
+  const reused = layoutProtocol(RECLAIMING, TYPO);
+  const spread = layoutProtocol(
+    {
+      ...RECLAIMING,
+      // The same protocol with the reuse made impossible: `late` now speaks early too, so its
+      // interval overlaps `early`'s and the two cannot share a column.
+      steps: [send("late", "b", "a word first"), ...RECLAIMING.steps],
+    },
+    TYPO,
+  );
   assert.equal(reused.allocation.slots, 3);
   assert.equal(spread.allocation.slots, 4);
   assert.equal(reused.lanePitch, spread.lanePitch, "the pitch is not what changed");
@@ -346,10 +374,13 @@ test("a self-message neither opens a call nor answers one", () => {
 });
 
 test("an actor holds its lifeline bar for exactly as long as the call is open", () => {
-  const layout = layoutProtocol({
-    actors: cast("A", "B", "C"),
-    steps: [send("a", "b"), send("b", "c"), send("c", "b"), send("b", "a")],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("A", "B", "C"),
+      steps: [send("a", "b"), send("b", "c"), send("c", "b"), send("b", "a")],
+    },
+    TYPO,
+  );
   const held = layout.activations.map((entry) => entry.lane);
   assert.deepEqual(held, ["b", "c"]);
 
@@ -365,10 +396,13 @@ test("an actor holds its lifeline bar for exactly as long as the call is open", 
 });
 
 test("an unbalanced protocol draws every arrow the same way", () => {
-  const layout = layoutProtocol({
-    actors: cast("A", "B"),
-    steps: [send("a", "b", "fire and forget")],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("A", "B"),
+      steps: [send("a", "b", "fire and forget")],
+    },
+    TYPO,
+  );
   assert.deepEqual(layout.activations, []);
   assert.deepEqual(
     layout.messages.map((message) => message.reply),
@@ -396,16 +430,19 @@ function shotsOf(layout: ReturnType<typeof layoutProtocol>) {
  * same place across the frame. Anything else is the bouncing decision:24 was written against.
  */
 test("repeated traffic between the same pair does not change the framing", () => {
-  const layout = layoutProtocol({
-    actors: cast("Client", "Gateway", "Auth", "Worker", "Ledger", "Mailer"),
-    steps: [
-      send("gateway", "auth", "one"),
-      send("auth", "gateway", "two"),
-      send("gateway", "auth", "three"),
-      send("auth", "gateway", "four"),
-      send("gateway", "auth", "five"),
-    ],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("Client", "Gateway", "Auth", "Worker", "Ledger", "Mailer"),
+      steps: [
+        send("gateway", "auth", "one"),
+        send("auth", "gateway", "two"),
+        send("gateway", "auth", "three"),
+        send("auth", "gateway", "four"),
+        send("gateway", "auth", "five"),
+      ],
+    },
+    TYPO,
+  );
   const shots = shotsOf(layout);
   const opening = shots[0];
   assert.ok(opening !== undefined);
@@ -416,10 +453,13 @@ test("repeated traffic between the same pair does not change the framing", () =>
 });
 
 test("attention migrating across the cast does move it", () => {
-  const layout = layoutProtocol({
-    actors: cast("A", "B", "C", "D", "E", "F", "G", "H"),
-    steps: [send("a", "b", "one"), send("g", "h", "two")],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("A", "B", "C", "D", "E", "F", "G", "H"),
+      steps: [send("a", "b", "one"), send("g", "h", "two")],
+    },
+    TYPO,
+  );
   const shots = shotsOf(layout);
   assert.notEqual(
     shots[1]?.view.cx,
@@ -429,18 +469,21 @@ test("attention migrating across the cast does move it", () => {
 });
 
 test("both ends of every step are inside the shot it produced", () => {
-  const layout = layoutProtocol({
-    actors: cast("Client", "Gateway", "Auth", "Worker", "Ledger", "Mailer"),
-    steps: [
-      send("client", "gateway", "POST /orders"),
-      send("gateway", "auth", "validate"),
-      send("auth", "gateway", "valid"),
-      send("gateway", "mailer", "notify"),
-      send("mailer", "ledger", "record"),
-      send("ledger", "gateway", "ok"),
-      send("gateway", "client", "201"),
-    ],
-  });
+  const layout = layoutProtocol(
+    {
+      actors: cast("Client", "Gateway", "Auth", "Worker", "Ledger", "Mailer"),
+      steps: [
+        send("client", "gateway", "POST /orders"),
+        send("gateway", "auth", "validate"),
+        send("auth", "gateway", "valid"),
+        send("gateway", "mailer", "notify"),
+        send("mailer", "ledger", "record"),
+        send("ledger", "gateway", "ok"),
+        send("gateway", "client", "201"),
+      ],
+    },
+    TYPO,
+  );
   const beats = layout.messages.map((message, index) => ({
     index,
     from: 100 + index * 90,
@@ -466,7 +509,7 @@ test("both ends of every step are inside the shot it produced", () => {
 });
 
 test("a shot always holds more of the cast than the two lanes it is about", () => {
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   const bounds = stepBounds(layout, 1);
   assert.ok(
     bounds.width >= layout.lanePitch * TRANSCRIPT.minLanesInShot - 1,
@@ -475,7 +518,7 @@ test("a shot always holds more of the cast than the two lanes it is about", () =
 });
 
 test("the establishing shot holds the whole cast", () => {
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   const opening = castBounds(layout);
   for (const lane of layout.lanes) {
     assert.ok(
@@ -486,7 +529,7 @@ test("the establishing shot holds the whole cast", () => {
 });
 
 test("a shot keeps the rows before it, so a message has a visible cause", () => {
-  const layout = layoutProtocol(SIMPLE);
+  const layout = layoutProtocol(SIMPLE, TYPO);
   const bounds = stepBounds(layout, 3);
   const previous = layout.messages[2];
   assert.ok(previous !== undefined);

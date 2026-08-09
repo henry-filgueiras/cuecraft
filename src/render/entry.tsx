@@ -53,6 +53,7 @@ const PLACEHOLDER: Timeline = {
     anchors: [],
   },
   subtitles: [],
+  typography: "default",
 };
 
 /** Both compositions size themselves to the timeline they are handed, and to nothing else. */

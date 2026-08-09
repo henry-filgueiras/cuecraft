@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -80,7 +81,7 @@ function silentScene(): Scene {
 test("every silent arrival gets a stable window nothing else is allowed into", () => {
   const scene = silentScene();
   const machine = MACHINE_BODY as unknown as Parameters<typeof electLayout>[0];
-  const layout = electLayout(machine, VIEW);
+  const layout = electLayout(machine, VIEW, TYPO);
   const takes = (
     MACHINE_BODY as unknown as { scenario: readonly { take: string }[] }
   ).scenario.map((entry) => entry.take);
@@ -112,7 +113,7 @@ test("every silent arrival gets a stable window nothing else is allowed into", (
 test("the phases of one occurrence do not overlap", () => {
   const scene = silentScene();
   const machine = MACHINE_BODY as unknown as Parameters<typeof electLayout>[0];
-  const layout = electLayout(machine, VIEW);
+  const layout = electLayout(machine, VIEW, TYPO);
   const takes = (
     MACHINE_BODY as unknown as { scenario: readonly { take: string }[] }
   ).scenario.map((entry) => entry.take);
@@ -152,7 +153,7 @@ test("the phases of one occurrence do not overlap", () => {
 test("a camera move never eats into the arrival before it", () => {
   const scene = silentScene();
   const machine = MACHINE_BODY as unknown as Parameters<typeof electLayout>[0];
-  const layout = electLayout(machine, VIEW);
+  const layout = electLayout(machine, VIEW, TYPO);
   const takes = (
     MACHINE_BODY as unknown as { scenario: readonly { take: string }[] }
   ).scenario.map((entry) => entry.take);

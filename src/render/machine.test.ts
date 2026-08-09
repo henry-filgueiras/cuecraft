@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -133,8 +134,8 @@ function contains(outer: Rect, inner: Rect): boolean {
 /* ------------------------------------------------------------- stability */
 
 test("the same machine lays out identically, every time", () => {
-  const once = layoutMachine(HARD);
-  const again = layoutMachine(HARD);
+  const once = layoutMachine(HARD, TYPO);
+  const again = layoutMachine(HARD, TYPO);
   assert.deepEqual(
     once.nodes.map((node) => node.rect),
     again.nodes.map((node) => node.rect),
@@ -149,7 +150,7 @@ test("the scenario cannot move a state, however it is permuted", () => {
   // The property the whole composition rests on: the machine is a *place*. A layout that consulted
   // the run could rearrange itself to flatter one, and the state that was off to the left would
   // stop being off to the left when the run came back to it.
-  const baseline = layoutMachine(HARD);
+  const baseline = layoutMachine(HARD, TYPO);
   const variations = [
     { ...HARD, scenario: [] },
     { ...HARD, scenario: [{ take: "claim" }] },
@@ -158,7 +159,7 @@ test("the scenario cannot move a state, however it is permuted", () => {
   ];
   for (const variant of variations) {
     assert.deepEqual(
-      layoutMachine(variant).nodes.map((node) => [node.id, node.rect]),
+      layoutMachine(variant, TYPO).nodes.map((node) => [node.id, node.rect]),
       baseline.nodes.map((node) => [node.id, node.rect]),
     );
   }
@@ -167,7 +168,7 @@ test("the scenario cannot move a state, however it is permuted", () => {
 /* ---------------------------------------------------------------- shapes */
 
 test("two transitions between one pair are two routes and two labels", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const timedOut = layout.edgeById.get("timed-out");
   const rateLimited = layout.edgeById.get("rate-limited");
   assert.ok(timedOut !== undefined && rateLimited !== undefined);
@@ -181,7 +182,7 @@ test("two transitions between one pair are two routes and two labels", () => {
 });
 
 test("a self-transition is drawn in room reserved for it, beside the plate", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const running = layout.byId.get("running");
   const loop = layout.edgeById.get("heartbeat");
   assert.ok(running !== undefined && loop !== undefined);
@@ -206,7 +207,7 @@ test("a self-transition is drawn in room reserved for it, beside the plate", () 
 });
 
 test("a self-transition's caption never lands on its own plate", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const running = layout.byId.get("running") as NonNullable<
     ReturnType<typeof layout.byId.get>
   >;
@@ -221,7 +222,7 @@ test("nothing collides: no plate touches a plate, and no label touches either", 
     ["elevator", ELEVATOR],
     ["leased job runner", HARD],
   ] as const) {
-    const layout = layoutMachine(machine);
+    const layout = layoutMachine(machine, TYPO);
     const boxes = [
       ...layout.nodes.map((node) => ({ what: `plate ${node.id}`, rect: node.rect })),
       ...layout.edges.map((edge) => ({ what: `label ${edge.id}`, rect: edge.label })),
@@ -238,7 +239,7 @@ test("nothing collides: no plate touches a plate, and no label touches either", 
 
 test("the bounds contain every plate, every route, every label and every loop", () => {
   for (const machine of [ELEVATOR, HARD]) {
-    const layout = layoutMachine(machine);
+    const layout = layoutMachine(machine, TYPO);
     for (const node of layout.nodes) {
       assert.ok(contains(layout.bounds, node.box), `${node.id} is outside the bounds`);
     }
@@ -263,7 +264,7 @@ test("a back edge is routed back, not drawn as though it went forward", () => {
   // whichever way round the ranker solved it — and under a top-down layout, arriving at a state
   // that ranks above you means the route runs visibly upwards, which is the picture saying "this
   // goes back".
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const back = layout.edgeById.get("backoff");
   const retry = layout.byId.get("retry");
   const queued = layout.byId.get("queued");
@@ -364,7 +365,7 @@ function beatsFor(count: number, every = 60): { index: number; from: number }[] 
 }
 
 test("what an occurrence wants on screen is the source, the route, and the destination", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const bounds = occurrenceBounds(layout, "start");
   const claimed = layout.byId.get("claimed") as NonNullable<
     ReturnType<typeof layout.byId.get>
@@ -381,7 +382,7 @@ test("what an occurrence wants on screen is the source, the route, and the desti
 });
 
 test("an arrival brings the destination's other exits with it, when they fit", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const bounds = occurrenceBounds(layout, "start");
   const alternatives = (layout.leaving.get("running") ?? []).filter((edge) =>
     contains(bounds, edge.label),
@@ -401,7 +402,7 @@ test("context is added only while the shot stays readable, and never trims the s
     ["elevator", ELEVATOR],
     ["leased job runner", HARD],
   ] as const) {
-    const layout = layoutMachine(machine);
+    const layout = layoutMachine(machine, TYPO);
     for (const edge of layout.edges) {
       const source = layout.byId.get(edge.from);
       const target = layout.byId.get(edge.to);
@@ -429,12 +430,12 @@ test("an untaken transition is context exactly as a taken one is", () => {
   // The atlas takes only *established* neighbours, because in a world an unreached thing is a
   // spoiler. Here they are the answer to "what else could happen", so nothing about the run may
   // reach this function at all — and the signature is the proof: it is not given the scenario.
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   assert.deepEqual(occurrenceBounds(layout, "start"), occurrenceBounds(layout, "start"));
 });
 
 test("the plan opens on the whole machine and returns to it", () => {
-  const layout = layoutMachine(ELEVATOR);
+  const layout = layoutMachine(ELEVATOR, TYPO);
   const plan = machinePlan(
     layout,
     beatsFor(ELEVATOR.scenario.length),
@@ -450,7 +451,7 @@ test("the plan opens on the whole machine and returns to it", () => {
 });
 
 test("every move lands before the occurrence it is about, never on it", () => {
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const beats = beatsFor(HARD.scenario.length, 70);
   const plan = machinePlan(
     layout,
@@ -544,7 +545,7 @@ test("permuting the scenario changes neither the reduction nor a coordinate", ()
   // decision:52's invariant, holding one level further out: a touched set is a set, so the order
   // the run happens in cannot reach the picture through the reduction any more than through dagre.
   const places = (machine: NonNullable<ReturnType<typeof machineOf>>) =>
-    electLayout(machine, { width: 1540, height: 1080 })
+    electLayout(machine, { width: 1540, height: 1080 }, TYPO)
       .nodes.map(
         (node) => `${node.id}@${Math.round(node.rect.x)},${Math.round(node.rect.y)}`,
       )
@@ -647,7 +648,7 @@ test("a hold says whether the move was refused or was impossible", () => {
   // eleven frames against a sixteen-frame minimum. Those moves were never priced at all, and a
   // diagnostic that reports a judgement the planner did not make sends the next round to tune
   // `movePrice` — which is the one constant that could not have caused it.
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const takes = HARD.scenario.map((occurrence) => occurrence.take);
 
   // Crowded enough that no window clears `MACHINE.minTravel`: every hold is a hold by force.
@@ -681,7 +682,7 @@ test("a run that stays in one neighbourhood stops moving the camera", () => {
   // occurrences of one self-loop are four beats and one shot: the second is already well inside
   // the frame the first produced, and a "do not bounce on a revisit" rule would have been the
   // same rule written a third time.
-  const layout = layoutMachine(HARD);
+  const layout = layoutMachine(HARD, TYPO);
   const takes = ["claim", "start", "heartbeat", "heartbeat", "heartbeat", "heartbeat"];
   const plan = machinePlan(layout, beatsFor(takes.length), takes, {
     from: 0,
@@ -698,7 +699,7 @@ test("the whole machine is legible in the shot that has to show all of it", () =
     ["elevator", ELEVATOR],
     ["leased job runner", HARD],
   ] as const) {
-    const layout = layoutMachine(machine);
+    const layout = layoutMachine(machine, TYPO);
     const plan = machinePlan(
       layout,
       beatsFor(machine.scenario.length),
@@ -735,7 +736,7 @@ function planFor(
   } = {},
 ) {
   const every = options.every ?? 90;
-  const layout = electLayout(machine, VIEW);
+  const layout = electLayout(machine, VIEW, TYPO);
   const beats = beatsFor(machine.scenario.length, every);
   const until = options.until ?? every * machine.scenario.length + 60;
   return {
@@ -756,7 +757,7 @@ test("the canonical overview is one composition, reused by identity", () => {
   // Not "a shot that contains everything" — *the* shot. The film opens on it and closes on it, and
   // both of those are checkable only because it is computed once and compared by value.
   for (const machine of [ELEVATOR, HARD]) {
-    const layout = electLayout(machine, VIEW);
+    const layout = electLayout(machine, VIEW, TYPO);
     const once = canonicalOverview(layout, ASPECT);
     assert.deepEqual(canonicalOverview(layout, ASPECT), once, "deterministic");
 
@@ -884,7 +885,7 @@ test("a shot covers the occurrences that cannot afford a move of their own", () 
   // move, so whichever shot opens the run has to contain all of it — and the only way to know that
   // when the shot is chosen is to have read the rest of the scenario first.
   const takes = ["claim", "start", "heartbeat", "timed", "backoff", "claim"];
-  const layout = electLayout(HARD, VIEW);
+  const layout = electLayout(HARD, VIEW, TYPO);
   // Occurrences 40 frames apart: shorter than a move needs, so nothing after the first can move.
   const beats = beatsFor(takes.length, 40);
   const plan = machinePlan(

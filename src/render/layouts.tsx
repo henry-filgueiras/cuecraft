@@ -39,6 +39,7 @@ import {
   wrapLine,
 } from "./projection.ts";
 import { Figure } from "./figures.tsx";
+import { useTypography } from "./fonts.tsx";
 import { chooseLayout } from "./layout.ts";
 import { sliceTokens, tokenizeLine } from "./tokens.ts";
 import {
@@ -115,12 +116,10 @@ import {
   REGISTER,
   FIELD,
   FORMULA,
-  FONT_STACK,
   FRAME,
   HEADING_WIDTH,
   INDEX,
   MACHINE,
-  MONO_STACK,
   MOTION,
   SPACE,
   TRANSCRIPT,
@@ -237,16 +236,19 @@ function Frame({
   // otherwise a strip along the bottom that nothing is laid out into (`./subtitles.tsx`). A
   // bleeding composition has no margin to give up and is overlaid instead — dragon:21.
   const band = useSubtitleBand();
+  // The one place the deck's proportional face is actually applied. Everything inside inherits it,
+  // which is why a composition only names a family when it wants the *other* one.
+  const type = useTypography();
 
   if (bleed) {
     return (
-      <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
+      <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: type.prose }}>
         {children}
       </AbsoluteFill>
     );
   }
   return (
-    <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: FONT_STACK }}>
+    <AbsoluteFill style={{ backgroundColor: COLORS.ink, fontFamily: type.prose }}>
       <AbsoluteFill
         style={{
           padding: `${FRAME.marginY}px ${FRAME.marginX}px ${frameBottom(band)}px`,
@@ -462,6 +464,7 @@ function Matrix({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number 
  */
 function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const rows = items(scene.body);
   const stateOf = anchorStatesFor(scene, absoluteFrame);
   // How much room there is, and what size and air the rows can afford in it. This composition
@@ -470,7 +473,8 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
   const band = useSubtitleBand();
   const fitted = fitIndex(
     rows.map((row) => row.text),
-    bodyBox(scene.title, band),
+    bodyBox(scene.title, type, band),
+    type,
   );
 
   return (
@@ -571,6 +575,7 @@ function IndexList({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numb
  */
 function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const stages = items(scene.body);
   const stateOf = anchorStatesFor(scene, absoluteFrame);
   // Far enough that the descent is unmistakably diagonal rather than a slightly ragged
@@ -581,8 +586,9 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   const band = useSubtitleBand();
   const fitted = fitCascade(
     stages.map((stage) => stage.text),
-    bodyBox(scene.title, band),
+    bodyBox(scene.title, type, band),
     step,
+    type,
   );
 
   return (
@@ -680,6 +686,7 @@ function Cascade({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
 function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
   const band = useSubtitleBand();
+  const type = useTypography();
   const body = scene.body;
   if (body.kind !== "code") return null;
 
@@ -690,7 +697,8 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 
   const fit = fitProjection(
     lines.map((line) => [line]),
-    codeBox(scene.title, band),
+    codeBox(scene.title, type, band),
+    type,
   );
   const fragments = projectLines(lines, fit.columns);
   const size = fit.size;
@@ -727,7 +735,7 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
           flexDirection: "column",
           justifyContent: "center",
           marginTop: SPACE.xl,
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: size,
           lineHeight: CODE.lineHeight,
           // Anything the grammar does not classify — a bare scalar such as `600ms` — inherits
@@ -822,6 +830,7 @@ function Specimen({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
 function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
   const band = useSubtitleBand();
+  const type = useTypography();
   const body = scene.body;
   const derived = useMemo(
     () =>
@@ -844,7 +853,8 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
         ? [row.text]
         : [row.removed, row.added].filter((text): text is string => text !== undefined),
     ),
-    codeBox(scene.title, band),
+    codeBox(scene.title, type, band),
+    type,
   );
   const size = fit.size;
   const rowHeight = size * CODE.lineHeight;
@@ -866,7 +876,7 @@ function Revision({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: numbe
           flexDirection: "column",
           justifyContent: "center",
           marginTop: SPACE.xl,
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: size,
           lineHeight: CODE.lineHeight,
           color: COLORS.muted,
@@ -1418,6 +1428,7 @@ function Atlas({
   trail?: readonly string[];
 }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const world = worldOf(scene.body);
   // The one composition that has no margin to give up, so it gives up the shot instead.
   //
@@ -1436,8 +1447,8 @@ function Atlas({
   const viewport = { width: 1920, height: 1080 - band };
   const aspect = viewport.width / viewport.height;
   const layout = useMemo(
-    () => (world === undefined ? undefined : layoutWorld(world)),
-    [world],
+    () => (world === undefined ? undefined : layoutWorld(world, type)),
+    [world, type],
   );
 
   const plan = useMemo(() => {
@@ -1900,6 +1911,7 @@ function ElisionStubs({
   elisions: ReadonlyMap<string, Elision>;
   opening: number;
 }) {
+  const type = useTypography();
   const { bounds } = layout;
   if (elisions.size === 0) return null;
 
@@ -2004,7 +2016,7 @@ function ElisionStubs({
             y={mark.at.y}
             fill={withAlpha(MACHINE.edge, 0.92)}
             fontSize={MACHINE.event}
-            fontFamily={FONT_STACK}
+            fontFamily={type.prose}
             fontWeight={600}
             textAnchor={mark.anchor === "start" ? "start" : "end"}
             dominantBaseline="central"
@@ -2376,6 +2388,7 @@ function Interior({
   scope: Scope;
   trail: readonly string[];
 }) {
+  const type = useTypography();
   const detail = entity.detail;
   const range = interiorRange(entities, entity.id);
   if (detail === undefined || range === undefined) return null;
@@ -2423,7 +2436,7 @@ function Interior({
           : { padding: `${FRAME.marginY}px ${FRAME.marginX}px` }),
         display: "flex",
         flexDirection: "column",
-        fontFamily: FONT_STACK,
+        fontFamily: type.prose,
       }}
     >
       <Composition
@@ -2525,10 +2538,11 @@ function presence(age: number, floor: number): number {
  */
 function Transcript({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const protocol = protocolOf(scene.body);
   const layout = useMemo(
-    () => (protocol === undefined ? undefined : layoutProtocol(protocol)),
-    [protocol],
+    () => (protocol === undefined ? undefined : layoutProtocol(protocol, type)),
+    [protocol, type],
   );
   // The atlas's argument, applied to the other composition that bleeds. A transcript has never
   // actually been caught printing traffic on a sentence — `TRANSCRIPT.lookaheadRows` keeps a row
@@ -3264,6 +3278,7 @@ const WAKE = {
  */
 function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const machine = machineOf(scene.body);
   const progress = useMemo(
     () => (machine === undefined ? [] : runProgress(machine)),
@@ -3293,8 +3308,8 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // of the topology and the window — permuting the scenario moves nothing — and still computed
   // exactly once per film.
   const layout = useMemo(
-    () => (machine === undefined ? undefined : electLayout(machine, viewport)),
-    [machine, viewport.width, viewport.height],
+    () => (machine === undefined ? undefined : electLayout(machine, viewport, type)),
+    [machine, viewport.width, viewport.height, type],
   );
   // What this slide left out, or nothing when it left nothing out (decision:54). Computed from the
   // *body* rather than from `machine`, because `machineOf` has already pruned by the time anything
@@ -3305,10 +3320,12 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   const elisions = useMemo(() => elisionsOf(scene.body), [scene.body]);
   const fit = useMemo(
     () =>
-      machine === undefined ? undefined : fitLedger(machine, reduction !== undefined),
-    [machine, reduction],
+      machine === undefined
+        ? undefined
+        : fitLedger(machine, type, reduction !== undefined),
+    [machine, reduction, type],
   );
-  const title = useMemo(() => fitTitle(scene.title), [scene.title]);
+  const title = useMemo(() => fitTitle(scene.title, type), [scene.title, type]);
 
   const plan = useMemo(
     () =>
@@ -3978,11 +3995,12 @@ function Traveller({ edge, cross }: { edge: MachineEdge; cross: number }) {
  * and an ellipsis is a shrug.
  */
 function ScopeNote({ reduction }: { reduction: MachineReduction }) {
+  const type = useTypography();
   return (
     <div
       style={{
         marginTop: SPACE.md,
-        fontFamily: FONT_STACK,
+        fontFamily: type.prose,
         fontSize: MACHINE.railScope,
         lineHeight: 1.35,
         color: withAlpha(MACHINE.edge, 0.85),
@@ -4072,6 +4090,7 @@ function LedgerEntry({
   latest: boolean;
   here: string | undefined;
 }) {
+  const type = useTypography();
   // Presence rather than size, over a ramp that flattens: the latest entry is fully present, the
   // one before it nearly so, and everything past the third is one shade of "earlier".
   const age = row.age ?? 0;
@@ -4081,7 +4100,7 @@ function LedgerEntry({
     return (
       <div
         style={{
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: Math.round(fit.size * 0.78),
           lineHeight: MACHINE.railLead,
           letterSpacing: "0.04em",
@@ -4108,7 +4127,7 @@ function LedgerEntry({
         style={{
           width: LEDGER_GUTTER,
           flexShrink: 0,
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: Math.round(fit.size * 0.82),
           lineHeight: MACHINE.railLead,
           color: withAlpha(
@@ -4185,6 +4204,7 @@ function LedgerEntry({
  */
 function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
+  const type = useTypography();
   const body = scene.body.kind === "exhibit" ? scene.body : undefined;
   const resource = body?.resource;
 
@@ -4207,7 +4227,7 @@ function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
       >
         {resource === undefined ? (
           <div
-            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: MONO_STACK }}
+            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: type.mono }}
           >
             {body?.program ?? "no exhibit"}
           </div>
@@ -4219,7 +4239,7 @@ function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
           // because the union has three arms and a composition that silently drew nothing for
           // one of them would be a defect nobody could see.
           <div
-            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: MONO_STACK }}
+            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: type.mono }}
           >
             {resource.name}
           </div>
@@ -4444,12 +4464,17 @@ const sizing = `.${DRAWING_SCOPE} svg{display:block;max-width:100%;max-height:10
 function Register({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
   const band = useSubtitleBand();
+  const type = useTypography();
   const body = scene.body;
   if (body.kind !== "exhibit" || body.resource?.kind !== "table") return null;
 
   const table = body.resource.table;
-  const box = bodyBox(scene.title, band);
-  const layout = fitRegister(table, box, REGISTER);
+  const box = bodyBox(scene.title, type, band);
+  // The register's own constants, plus the one number that belongs to the profile rather than to
+  // the composition. Bound here rather than stored on `REGISTER` so there is no copy of an advance
+  // width sitting where a caller could pick up the wrong face's.
+  const registerTheme = { ...REGISTER, charWidth: type.width.body };
+  const layout = fitRegister(table, box, registerTheme);
 
   const attention = registerAttention(
     scene,
@@ -4569,6 +4594,8 @@ function RegisterRow({
   recede?: number;
   shareOf: (column: number) => number;
 }) {
+  const type = useTypography();
+
   return (
     <div
       style={{
@@ -4603,7 +4630,10 @@ function RegisterRow({
         const column = layout.columns[index];
         if (column === undefined) return null;
         const columnShare = shareOf(index);
-        const budget = cellBudget(column.width, layout.size, layout.lines, REGISTER);
+        const budget = cellBudget(column.width, layout.size, layout.lines, {
+          ...REGISTER,
+          charWidth: type.width.body,
+        });
         return (
           <div
             key={index}

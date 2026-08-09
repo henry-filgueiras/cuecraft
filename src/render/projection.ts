@@ -1,5 +1,6 @@
 import { indentOf } from "../presentation/specimen.ts";
 import { CODE, fitSpecimen } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * Adapting truthful source to the perceptual constraints of a frame.
@@ -187,7 +188,11 @@ export interface Fit {
  * that pays for itself. A block whose height already binds — every specimen in the canonical
  * deck except one — finds no improvement at any measure and is left exactly as written.
  */
-export function fitProjection(rows: readonly (readonly string[])[], box: Box): Fit {
+export function fitProjection(
+  rows: readonly (readonly string[])[],
+  box: Box,
+  type: Typography,
+): Fit {
   const literal = rows.reduce(
     (widest, variants) =>
       variants.reduce((row, text) => Math.max(row, text.length), widest),
@@ -209,7 +214,7 @@ export function fitProjection(rows: readonly (readonly string[])[], box: Box): F
       }
       height += tall;
     }
-    const size = fitSpecimen(height, widest, box);
+    const size = fitSpecimen(height, widest, box, type);
     if (size > best.size) {
       best = { columns, size, wrapped: height > rows.length };
     }

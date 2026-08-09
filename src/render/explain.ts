@@ -1,6 +1,7 @@
 import type { Scene, Timeline } from "../compile/timeline.ts";
 import { auditionLayouts, type Audition } from "./audition.ts";
 import { ledgerBand, fitLedger, type LedgerFit } from "./ledger.ts";
+import { typographyOf, type Typography } from "./typography.ts";
 import { machineOf, reductionOf, machinePlan, type MachineShot } from "./machine.ts";
 import { viewRect, type Rect, type Viewport } from "./camera.ts";
 import { subtitleFit } from "./subtitle.ts";
@@ -214,18 +215,25 @@ function coverage(view: Viewport, aspect: number, bounds: Rect): number {
  * agree.
  */
 export function explainMachines(timeline: Timeline): readonly MachineExplanation[] {
+  // The profile the compilation resolved, read off the timeline rather than assumed. A diagnostic
+  // that reported a machine's framing under Helvetica's metrics while the film was set in
+  // Atkinson's would be an instrument that agrees with nothing.
+  const type = typographyOf(timeline.typography);
   const band =
-    timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
+    timeline.subtitles.length === 0
+      ? 0
+      : subtitleBand(subtitleFit(timeline.subtitles, type));
 
   return timeline.scenes
     .filter((scene) => scene.layout === "circuit")
-    .map((scene) => explainScene(scene, timeline, band));
+    .map((scene) => explainScene(scene, timeline, band, type));
 }
 
 function explainScene(
   scene: Scene,
   timeline: Timeline,
   band: number,
+  type: Typography,
 ): MachineExplanation {
   const machine = machineOf(scene.body);
   if (machine === undefined) throw new Error("not a machine");
@@ -238,9 +246,9 @@ function explainScene(
     height: 1080 - band,
   };
   const aspect = viewport.width / viewport.height;
-  const audition = auditionLayouts(machine, viewport);
+  const audition = auditionLayouts(machine, viewport, type);
   const layout = audition.winner.layout;
-  const ledger = fitLedger(machine, reduction !== undefined);
+  const ledger = fitLedger(machine, type, reduction !== undefined);
   const takes = machine.scenario.map((entry) => entry.take);
   const plan = machinePlan(
     layout,

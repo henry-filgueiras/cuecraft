@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -165,6 +166,7 @@ test("a height-bound block is left exactly as written", () => {
   const fit = fitProjection(
     lines.map((line) => [line]),
     box,
+    TYPO,
   );
   assert.equal(fit.wrapped, false);
   assert.equal(projectLines(lines, fit.columns).length, lines.length);
@@ -173,11 +175,11 @@ test("a height-bound block is left exactly as written", () => {
 test("a width-bound block wraps, and the measure chosen is the least that pays", () => {
   const box = { width: 1622, height: 644 };
   const rows = [["say:"], [LONG]];
-  const fit = fitProjection(rows, box);
+  const fit = fitProjection(rows, box, TYPO);
 
   assert.equal(fit.wrapped, true);
   assert.ok(
-    fit.size > fitSpecimen(rows.length, LONG.length, box),
+    fit.size > fitSpecimen(rows.length, LONG.length, box, TYPO),
     `wrapping should have bought type, got ${fit.size}px`,
   );
 
@@ -194,7 +196,7 @@ test("a width-bound block wraps, and the measure chosen is the least that pays",
     );
     const widest = Math.max(...fragments.map(fragmentWidth));
     assert.ok(
-      fitSpecimen(height, widest, box) < fit.size,
+      fitSpecimen(height, widest, box, TYPO) < fit.size,
       `columns=${columns} matches the winner and is wider`,
     );
   }
@@ -216,16 +218,16 @@ test("the canonical deck's evidence scene reaches the ceiling with one break", (
       ? [row.text]
       : [row.removed, row.added].filter((text): text is string => text !== undefined),
   );
-  const box = codeBox(slide.title);
+  const box = codeBox(slide.title, TYPO);
 
   // Set literally, this scene is width-bound below the ceiling. That is the defect.
-  const literal = fitSpecimen(derived.rows.length, derived.longestLine, box);
+  const literal = fitSpecimen(derived.rows.length, derived.longestLine, box, TYPO);
   assert.ok(
     literal < CODE.maxSize,
     "the literal scene should still be the problem this fixes",
   );
 
-  const fit = fitProjection(rows, box);
+  const fit = fitProjection(rows, box, TYPO);
   assert.equal(fit.size, CODE.maxSize, "the scene should now set at the deck's ceiling");
   assert.equal(fit.wrapped, true);
 

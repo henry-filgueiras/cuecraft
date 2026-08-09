@@ -22,6 +22,7 @@ import {
 } from "./camera.ts";
 import { polylineLength, smoothPath, trimToBoxes } from "./polyline.ts";
 import { WORLD } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * Where a semantic world sits, and where the camera looks *at a world*.
@@ -146,7 +147,11 @@ export interface WorldLayout {
  * has to resolve without a browser, and monospaced-in-the-aggregate is close enough to predict a
  * break in a twenty-character label.
  */
-export function wrapLabel(label: string, maxLines: number = WORLD.maxLines): string[] {
+export function wrapLabel(
+  label: string,
+  type: Typography,
+  maxLines: number = WORLD.maxLines,
+): string[] {
   const words = label.split(/\s+/).filter((word) => word.length > 0);
   if (words.length === 0) return [label];
 
@@ -155,7 +160,7 @@ export function wrapLabel(label: string, maxLines: number = WORLD.maxLines): str
     const broken = balance(words, lines);
     // A break that could not be achieved in this many lines is not a candidate for it.
     if (broken.length !== lines) continue;
-    const plate = plateSize(broken);
+    const plate = plateSize(broken, type);
     const proportion = Math.abs(plate.width / plate.height - WORLD.plateAspect);
     const score = proportion + WORLD.linePenalty * (lines - 1);
     if (best === undefined || score < best.score) best = { lines: broken, score };
@@ -201,12 +206,15 @@ function greedy(words: readonly string[], measure: number): string[] {
 }
 
 /** A node plate, sized to the label it holds. Authors do not set sizes (decision:10). */
-export function plateSize(lines: readonly string[]): { width: number; height: number } {
+export function plateSize(
+  lines: readonly string[],
+  type: Typography,
+): { width: number; height: number } {
   const longest = Math.max(...lines.map((line) => line.length), 1);
   return {
     width: Math.max(
       WORLD.minPlateWidth,
-      Math.round(longest * WORLD.label * WORLD.charWidth) + 2 * WORLD.padX,
+      Math.round(longest * WORLD.label * type.width.plate) + 2 * WORLD.padX,
     ),
     height: Math.round(lines.length * WORLD.label * WORLD.lineHeight) + 2 * WORLD.padY,
   };
@@ -219,10 +227,13 @@ export function plateSize(lines: readonly string[]): { width: number; height: nu
  * and a transformation reads along the axis text does. That is the only thing here that could be
  * called an aesthetic choice; the rest is dagre's.
  */
-export function layoutWorld(world: {
-  readonly entities: readonly AuthoredEntity[];
-  readonly relations: readonly AuthoredRelation[];
-}): WorldLayout {
+export function layoutWorld(
+  world: {
+    readonly entities: readonly AuthoredEntity[];
+    readonly relations: readonly AuthoredRelation[];
+  },
+  type: Typography,
+): WorldLayout {
   const graph = new dagre.graphlib.Graph({ directed: true, multigraph: false });
   graph.setGraph({
     rankdir: "LR",
@@ -237,9 +248,9 @@ export function layoutWorld(world: {
 
   const wrapped = new Map<string, string[]>();
   for (const entity of world.entities) {
-    const lines = wrapLabel(entity.text);
+    const lines = wrapLabel(entity.text, type);
     wrapped.set(entity.id, lines);
-    graph.setNode(entity.id, { ...plateSize(lines) });
+    graph.setNode(entity.id, { ...plateSize(lines, type) });
   }
   for (const relation of world.relations) {
     graph.setEdge(relation.from, relation.to);

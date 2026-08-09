@@ -5,7 +5,8 @@ import type {
   AuthoredTransition,
 } from "../presentation/machine.ts";
 import { scenarioPath } from "../presentation/machine.ts";
-import { BODY_CHAR_WIDTH, FRAME, HEADING_CHAR_WIDTH, MACHINE } from "./theme.ts";
+import { FRAME, MACHINE } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * The execution ledger: what happened, in the order it happened.
@@ -136,13 +137,17 @@ export const LEDGER_PAD_RIGHT = 28;
 const SIZES = [MACHINE.railEvent, 25, 23, 21, 20] as const;
 
 /** How the rail is set for a given machine. Deterministic, and a pure function of its scenario. */
-export function fitLedger(machine: Machine, reduced: boolean = false): LedgerFit {
+export function fitLedger(
+  machine: Machine,
+  type: Typography,
+  reduced: boolean = false,
+): LedgerFit {
   const available = ledgerHeight(reduced);
   const width = ledgerTextWidth();
 
   for (let rows = MACHINE.railRows; rows >= MIN_ROWS; rows -= 1) {
     for (const size of SIZES) {
-      const measure = Math.max(8, Math.floor(width / (size * BODY_CHAR_WIDTH)));
+      const measure = Math.max(8, Math.floor(width / (size * type.width.body)));
       const stateSize = Math.round((size * MACHINE.railState) / MACHINE.railEvent);
       const fit: LedgerFit = { size, stateSize, measure, rows };
       if (tallestWindow(machine, fit) <= available) return fit;
@@ -152,7 +157,7 @@ export function fitLedger(machine: Machine, reduced: boolean = false): LedgerFit
   return {
     size,
     stateSize: Math.round((size * MACHINE.railState) / MACHINE.railEvent),
-    measure: Math.max(8, Math.floor(width / (size * BODY_CHAR_WIDTH))),
+    measure: Math.max(8, Math.floor(width / (size * type.width.body))),
     rows: MIN_ROWS,
   };
 }
@@ -267,19 +272,22 @@ export function wrapRail(label: string, measure: number): readonly string[] {
  * third time in this composition — and the reserved height is a constant either way, so the ledger
  * below never moves whatever the title turns out to be.
  */
-export function fitTitle(title: string): {
+export function fitTitle(
+  title: string,
+  type: Typography,
+): {
   readonly size: number;
   readonly lines: readonly string[];
 } {
   const width = MACHINE.rail - LEDGER_PAD_X - LEDGER_PAD_RIGHT;
   const room = MACHINE.railTitleBlock - FRAME.marginY - TITLE_RULE;
   for (const size of TITLE_SIZES) {
-    const measure = Math.max(6, Math.floor(width / (size * HEADING_CHAR_WIDTH)));
+    const measure = Math.max(6, Math.floor(width / (size * type.width.heading)));
     const lines = wrapRail(title, measure);
     if (Math.ceil(lines.length * size * TITLE_LEAD) <= room) return { size, lines };
   }
   const size = TITLE_SIZES[TITLE_SIZES.length - 1] as number;
-  const measure = Math.max(6, Math.floor(width / (size * HEADING_CHAR_WIDTH)));
+  const measure = Math.max(6, Math.floor(width / (size * type.width.heading)));
   return { size, lines: wrapRail(title, measure) };
 }
 
@@ -289,10 +297,13 @@ const TITLE_LEAD = 1.1;
 const TITLE_SIZES = [MACHINE.railTitle, 38, 34, 31, 28] as const;
 
 /** The ledger of a machine body, fitted, for callers that want both at once. */
-export function ledgerFor(machine: AuthoredMachine): {
+export function ledgerFor(
+  machine: AuthoredMachine,
+  type: Typography,
+): {
   readonly fit: LedgerFit;
   readonly at: (current: number) => readonly LedgerRow[];
 } {
-  const fit = fitLedger(machine);
+  const fit = fitLedger(machine, type);
   return { fit, at: (current: number) => ledgerAt(machine, current, fit) };
 }

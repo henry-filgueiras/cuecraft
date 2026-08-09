@@ -70,7 +70,13 @@ function deck(
       speed: 1,
     },
   };
-  return { title: "A deck", slides: [slide], publicDir: "/tmp/public", subtitles: false };
+  return {
+    title: "A deck",
+    slides: [slide],
+    publicDir: "/tmp/public",
+    subtitles: false,
+    typography: "default",
+  };
 }
 
 const WORLD: SlideBody = {

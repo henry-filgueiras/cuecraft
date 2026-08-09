@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -117,8 +118,8 @@ function places(layout: MachineLayout): string {
 
 test("the audition is deterministic, candidate for candidate", () => {
   for (const machine of [ELEVATOR, HARD]) {
-    const first = auditionLayouts(machine, VIEW);
-    const second = auditionLayouts(machine, VIEW);
+    const first = auditionLayouts(machine, VIEW, TYPO);
+    const second = auditionLayouts(machine, VIEW, TYPO);
     assert.equal(first.winner.name, second.winner.name);
     assert.deepEqual(
       first.candidates.map((candidate) => [candidate.name, candidate.score.total]),
@@ -129,10 +130,10 @@ test("the audition is deterministic, candidate for candidate", () => {
 
 test("the incumbent is a candidate, so the round can say what the search bought", () => {
   for (const machine of [ELEVATOR, HARD]) {
-    const audition = auditionLayouts(machine, VIEW);
+    const audition = auditionLayouts(machine, VIEW, TYPO);
     assert.deepEqual(
       places(audition.incumbent.layout),
-      places(layoutMachine(machine, DEFAULT_LAYOUT)),
+      places(layoutMachine(machine, TYPO, DEFAULT_LAYOUT)),
     );
     assert.ok(
       audition.winner.score.total >= audition.incumbent.score.total,
@@ -143,7 +144,7 @@ test("the incumbent is a candidate, so the round can say what the search bought"
 
 test("the elected layout beats the incumbent where it matters, and never has a collision", () => {
   for (const machine of [ELEVATOR, HARD]) {
-    const { winner, incumbent } = auditionLayouts(machine, VIEW);
+    const { winner, incumbent } = auditionLayouts(machine, VIEW, TYPO);
     assert.ok(
       winner.score.stateNamePx >= incumbent.score.stateNamePx,
       "the overview should never come out smaller than it was",
@@ -168,19 +169,19 @@ test("permuting or reversing the scenario moves nothing", () => {
   // each transition is taken, and that is invariant under reordering. The film may be told in any
   // order and the map is the same map.
   for (const machine of [ELEVATOR, HARD]) {
-    const settled = places(electLayout(machine, VIEW));
+    const settled = places(electLayout(machine, VIEW, TYPO));
     const reversed = { ...machine, scenario: [...machine.scenario].reverse() };
     const rotated = {
       ...machine,
       scenario: [...machine.scenario.slice(3), ...machine.scenario.slice(0, 3)],
     };
     assert.equal(
-      places(electLayout(reversed, VIEW)),
+      places(electLayout(reversed, VIEW, TYPO)),
       settled,
       "reversing the run moves nothing",
     );
     assert.equal(
-      places(electLayout(rotated, VIEW)),
+      places(electLayout(rotated, VIEW, TYPO)),
       settled,
       "rotating it moves nothing",
     );
@@ -195,17 +196,17 @@ test("the layout is a function of the topology and the traversal counts, and of 
   // no state moves because of the order things happened in, and no transition is hidden, demoted,
   // or drawn differently for never being taken.
   const doubled = { ...HARD, scenario: [...HARD.scenario, ...HARD.scenario] };
-  const settled = places(electLayout(HARD, VIEW));
+  const settled = places(electLayout(HARD, VIEW, TYPO));
   assert.notEqual(
-    places(electLayout(doubled, VIEW)),
+    places(electLayout(doubled, VIEW, TYPO)),
     "",
     "a doubled scenario still lays out",
   );
   // Doubling every count scales the weights uniformly, so the *relative* emphasis is unchanged.
-  assert.equal(places(electLayout(doubled, VIEW)), settled);
+  assert.equal(places(electLayout(doubled, VIEW, TYPO)), settled);
 
   // But the topology is never edited: every declared transition survives, taken or not.
-  const layout = electLayout(HARD, VIEW);
+  const layout = electLayout(HARD, VIEW, TYPO);
   assert.equal(layout.edges.length, HARD.transitions.length);
   for (const transition of HARD.transitions) {
     assert.ok(
@@ -219,14 +220,14 @@ test("an empty scenario lays the machine out exactly as a full one does", () => 
   const empty = { ...ELEVATOR, scenario: [] as readonly AuthoredOccurrence[] };
   // Not the same as the full elevator, necessarily — with no traversals there are no weights — but
   // it must still produce a complete, collision-free map rather than falling over.
-  const layout = electLayout(empty, VIEW);
+  const layout = electLayout(empty, VIEW, TYPO);
   assert.equal(layout.nodes.length, ELEVATOR.states.length);
   assert.equal(layout.edges.length, ELEVATOR.transitions.length);
   assert.equal(scoreLayout(layout, empty, VIEW).nodeOverlap, 0);
 });
 
 test("self-loops and parallel edges survive every candidate the grid produces", () => {
-  const audition = auditionLayouts(HARD, VIEW);
+  const audition = auditionLayouts(HARD, VIEW, TYPO);
   for (const candidate of audition.candidates) {
     const loops = candidate.layout.edges.filter((edge) => edge.self);
     assert.equal(loops.length, 1, `${candidate.name}: the self-transition vanished`);
@@ -249,8 +250,8 @@ test("self-loops and parallel edges survive every candidate the grid produces", 
 test("the elected policy is one of the grid's, and names no state or transition", () => {
   // The audition may not special-case an example. Every machine gets the same grid; what differs is
   // only which member of it wins.
-  const elevator = auditionLayouts(ELEVATOR, VIEW);
-  const hard = auditionLayouts(HARD, VIEW);
+  const elevator = auditionLayouts(ELEVATOR, VIEW, TYPO);
+  const hard = auditionLayouts(HARD, VIEW, TYPO);
   assert.ok(elevator.candidates.some((c) => c.name === hard.winner.name));
   assert.ok(hard.candidates.some((c) => c.name === elevator.winner.name));
 });
@@ -258,7 +259,7 @@ test("the elected policy is one of the grid's, and names no state or transition"
 test("a small machine is not made awkward to help a large one", () => {
   // The elevator is the control. Whatever the search does for the adversarial specimen, it must not
   // leave a six-state machine worse than dagre's own defaults left it.
-  const { winner, incumbent } = auditionLayouts(ELEVATOR, VIEW);
+  const { winner, incumbent } = auditionLayouts(ELEVATOR, VIEW, TYPO);
   assert.ok(winner.score.stateNamePx > incumbent.score.stateNamePx);
   assert.equal(
     winner.score.crossings,

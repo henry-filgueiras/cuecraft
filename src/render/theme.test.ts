@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -44,7 +45,7 @@ const BOX = { width: 1622, height: 644 };
 test("a specimen never exceeds its box in either direction", () => {
   for (const lines of [1, 5, 10, 24, 60]) {
     for (const longest of [10, 46, 90, 200]) {
-      const size = fitSpecimen(lines, longest, BOX);
+      const size = fitSpecimen(lines, longest, BOX, TYPO);
       // The floor wins over fitting when a specimen is genuinely too big for the frame, and
       // that is deliberate: silently setting code at 9px would be worse than overflowing
       // visibly. Only check the fit where the size was not clamped.
@@ -54,7 +55,7 @@ test("a specimen never exceeds its box in either direction", () => {
           `${lines} lines at ${size}px overflows vertically`,
         );
         assert.ok(
-          longest * size * CODE.charWidth <= BOX.width + 1,
+          longest * size * TYPO.width.mono <= BOX.width + 1,
           `${longest} columns at ${size}px overflows horizontally`,
         );
       }
@@ -64,12 +65,12 @@ test("a specimen never exceeds its box in either direction", () => {
 
 test("a specimen is never set smaller than presentation scale, or larger than the cap", () => {
   assert.equal(
-    fitSpecimen(1, 1, BOX),
+    fitSpecimen(1, 1, BOX, TYPO),
     CODE.maxSize,
     "a tiny specimen still stops at the cap",
   );
   assert.equal(
-    fitSpecimen(400, 400, BOX),
+    fitSpecimen(400, 400, BOX, TYPO),
     CODE.minSize,
     "and an enormous one stops at the floor",
   );
@@ -77,17 +78,20 @@ test("a specimen is never set smaller than presentation scale, or larger than th
 
 test("the self-demo's two specimens are set at readable sizes", () => {
   // Ten lines of 46 columns, and nine of 49 — the two blocks in examples/cuecraft.yaml.
-  assert.ok(fitSpecimen(10, 46, BOX) >= 38);
-  assert.ok(fitSpecimen(9, 49, BOX) >= 38);
+  assert.ok(fitSpecimen(10, 46, BOX, TYPO) >= 38);
+  assert.ok(fitSpecimen(9, 49, BOX, TYPO) >= 38);
 });
 
 test("a heading that wraps is known to wrap", () => {
   const short = "One slide, in full";
-  assert.equal(headingLines(short.length, fitHeading(short.length, TYPE.title), 1500), 1);
+  assert.equal(
+    headingLines(short.length, fitHeading(short.length, TYPE.title), 1500, TYPO),
+    1,
+  );
 
   const long = "Author relationships. Derive mechanics.";
   assert.equal(
-    headingLines(long.length, fitHeading(long.length, TYPE.title), 1500),
+    headingLines(long.length, fitHeading(long.length, TYPE.title), 1500, TYPO),
     2,
     "the close slide's title takes two lines, and the specimen under it has to know",
   );
@@ -96,7 +100,7 @@ test("a heading that wraps is known to wrap", () => {
 test("heading line counts are at least one, for any input", () => {
   for (const length of [0, 1, 400]) {
     for (const size of [1, 104, 400]) {
-      assert.ok(headingLines(length, size, 1500) >= 1);
+      assert.ok(headingLines(length, size, 1500, TYPO) >= 1);
     }
   }
 });
@@ -113,25 +117,30 @@ test("headings step down as they lengthen, and never up", () => {
 /* ------------------------------------------------- a spoken sentence, set whole */
 
 /** The measure the anchors figure sets a row's sentence to, at 1920x1080. */
-const ROW_MEASURE = bodyBox("Semantic anchors").width - 590;
+const ROW_MEASURE = bodyBox("Semantic anchors", TYPO).width - 590;
 
 test("a specimen's box is the body's, less the gutter it keeps for its marks", () => {
   const title = "Author relationships. Derive mechanics.";
-  assert.equal(codeBox(title).width, bodyBox(title).width - CODE.gutter);
-  assert.equal(codeBox(title).height, bodyBox(title).height);
+  assert.equal(codeBox(title, TYPO).width, bodyBox(title, TYPO).width - CODE.gutter);
+  assert.equal(codeBox(title, TYPO).height, bodyBox(title, TYPO).height);
 });
 
 test("a sentence too long for its measure takes another line, never fewer words", () => {
   const width = 1000;
-  assert.equal(quoteLines(40, width, FIGURE.quote), 1);
+  assert.equal(quoteLines(40, width, FIGURE.quote, TYPO), 1);
   // Twice the characters at the same size is twice the lines, not the same line truncated.
-  assert.ok(quoteLines(200, width, FIGURE.quote) > quoteLines(100, width, FIGURE.quote));
+  assert.ok(
+    quoteLines(200, width, FIGURE.quote, TYPO) >
+      quoteLines(100, width, FIGURE.quote, TYPO),
+  );
   // And a narrower column costs lines rather than words.
-  assert.ok(quoteLines(100, 400, FIGURE.quote) > quoteLines(100, 1200, FIGURE.quote));
+  assert.ok(
+    quoteLines(100, 400, FIGURE.quote, TYPO) > quoteLines(100, 1200, FIGURE.quote, TYPO),
+  );
 });
 
 test("the type steps down before the lines do, and stops at the readable floor", () => {
-  assert.equal(fitQuote(["short one"], ROW_MEASURE).size, FIGURE.quote);
+  assert.equal(fitQuote(["short one"], ROW_MEASURE, TYPO).size, FIGURE.quote);
 
   // Every sentence the observatory's narration puts on screen fits in the preferred number of
   // lines at full size — which is the measurement that says the ellipsis was never necessary.
@@ -140,28 +149,28 @@ test("the type steps down before the lines do, and stops at the readable floor",
     "“On the left, what somebody typed. On the right, the frame cuecraft worked out it becomes true on.”",
     "“Every span is a sentence that was actually synthesized, and every width is how long it really took.”",
   ];
-  const fitted = fitQuote(observatory, ROW_MEASURE);
+  const fitted = fitQuote(observatory, ROW_MEASURE, TYPO);
   assert.ok(fitted.size >= FIGURE.quoteMin);
   assert.equal(fitted.lines, FIGURE.quoteLines);
 
   // A sentence nothing can fit in two lines is set at the floor and given the lines it needs,
   // because unreadably small is another way of throwing the words away.
-  const enormous = fitQuote(["x".repeat(4000)], ROW_MEASURE);
+  const enormous = fitQuote(["x".repeat(4000)], ROW_MEASURE, TYPO);
   assert.equal(enormous.size, FIGURE.quoteMin);
   assert.ok(enormous.lines > FIGURE.quoteLines);
 });
 
 test("a fitted quote always has room for every line it was measured at", () => {
   for (const length of [10, 60, 120, 400]) {
-    const fitted = fitQuote(["x".repeat(length)], ROW_MEASURE);
-    assert.ok(quoteLines(length, ROW_MEASURE, fitted.size) <= fitted.lines);
+    const fitted = fitQuote(["x".repeat(length)], ROW_MEASURE, TYPO);
+    assert.ok(quoteLines(length, ROW_MEASURE, fitted.size, TYPO) <= fitted.lines);
     assert.ok(quoteHeight(fitted.size, fitted.lines) >= fitted.size * fitted.lines);
   }
 });
 
 test("the anchors figure has room for a neighbourhood of whole sentences", () => {
-  const box = bodyBox("Semantic anchors");
-  const fitted = fitQuote(["x".repeat(90)], ROW_MEASURE);
+  const box = bodyBox("Semantic anchors", TYPO);
+  const fitted = fitQuote(["x".repeat(90)], ROW_MEASURE, TYPO);
   const rowHeight = quoteHeight(fitted.size, fitted.lines) + 48;
   const budget = box.height - 96 - 44 - 40;
   const rows = Math.floor(budget / rowHeight);
@@ -173,8 +182,8 @@ test("the anchors figure has room for a neighbourhood of whole sentences", () =>
 
 test("a deck without subtitles is laid out exactly as it always was", () => {
   const title = "Author relationships. Derive mechanics.";
-  assert.deepEqual(bodyBox(title, 0), bodyBox(title));
-  assert.deepEqual(codeBox(title, 0), codeBox(title));
+  assert.deepEqual(bodyBox(title, TYPO, 0), bodyBox(title, TYPO));
+  assert.deepEqual(codeBox(title, TYPO, 0), codeBox(title, TYPO));
   assert.equal(subtitleBand(undefined), 0);
 });
 
@@ -193,19 +202,20 @@ test("the band replaces the bottom margin rather than stacking on top of it", ()
   assert.equal(frameBottom(band), band);
   assert.ok(
     Math.abs(
-      bodyBox(title, band).height - (bodyBox(title).height - (band - FRAME.marginY)),
+      bodyBox(title, TYPO, band).height -
+        (bodyBox(title, TYPO).height - (band - FRAME.marginY)),
     ) < 0.001,
   );
   assert.equal(
-    bodyBox(title, band).width,
-    bodyBox(title).width,
+    bodyBox(title, TYPO, band).width,
+    bodyBox(title, TYPO).width,
     "the measure is untouched",
   );
 });
 
 test("a band shallower than the margin never pulls the composition past it", () => {
   assert.equal(frameBottom(10), FRAME.marginY);
-  assert.equal(bodyBox("A title", 10).height, bodyBox("A title").height);
+  assert.equal(bodyBox("A title", TYPO, 10).height, bodyBox("A title", TYPO).height);
 });
 
 test("the band reserves the metadata row whether or not anybody was named", () => {
@@ -225,20 +235,20 @@ test("the band reserves the metadata row whether or not anybody was named", () =
 });
 
 test("a subtitle steps its type down before it takes a third line", () => {
-  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH).size, SUBTITLE.maxSize);
-  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH).lines, SUBTITLE.lines);
+  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH, TYPO).size, SUBTITLE.maxSize);
+  assert.equal(fitSubtitle(["Short."], HEADING_WIDTH, TYPO).lines, SUBTITLE.lines);
 
   // Fitted across the whole deck, so one long sentence sets the size for every sentence.
   const deck = ["Short.", "x".repeat(220)];
-  assert.ok(fitSubtitle(deck, HEADING_WIDTH).size < SUBTITLE.maxSize);
+  assert.ok(fitSubtitle(deck, HEADING_WIDTH, TYPO).size < SUBTITLE.maxSize);
   assert.equal(
-    fitSubtitle(deck, HEADING_WIDTH).size,
-    fitSubtitle([deck[1] ?? ""], HEADING_WIDTH).size,
+    fitSubtitle(deck, HEADING_WIDTH, TYPO).size,
+    fitSubtitle([deck[1] ?? ""], HEADING_WIDTH, TYPO).size,
   );
 
   // And below the readable floor it takes the lines instead, because unreadably small is
   // another way of discarding an utterance (decision:28).
-  const enormous = fitSubtitle(["x".repeat(4000)], HEADING_WIDTH);
+  const enormous = fitSubtitle(["x".repeat(4000)], HEADING_WIDTH, TYPO);
   assert.equal(enormous.size, SUBTITLE.minSize);
   assert.ok(enormous.lines > SUBTITLE.lines);
   assert.ok(
@@ -250,8 +260,8 @@ test("a subtitle steps its type down before it takes a third line", () => {
 
 test("a fitted subtitle always has room for every line it was measured at", () => {
   for (const length of [10, 60, 120, 400]) {
-    const fitted = fitSubtitle(["x".repeat(length)], HEADING_WIDTH);
-    assert.ok(quoteLines(length, HEADING_WIDTH, fitted.size) <= fitted.lines);
+    const fitted = fitSubtitle(["x".repeat(length)], HEADING_WIDTH, TYPO);
+    assert.ok(quoteLines(length, HEADING_WIDTH, fitted.size, TYPO) <= fitted.lines);
   }
 });
 
@@ -311,12 +321,12 @@ const BANDS = [0, 197, 206, 238] as const;
 test("a numbered list is laid out inside the box, at every band", () => {
   for (const band of BANDS) {
     for (const deck of STACKS) {
-      const box = bodyBox(deck.title, band);
-      const fitted = fitIndex(deck.rows, box);
+      const box = bodyBox(deck.title, TYPO, band);
+      const fitted = fitIndex(deck.rows, box, TYPO);
       assert.ok(
-        indexHeight(deck.rows, fitted, box.width) <= box.height,
+        indexHeight(deck.rows, fitted, box.width, TYPO) <= box.height,
         `${deck.title} at band ${band} overflows by ` +
-          `${indexHeight(deck.rows, fitted, box.width) - box.height}px`,
+          `${indexHeight(deck.rows, fitted, box.width, TYPO) - box.height}px`,
       );
       assert.ok(fitted.size >= INDEX.minSize);
       assert.ok(fitted.pad >= INDEX.minPad);
@@ -330,18 +340,21 @@ test("the overflow this round fixed is the one the renders showed", () => {
   // frames that proved it are not in the repository.
   const deck = STACKS[2];
   if (deck === undefined) throw new Error("fixture missing");
-  const box = bodyBox(deck.title, 206);
+  const box = bodyBox(deck.title, TYPO, 206);
   assert.ok(
-    indexHeight(deck.rows, { size: TYPE.row, pad: SPACE.lg }, box.width) > box.height,
+    indexHeight(deck.rows, { size: TYPE.row, pad: SPACE.lg }, box.width, TYPO) >
+      box.height,
     "the unfitted constants must not fit, or this test is not watching the defect",
   );
-  assert.ok(indexHeight(deck.rows, fitIndex(deck.rows, box), box.width) <= box.height);
+  assert.ok(
+    indexHeight(deck.rows, fitIndex(deck.rows, box, TYPO), box.width, TYPO) <= box.height,
+  );
 });
 
 test("a deck with room to spare keeps full size and full air", () => {
   const deck = STACKS[0];
   if (deck === undefined) throw new Error("fixture missing");
-  const fitted = fitIndex(deck.rows, bodyBox(deck.title, 0));
+  const fitted = fitIndex(deck.rows, bodyBox(deck.title, TYPO, 0), TYPO);
   assert.equal(fitted.size, TYPE.row, "nothing steps down until something has to");
   assert.equal(fitted.pad, INDEX.pad);
 });
@@ -378,13 +391,13 @@ test("a staircase is laid out inside the box, at every band", () => {
   ];
   for (const band of BANDS) {
     for (const deck of stairs) {
-      const box = bodyBox(deck.title, band);
+      const box = bodyBox(deck.title, TYPO, band);
       const step = deck.stages.length > 4 ? SPACE.xxl : SPACE.huge;
-      const fitted = fitCascade(deck.stages, box, step);
+      const fitted = fitCascade(deck.stages, box, step, TYPO);
       assert.ok(
-        cascadeHeight(deck.stages, fitted, box.width, step) <= box.height,
+        cascadeHeight(deck.stages, fitted, box.width, step, TYPO) <= box.height,
         `${deck.title} at band ${band} overflows by ` +
-          `${cascadeHeight(deck.stages, fitted, box.width, step) - box.height}px`,
+          `${cascadeHeight(deck.stages, fitted, box.width, step, TYPO) - box.height}px`,
       );
       assert.ok(fitted.size >= CASCADE.minSize);
     }
@@ -400,8 +413,8 @@ test("the bottom stage is the one that wraps, because it is the most indented", 
   ];
   const fitted = { size: TYPE.stage, gap: SPACE.md };
   assert.ok(
-    cascadeHeight(stages, fitted, 1656, SPACE.huge) >
-      cascadeHeight(stages, fitted, 1656, 0),
+    cascadeHeight(stages, fitted, 1656, SPACE.huge, TYPO) >
+      cascadeHeight(stages, fitted, 1656, 0, TYPO),
     "indenting a staircase costs measure, and measure costs lines",
   );
 });

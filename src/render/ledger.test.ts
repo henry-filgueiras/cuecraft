@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -56,7 +57,7 @@ const LEASES = {
   ] as readonly AuthoredOccurrence[],
 };
 
-const FIT = fitLedger(LEASES);
+const FIT = fitLedger(LEASES, TYPO);
 
 test("the ledger records occurrences, not the states they landed in", () => {
   // The whole reason it replaced the readout. A list of destinations cannot tell two parallel
@@ -78,7 +79,7 @@ test("the ledger records occurrences, not the states they landed in", () => {
 test("two parallel transitions between one pair of states are told apart", () => {
   // `timed-out` and `rate-limited` both run Running -> Retry wait. A list of states would show
   // "Retry wait" twice and nothing else; the ledger shows what fired each of them.
-  const rows = ledgerAt(LEASES, 9, fitLedger(LEASES));
+  const rows = ledgerAt(LEASES, 9, fitLedger(LEASES, TYPO));
   const all = ledgerAt(LEASES, 9, { ...FIT, rows: 99 });
   void rows;
   const fourth = all.find((row) => row.ordinal === 4);
@@ -146,7 +147,7 @@ test("the latest entry is last, and the order is chronological throughout", () =
 
 test("the rail never overflows its own region, at any point in the run", () => {
   for (const machine of [LEASES, longLabelled()]) {
-    const fit = fitLedger(machine);
+    const fit = fitLedger(machine, TYPO);
     for (let current = -1; current < machine.scenario.length; current += 1) {
       const total = ledgerAt(machine, current, fit).reduce(
         (sum, row) => sum + rowHeight(row, fit),
@@ -163,7 +164,7 @@ test("the rail never overflows its own region, at any point in the run", () => {
 test("under pressure the row count gives way before the type does", () => {
   // The discipline the round is built on, stated as a property: a rail of nine unreadable entries
   // is not more history than four readable ones and a number.
-  const fit = fitLedger(longLabelled());
+  const fit = fitLedger(longLabelled(), TYPO);
   assert.ok(fit.size >= 20, "the type never goes below the legibility floor");
   assert.ok(fit.rows <= MACHINE.railRows);
 });
@@ -193,7 +194,7 @@ test("the title is fitted into the block reserved for it, whatever its length", 
     "Why the elevator doors changed their mind",
     "An extraordinarily long deck title that nobody should have written but somebody will",
   ]) {
-    const fitted = fitTitle(title);
+    const fitted = fitTitle(title, TYPO);
     assert.equal(fitted.lines.join(" "), title, "a title is never shortened");
     assert.ok(fitted.size >= 28, "and never set below where a heading stops being one");
   }

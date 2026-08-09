@@ -5,20 +5,24 @@
  * source expresses intent — a title and some bullets — and this file decides how that
  * intent looks (decision:5). Nothing here is reachable from the YAML, deliberately.
  *
- * Fonts are a system stack rather than a downloaded family. Remotion renders in a headless
- * Chromium that resolves fonts against the host machine, so a bundled or fetched webfont
- * is the reproducible answer and a system stack is the *offline* one; this round chose
- * offline. On macOS this resolves to Helvetica Neue. See dragon:4.
+ * ## What moved out, and why it had to
+ *
+ * The two font stacks and the five advance-width estimates used to sit here as constants. They
+ * live in `./typography.ts` now, as a **profile**, because they are the one part of this file that
+ * is not a single answer: a presentation may ask to be set in a face designed for a reader who
+ * struggles with ordinary text, and a face that draws its glyphs further apart also sets wider.
+ * Carrying the family without the metric is how a film clips its own headings.
+ *
+ * So every fitter below that predicts a line break takes a `Typography` and takes it *required*.
+ * There is no default parameter and no module-level "current profile": a call site that forgot one
+ * would silently measure Atkinson against Helvetica's advance, which is precisely the failure this
+ * is arranged to make impossible, and a type error is a cheaper way to find out.
+ *
+ * Everything else here — sizes, colours, spacing, motion, every geometry constant — is a single
+ * answer and stays one. A profile is two families and five numbers. It is not a theme.
  */
 
-export const FONT_STACK = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-
-/**
- * Code is set in a monospace stack for the reason code is always set in one: the alignment is
- * the content. Menlo is macOS's, and the fallbacks cover the platforms Remotion runs on.
- */
-export const MONO_STACK =
-  'Menlo, "SF Mono", "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace';
+import type { Typography } from "./typography.ts";
 
 export const COLORS = {
   /** Deck background. Everything fades to and from this. Flat — see Frame. */
@@ -164,8 +168,6 @@ export const CODE = {
   /** Below this it stops being presentation type, so the deck should not need it. */
   minSize: 26,
   lineHeight: 1.52,
-  /** Advance width of one monospace character, as a fraction of the font size. */
-  charWidth: 0.602,
   /** Space to the left of the block, holding the activation mark. */
   gutter: 34,
 } as const;
@@ -184,38 +186,27 @@ export function fitHeading(length: number, base: number): number {
 }
 
 /**
- * Average advance width of the heading face, as a fraction of the font size.
- *
- * Helvetica Neue Bold at display sizes. Close enough to predict a line break, which is all it is
- * for — and now actually measured rather than estimated: "WitnessGlass records the work" is 29
- * characters set at 104px and renders 1475px wide, which is 0.489.
- *
- * The 0.5 it replaces was a guess, and a guess that rounded the wrong way at exactly one boundary:
- * 29 characters at 104px came out one character over the measure, so `headingLines` reported two
- * lines for a title that renders on one, and `bodyBox` handed the composition beneath it 110px
- * less than it had. That is harmless where the answer is a slightly smaller specimen and visible
- * where the answer is a numbered row stepping down two sizes (`fitIndex`, sprint:14).
- *
- * Two of the 55 titles in `examples/` change line count under this correction — "WitnessGlass
- * records the work" and "Coding agents are black boxes", both 29 characters, both rendering on one
- * line in every cut of the film. No specimen, formula or figure moves.
- *
- * It is still an estimate of a proportional face and it is still host-dependent (dragon:4). What
- * it must not become is *optimistic*: a heading that wraps where this says it does not takes room
- * the body was promised.
- */
-export const HEADING_CHAR_WIDTH = 0.49;
-
-/**
  * How many lines a heading of this length wraps to.
  *
  * Only the specimen needs this, and it needs it badly: the block is sized to the space left
  * under the title, so a title that silently wraps to a second line pushes the code off the
  * bottom of the frame. Estimating rather than measuring keeps composition resolvable without a
  * browser, which is the same constraint every other sizing rule here works under.
+ *
+ * The estimate is the profile's (`./typography.ts`), and the default one carries archaeology worth
+ * keeping: 0.49 replaced a guessed 0.5 that rounded the wrong way at exactly one boundary. 29
+ * characters at 104px came out one character over the measure, so this reported two lines for a
+ * title that renders on one, and `bodyBox` handed the composition beneath it 110px less than it
+ * had — harmless where the answer is a slightly smaller specimen, visible where it is a numbered
+ * row stepping down two sizes (`fitIndex`, sprint:14).
  */
-export function headingLines(length: number, size: number, width: number): number {
-  const perLine = Math.max(1, Math.floor(width / (size * HEADING_CHAR_WIDTH)));
+export function headingLines(
+  length: number,
+  size: number,
+  width: number,
+  type: Typography,
+): number {
+  const perLine = Math.max(1, Math.floor(width / (size * type.width.heading)));
   return Math.max(1, Math.ceil(length / perLine));
 }
 
@@ -242,8 +233,9 @@ export function fitSpecimen(
   lineCount: number,
   longestLine: number,
   box: { width: number; height: number },
+  type: Typography,
 ): number {
-  const byWidth = box.width / Math.max(1, longestLine * CODE.charWidth);
+  const byWidth = box.width / Math.max(1, longestLine * type.width.mono);
   const byHeight = box.height / Math.max(1, lineCount * CODE.lineHeight);
   return Math.max(
     CODE.minSize,
@@ -395,8 +387,6 @@ export const WORLD = {
   /** Label size. Large in world units because a plate is read from across the room, close up. */
   label: 52,
   lineHeight: 1.2,
-  /** Advance width of the heading face at plate weight, as a fraction of the size. */
-  charWidth: 0.55,
   /**
    * How many lines a label may be broken into, and what shape the result should aim for.
    *
@@ -632,7 +622,6 @@ export const MACHINE = {
   /** A state's name. Large in world units, because a state is read from the whole-machine shot. */
   label: 50,
   lineHeight: 1.2,
-  charWidth: 0.55,
   maxLines: 2,
   plateAspect: 2.6,
   linePenalty: 0.4,
@@ -653,7 +642,6 @@ export const MACHINE = {
    */
   event: 34,
   eventLineHeight: 1.24,
-  eventCharWidth: 0.53,
   labelMeasure: 26,
   labelMaxLines: 3,
   labelPadX: 18,
@@ -1104,15 +1092,6 @@ export const FIGURE = {
 } as const;
 
 /**
- * Average advance width of the body face, as a fraction of the font size.
- *
- * Same estimate as `HEADING_CHAR_WIDTH` and for the same reason — composition has to resolve
- * without a browser — but measured at text sizes rather than display sizes, where the mix of
- * characters in ordinary prose runs slightly wider relative to the em.
- */
-export const BODY_CHAR_WIDTH = 0.52;
-
-/**
  * How a table a program computed is set.
  *
  * The first exhibit whose type cuecraft chooses, which is why there is a ladder here and not in
@@ -1131,7 +1110,6 @@ export const REGISTER = {
   padY: 12,
   /** Below eight characters a column holds the beginning of a value rather than a value. */
   minChars: 8,
-  charWidth: BODY_CHAR_WIDTH,
   headerGap: 10,
   /**
    * What a row being talked about looks like, and what the rest of the table does about it.
@@ -1208,9 +1186,10 @@ export const CASCADE = {
 export function fitIndex(
   rows: readonly string[],
   box: { readonly width: number; readonly height: number },
+  type: Typography,
 ): { readonly size: number; readonly pad: number } {
   for (let size = TYPE.row; size >= INDEX.minSize; size -= 2) {
-    const pad = indexPad(rows, size, box);
+    const pad = indexPad(rows, size, box, type);
     if (pad >= INDEX.minPad) return { size, pad: Math.min(pad, INDEX.pad) };
   }
   return { size: INDEX.minSize, pad: INDEX.minPad };
@@ -1221,16 +1200,23 @@ function indexPad(
   rows: readonly string[],
   size: number,
   box: { readonly width: number; readonly height: number },
+  type: Typography,
 ): number {
-  const spare = box.height - indexText(rows, size, box.width) - (rows.length + 1);
+  const spare = box.height - indexText(rows, size, box.width, type) - (rows.length + 1);
   return Math.floor(spare / (2 * Math.max(1, rows.length)));
 }
 
-function indexText(rows: readonly string[], size: number, width: number): number {
+function indexText(
+  rows: readonly string[],
+  size: number,
+  width: number,
+  type: Typography,
+): number {
   const measure = width - INDEX.ordinal - INDEX.gutter;
   return rows.reduce(
     (sum, row) =>
-      sum + Math.ceil(quoteLines(row.length, measure, size) * size * INDEX.lineHeight),
+      sum +
+      Math.ceil(quoteLines(row.length, measure, size, type) * size * INDEX.lineHeight),
     0,
   );
 }
@@ -1240,9 +1226,13 @@ export function indexHeight(
   rows: readonly string[],
   fitted: { readonly size: number; readonly pad: number },
   width: number,
+  type: Typography,
 ): number {
   return (
-    indexText(rows, fitted.size, width) + rows.length + 1 + 2 * fitted.pad * rows.length
+    indexText(rows, fitted.size, width, type) +
+    rows.length +
+    1 +
+    2 * fitted.pad * rows.length
   );
 }
 
@@ -1260,9 +1250,10 @@ export function fitCascade(
   stages: readonly string[],
   box: { readonly width: number; readonly height: number },
   step: number,
+  type: Typography,
 ): { readonly size: number; readonly gap: number } {
   for (let size = TYPE.stage; size >= CASCADE.minSize; size -= 2) {
-    const gap = cascadeGap(stages, size, box, step);
+    const gap = cascadeGap(stages, size, box, step, type);
     if (gap >= CASCADE.minGap) return { size, gap: Math.min(gap, CASCADE.gap) };
   }
   return { size: CASCADE.minSize, gap: CASCADE.minGap };
@@ -1279,9 +1270,10 @@ function cascadeGap(
   size: number,
   box: { readonly width: number; readonly height: number },
   step: number,
+  type: Typography,
 ): number {
   const fixed =
-    cascadeText(stages, size, box.width, step) + stages.length * CASCADE.ruleHeight;
+    cascadeText(stages, size, box.width, step, type) + stages.length * CASCADE.ruleHeight;
   return Math.floor((box.height - fixed) / (2 * Math.max(1, stages.length)));
 }
 
@@ -1290,11 +1282,13 @@ function cascadeText(
   size: number,
   width: number,
   step: number,
+  type: Typography,
 ): number {
   return stages.reduce((sum, stage, index) => {
     const measure = Math.max(1, width - index * step);
     return (
-      sum + Math.ceil(quoteLines(stage.length, measure, size) * size * CASCADE.lineHeight)
+      sum +
+      Math.ceil(quoteLines(stage.length, measure, size, type) * size * CASCADE.lineHeight)
     );
   }, 0);
 }
@@ -1305,9 +1299,10 @@ export function cascadeHeight(
   fitted: { readonly size: number; readonly gap: number },
   width: number,
   step: number,
+  type: Typography,
 ): number {
   return (
-    cascadeText(stages, fitted.size, width, step) +
+    cascadeText(stages, fitted.size, width, step, type) +
     stages.length * CASCADE.ruleHeight +
     2 * fitted.gap * stages.length
   );
@@ -1481,17 +1476,18 @@ export const SPEAKER_COLORS: readonly string[] = [
 export function fitSubtitle(
   displayed: readonly string[],
   width: number,
+  type: Typography,
 ): { readonly size: number; readonly lines: number } {
   const longest = Math.max(1, ...displayed.map((text) => text.length));
   const measure = width * SUBTITLE.wrapSlack;
   for (let size = SUBTITLE.maxSize; size >= SUBTITLE.minSize; size -= 2) {
-    if (quoteLines(longest, measure, size) <= SUBTITLE.lines) {
+    if (quoteLines(longest, measure, size, type) <= SUBTITLE.lines) {
       return { size, lines: SUBTITLE.lines };
     }
   }
   return {
     size: SUBTITLE.minSize,
-    lines: quoteLines(longest, measure, SUBTITLE.minSize),
+    lines: quoteLines(longest, measure, SUBTITLE.minSize, type),
   };
 }
 
@@ -1542,8 +1538,13 @@ export function quoteHeight(size: number, lines: number): number {
   return Math.ceil(size * QUOTE_LEADING * lines);
 }
 
-export function quoteLines(length: number, width: number, size: number): number {
-  const perLine = Math.max(1, Math.floor(width / (size * BODY_CHAR_WIDTH)));
+export function quoteLines(
+  length: number,
+  width: number,
+  size: number,
+  type: Typography,
+): number {
+  const perLine = Math.max(1, Math.floor(width / (size * type.width.body)));
   return Math.max(1, Math.ceil(length / perLine));
 }
 
@@ -1574,14 +1575,18 @@ export function quoteLines(length: number, width: number, size: number): number 
 export function fitQuote(
   displayed: readonly string[],
   width: number,
+  type: Typography,
 ): { readonly size: number; readonly lines: number } {
   const longest = Math.max(1, ...displayed.map((text) => text.length));
   for (let size = FIGURE.quote; size >= FIGURE.quoteMin; size -= 2) {
-    if (quoteLines(longest, width, size) <= FIGURE.quoteLines) {
+    if (quoteLines(longest, width, size, type) <= FIGURE.quoteLines) {
       return { size, lines: FIGURE.quoteLines };
     }
   }
-  return { size: FIGURE.quoteMin, lines: quoteLines(longest, width, FIGURE.quoteMin) };
+  return {
+    size: FIGURE.quoteMin,
+    lines: quoteLines(longest, width, FIGURE.quoteMin, type),
+  };
 }
 
 /** Every archetype's heading is capped at the same measure, so the deck shares a text edge. */
@@ -1598,10 +1603,14 @@ export const HEADING_WIDTH = 1500;
  * that calls `fitSpecimen` (`./projection.ts`), and so does a figure deciding how many rows of
  * complete sentences it has room for (`./figures.tsx`).
  */
-export function bodyBox(title: string, band = 0): { width: number; height: number } {
+export function bodyBox(
+  title: string,
+  type: Typography,
+  band = 0,
+): { width: number; height: number } {
   const titleSize = fitHeading(title.length, TYPE.title);
   const titleHeight =
-    headingLines(title.length, titleSize, HEADING_WIDTH) * titleSize * 1.06;
+    headingLines(title.length, titleSize, HEADING_WIDTH, type) * titleSize * 1.06;
   return {
     width: 1920 - 2 * FRAME.marginX,
     // The 6 is the accent rule above the heading; SPACE.lg sits under it, SPACE.xl under
@@ -1631,8 +1640,12 @@ export function frameBottom(band: number): number {
 }
 
 /** The same box, less the gutter a specimen keeps for its activation marks. */
-export function codeBox(title: string, band = 0): { width: number; height: number } {
-  const box = bodyBox(title, band);
+export function codeBox(
+  title: string,
+  type: Typography,
+  band = 0,
+): { width: number; height: number } {
+  const box = bodyBox(title, type, band);
   return { width: box.width - CODE.gutter, height: box.height };
 }
 

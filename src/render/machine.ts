@@ -26,6 +26,7 @@ import {
 } from "./camera.ts";
 import { polylineLength, smoothPath, trimToBoxes } from "./polyline.ts";
 import { MACHINE, contextShot, widestShot } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * Where a state machine sits, and where the camera looks at one.
@@ -346,7 +347,7 @@ export const DEFAULT_LAYOUT: LayoutPolicy = {
  * function, and sharing one would have meant a `plateAspect` parameter threaded through a call
  * site that is already reading it from a token.
  */
-export function wrapStateLabel(label: string): readonly string[] {
+export function wrapStateLabel(label: string, type: Typography): readonly string[] {
   const words = label.split(/\s+/).filter((word) => word.length > 0);
   if (words.length === 0) return [label];
 
@@ -354,7 +355,7 @@ export function wrapStateLabel(label: string): readonly string[] {
   for (let count = 1; count <= Math.min(MACHINE.maxLines, words.length); count += 1) {
     const broken = balance(words, count);
     if (broken.length !== count) continue;
-    const size = plateSize(broken);
+    const size = plateSize(broken, type);
     const proportion = Math.abs(size.width / size.height - MACHINE.plateAspect);
     const score = proportion + MACHINE.linePenalty * (count - 1);
     if (best === undefined || score < best.score) best = { lines: broken, score };
@@ -442,7 +443,10 @@ function greedy(words: readonly string[], measure: number): string[] {
 }
 
 /** A state plate, sized to the name it holds. Authors do not set sizes (decision:10). */
-export function plateSize(lines: readonly string[]): {
+export function plateSize(
+  lines: readonly string[],
+  type: Typography,
+): {
   readonly width: number;
   readonly height: number;
 } {
@@ -450,7 +454,7 @@ export function plateSize(lines: readonly string[]): {
   return {
     width: Math.max(
       MACHINE.minPlateWidth,
-      Math.round(longest * MACHINE.label * MACHINE.charWidth) + 2 * MACHINE.padX,
+      Math.round(longest * MACHINE.label * type.width.plate) + 2 * MACHINE.padX,
     ),
     height:
       Math.round(lines.length * MACHINE.label * MACHINE.lineHeight) + 2 * MACHINE.padY,
@@ -458,15 +462,16 @@ export function plateSize(lines: readonly string[]): {
 }
 
 /** The box an event label occupies, which is what dagre is told to reserve a rank for. */
-function labelSize(lines: readonly string[]): {
+function labelSize(
+  lines: readonly string[],
+  type: Typography,
+): {
   readonly width: number;
   readonly height: number;
 } {
   const longest = Math.max(...lines.map((line) => line.length), 1);
   return {
-    width:
-      Math.round(longest * MACHINE.event * MACHINE.eventCharWidth) +
-      2 * MACHINE.labelPadX,
+    width: Math.round(longest * MACHINE.event * type.width.event) + 2 * MACHINE.labelPadX,
     height:
       Math.round(lines.length * MACHINE.event * MACHINE.eventLineHeight) +
       2 * MACHINE.labelPadY,
@@ -503,6 +508,7 @@ export function layoutMachine(
     readonly states: readonly AuthoredState[];
     readonly transitions: readonly AuthoredTransition[];
   },
+  type: Typography,
   policy: LayoutPolicy = DEFAULT_LAYOUT,
 ): MachineLayout {
   const graph = new dagre.graphlib.Graph({ directed: true, multigraph: true });
@@ -532,14 +538,14 @@ export function layoutMachine(
   const wrapped = new Map<string, readonly string[]>();
   const plates = new Map<string, { width: number; height: number }>();
   for (const state of machine.states) {
-    const lines = wrapStateLabel(state.text);
-    const plate = plateSize(lines);
+    const lines = wrapStateLabel(state.text, type);
+    const plate = plateSize(lines, type);
     wrapped.set(state.id, lines);
     plates.set(state.id, plate);
     // The reservation, and the only place a self-loop touches the layout engine. dagre is told
     // about a wider box; the plate is drawn at the left of it, and the loops own the rest.
     graph.setNode(state.id, {
-      width: plate.width + loopRoomFor(state.id, machine.transitions, labels),
+      width: plate.width + loopRoomFor(state.id, machine.transitions, labels, type),
       height: plate.height,
     });
   }
@@ -550,7 +556,7 @@ export function layoutMachine(
       transition.from,
       transition.to,
       {
-        ...labelSize(labels.get(transition.id) as readonly string[]),
+        ...labelSize(labels.get(transition.id) as readonly string[], type),
         labelpos: "c",
         // One, unless the elected policy is one that weights the run. dagre's ranker and its
         // ordering pass both read `weight`, so a heavier edge is kept shorter and straighter —
@@ -603,7 +609,7 @@ export function layoutMachine(
 
   const edges: MachineEdge[] = machine.transitions.map((transition): MachineEdge => {
     const lines = labels.get(transition.id) ?? [transition.on];
-    const size = labelSize(lines);
+    const size = labelSize(lines, type);
 
     if (transition.from === transition.to) {
       const node = byId.get(transition.from) as MachineNode;
@@ -710,13 +716,14 @@ function loopRoomFor(
   id: string,
   transitions: readonly AuthoredTransition[],
   labels: ReadonlyMap<string, readonly string[]>,
+  type: Typography,
 ): number {
   const loops = transitions.filter(
     (transition) => transition.from === id && transition.to === id,
   );
   if (loops.length === 0) return 0;
   const caption = Math.max(
-    ...loops.map((loop) => labelSize(labels.get(loop.id) ?? [loop.on]).width),
+    ...loops.map((loop) => labelSize(labels.get(loop.id) ?? [loop.on], type).width),
   );
   return loops.length * MACHINE.loopReach + MACHINE.labelPadX + caption;
 }

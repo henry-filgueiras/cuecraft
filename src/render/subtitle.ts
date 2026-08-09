@@ -1,6 +1,7 @@
 import type { CompiledPresentation, SpeechClip } from "../compile/compile.ts";
 import type { Scene } from "../compile/timeline.ts";
 import { HEADING_WIDTH, SPEAKER_COLORS, fitSubtitle } from "./theme.ts";
+import type { Typography } from "./typography.ts";
 
 /**
  * The narration, projected as text, on the clock it was already on.
@@ -258,12 +259,16 @@ export function subtitleAt(
  * diagnostic that could not run in a test. `./subtitles.tsx` re-exports it, so no importer moved.
  * That is `./polyline.ts`'s rule for the second time (decision:36, decision:48).
  */
-export function subtitleFit(cues: readonly SubtitleCue[]): {
+export function subtitleFit(
+  cues: readonly SubtitleCue[],
+  type: Typography,
+): {
   readonly size: number;
   readonly lines: number;
 } {
   return fitSubtitle(
     cues.map((cue) => cue.text),
     HEADING_WIDTH,
+    type,
   );
 }

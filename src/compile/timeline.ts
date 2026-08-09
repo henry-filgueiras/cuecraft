@@ -3,6 +3,7 @@ import { takeId } from "../presentation/machine.ts";
 import { stepId } from "../presentation/protocol.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
+import type { TypographyId } from "../render/typography.ts";
 import { subtitleTrack, type SubtitleCue } from "../render/subtitle.ts";
 import type { CompiledPresentation } from "./compile.ts";
 import { freezeFacts, type CompilationFacts } from "./facts.ts";
@@ -414,6 +415,24 @@ export interface Timeline {
    * no second clock — see `../render/subtitle.ts`.
    */
   readonly subtitles: readonly SubtitleCue[];
+  /**
+   * Which typography profile every composition in this film is set in.
+   *
+   * On the timeline rather than beside it, and that placement is the whole of the concurrency
+   * argument. The timeline is the one immutable value a render is handed — it crosses into the
+   * browser as an input prop, it is what `calculateMetadata` sizes the composition from, and it is
+   * already the carrier for the two other things the renderer must not decide for itself. A profile
+   * that lived in a module-level variable instead would be shared by every render in the process,
+   * and a batch that rendered a dyslexia deck beside a default one would have to hope they did not
+   * interleave.
+   *
+   * It is resolved *before* this function returns, which is what puts it in front of every fitter:
+   * `chooseLayout` runs here, and everything that measures a line runs downstream of here. A late
+   * CSS swap would leave the arithmetic set in one face and the pixels in another.
+   *
+   * An identity rather than a family, so nothing in the compiled artifact names a typeface.
+   */
+  readonly typography: TypographyId;
 }
 
 export interface TimelineOptions {
@@ -683,5 +702,6 @@ export function buildTimeline(
     scenes,
     facts: freezeFacts(compiled, scenes, fps, from),
     subtitles: subtitleTrack(compiled, scenes),
+    typography: compiled.typography,
   };
 }

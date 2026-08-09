@@ -8,6 +8,7 @@ import type {
   Scope,
 } from "../presentation/parse.ts";
 import { ROOT_SCOPE, spokenText } from "../presentation/parse.ts";
+import type { TypographyId } from "../render/typography.ts";
 
 /**
  * The compilation boundary: authored intent plus measured narration.
@@ -181,6 +182,12 @@ export interface CompiledPresentation {
    * long they are or where they go (`../render/subtitle.ts`).
    */
   readonly subtitles: boolean;
+  /**
+   * The typography profile the presentation resolved to, carried forward for the same reason
+   * `subtitles` is: authored intent that only the renderer acts on, and that nothing in this file
+   * may branch on. It is an identity (`../render/typography.ts`), never a font family.
+   */
+  readonly typography: TypographyId;
 }
 
 /**
@@ -439,5 +446,6 @@ export async function compilePresentation(
     slides,
     publicDir,
     subtitles: presentation.subtitles,
+    typography: presentation.typography,
   };
 }

@@ -1,15 +1,9 @@
 import { createContext, useContext, useMemo } from "react";
 
+import { useTypography } from "./fonts.tsx";
 import type { SubtitleCue } from "./subtitle.ts";
 import { subtitleAt, subtitleFit } from "./subtitle.ts";
-import {
-  COLORS,
-  FONT_STACK,
-  FRAME,
-  HEADING_WIDTH,
-  SUBTITLE,
-  subtitleBand,
-} from "./theme.ts";
+import { COLORS, FRAME, HEADING_WIDTH, SUBTITLE, subtitleBand } from "./theme.ts";
 
 // Moved to `./subtitle.ts` when `./explain.ts` became its second caller, and re-exported here so
 // that every importer of it stayed where it was. See the note on its definition.
@@ -94,7 +88,8 @@ export function useSubtitleBand(): number {
 }
 
 export function useSubtitleFit(cues: readonly SubtitleCue[]) {
-  return useMemo(() => subtitleFit(cues), [cues]);
+  const type = useTypography();
+  return useMemo(() => subtitleFit(cues, type), [cues, type]);
 }
 
 /**
@@ -117,6 +112,7 @@ export function Subtitles({
   /** The composition's own frame. Subtitle intervals are absolute, like every other frame here. */
   frame: number;
 }) {
+  const type = useTypography();
   const fit = useSubtitleFit(cues);
   const cue = subtitleAt(cues, frame);
   if (cue === undefined) return null;
@@ -134,7 +130,7 @@ export function Subtitles({
         bottom: 0,
         height: subtitleBand(fit) - SUBTITLE.gap,
         width: HEADING_WIDTH,
-        fontFamily: FONT_STACK,
+        fontFamily: type.prose,
         display: "flex",
         flexDirection: "column",
         justifyContent: "flex-start",

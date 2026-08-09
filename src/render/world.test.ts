@@ -1,3 +1,4 @@
+import { DEFAULT_TYPOGRAPHY as TYPO } from "./typography.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -53,7 +54,7 @@ const WORLD = {
   ],
 };
 
-const laid = layoutWorld(WORLD);
+const laid = layoutWorld(WORLD, TYPO);
 
 function rectOf(layout: WorldLayout, id: string): Rect {
   const node = layout.byId.get(id);
@@ -63,12 +64,15 @@ function rectOf(layout: WorldLayout, id: string): Rect {
 
 test("a label is laid out, not squeezed: the break is balanced and nothing is dropped", () => {
   // v1 wrapped greedily at a fixed measure and produced `What / narration / can reach`.
-  assert.deepEqual(wrapLabel("What narration can reach"), [
+  assert.deepEqual(wrapLabel("What narration can reach", TYPO), [
     "What narration",
     "can reach",
   ]);
-  assert.deepEqual(wrapLabel("Remotion"), ["Remotion"]);
-  assert.deepEqual(wrapLabel("Speech, measured here"), ["Speech,", "measured here"]);
+  assert.deepEqual(wrapLabel("Remotion", TYPO), ["Remotion"]);
+  assert.deepEqual(wrapLabel("Speech, measured here", TYPO), [
+    "Speech,",
+    "measured here",
+  ]);
 
   // Whatever the break, every word survives it in order.
   for (const label of [
@@ -77,17 +81,17 @@ test("a label is laid out, not squeezed: the break is balanced and nothing is dr
     "The source you write",
     "A very considerably longer entity label than anyone should write",
   ]) {
-    assert.equal(wrapLabel(label).join(" "), label);
-    assert.ok(wrapLabel(label).length <= 3);
+    assert.equal(wrapLabel(label, TYPO).join(" "), label);
+    assert.ok(wrapLabel(label, TYPO).length <= 3);
   }
 });
 
 test("a break is chosen for the plate it makes, not for a fixed measure", () => {
   // Each candidate break is scored on the plate's proportion, so the chosen one is never
   // wildly further from the target shape than another achievable break.
-  const chosen = plateSize(wrapLabel("Semantic anchors"));
-  const oneLine = plateSize(["Semantic anchors"]);
-  const three = plateSize(["Semantic", "anch", "ors"]);
+  const chosen = plateSize(wrapLabel("Semantic anchors", TYPO), TYPO);
+  const oneLine = plateSize(["Semantic anchors"], TYPO);
+  const three = plateSize(["Semantic", "anch", "ors"], TYPO);
   const away = (size: { width: number; height: number }) =>
     Math.abs(size.width / size.height - 2.3);
   assert.ok(away(chosen) <= away(oneLine));
@@ -95,21 +99,21 @@ test("a break is chosen for the plate it makes, not for a fixed measure", () => 
 });
 
 test("a word longer than any sensible line gets its own, rather than being cut", () => {
-  const lines = wrapLabel("Indistinguishable from compression");
+  const lines = wrapLabel("Indistinguishable from compression", TYPO);
   assert.ok(lines.includes("Indistinguishable"));
   assert.equal(lines.join(" "), "Indistinguishable from compression");
 });
 
 test("a plate is sized to its label, and a longer label makes a wider plate", () => {
-  const narrow = plateSize(["Remotion"]);
-  const wide = plateSize(["Presentation"]);
-  const tall = plateSize(["Speech,", "measured", "here"]);
+  const narrow = plateSize(["Remotion"], TYPO);
+  const wide = plateSize(["Presentation"], TYPO);
+  const tall = plateSize(["Speech,", "measured", "here"], TYPO);
   assert.ok(wide.width > narrow.width);
   assert.ok(tall.height > narrow.height);
 });
 
 test("layout is deterministic: the same world lands in the same place twice", () => {
-  const again = layoutWorld(WORLD);
+  const again = layoutWorld(WORLD, TYPO);
   assert.deepEqual(
     laid.nodes.map((node) => [node.id, node.rect]),
     again.nodes.map((node) => [node.id, node.rect]),

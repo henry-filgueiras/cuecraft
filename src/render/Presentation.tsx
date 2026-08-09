@@ -11,19 +11,12 @@ import {
 import type { Recall, Scene, Timeline } from "../compile/timeline.ts";
 import { recallAt } from "../compile/timeline.ts";
 import { FactsContext } from "./figures.tsx";
+import { TypographyContext, useTypography, useTypographyGate } from "./fonts.tsx";
 import { Slide } from "./layouts.tsx";
 import type { SubtitleCue } from "./subtitle.ts";
 import { SubtitleBandContext, Subtitles, subtitleFit } from "./subtitles.tsx";
-import {
-  COLORS,
-  FONT_STACK,
-  FRAME,
-  MONO_STACK,
-  MOTION,
-  RECALL,
-  SUBTITLE,
-  subtitleBand,
-} from "./theme.ts";
+import { COLORS, FRAME, MOTION, RECALL, SUBTITLE, subtitleBand } from "./theme.ts";
+import { typographyOf } from "./typography.ts";
 
 /**
  * The composition: the timeline laid out in frames, plus one restrained transition.
@@ -58,6 +51,14 @@ export function PresentationVideo({ timeline }: PresentationProps) {
   const frame = useCurrentFrame();
   const { scenes, totalFrames } = timeline;
 
+  // The profile the compilation resolved, read off the timeline. Resolved *there* rather than here
+  // is the whole ordering argument: every fitter below already has it on first render, so there is
+  // no moment at which the arithmetic is set in one face and the pixels in another.
+  const type = typographyOf(timeline.typography);
+  // ...and no frame is captured until the browser actually has it. A no-op for a system stack,
+  // which is every deck that did not ask (`./fonts.tsx`).
+  useTypographyGate(type);
+
   const last = scenes.at(-1);
   const trailing =
     last === undefined
@@ -77,7 +78,9 @@ export function PresentationVideo({ timeline }: PresentationProps) {
   // ever laid out underneath the narration. Zero when the deck asked for no subtitles, which is
   // what makes every existing film render exactly as it did before.
   const band =
-    timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
+    timeline.subtitles.length === 0
+      ? 0
+      : subtitleBand(subtitleFit(timeline.subtitles, type));
 
   // Whether the film is quoting itself on this frame. Derived from the compiled recalls rather than
   // stored anywhere, because a `Recall` already carries a frame and a duration and whether this
@@ -93,95 +96,97 @@ export function PresentationVideo({ timeline }: PresentationProps) {
   return (
     // The compilation's own facts, offered to any composition that asks. Read-only, frozen by
     // `buildTimeline`, and reaching the renderer only after everything they describe is settled.
-    <FactsContext value={timeline.facts}>
-      <SubtitleBandContext value={band}>
-        <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
-          <AbsoluteFill style={{ opacity: deckOpacity }}>
-            {scenes.map((scene, index) => {
-              const { appearAt, fadeIn, fadeOut } = sceneMotion(scene, index, scenes);
+    <TypographyContext value={type}>
+      <FactsContext value={timeline.facts}>
+        <SubtitleBandContext value={band}>
+          <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
+            <AbsoluteFill style={{ opacity: deckOpacity }}>
+              {scenes.map((scene, index) => {
+                const { appearAt, fadeIn, fadeOut } = sceneMotion(scene, index, scenes);
 
-              return (
-                <Sequence
-                  key={scene.ordinal}
-                  from={scene.from}
-                  durationInFrames={scene.durationInFrames}
-                  layout="none"
-                  name={`slide-${scene.ordinal}`}
-                >
-                  <SceneLayer
-                    appearAt={appearAt}
-                    fadeIn={fadeIn}
-                    fadeOut={fadeOut}
+                return (
+                  <Sequence
+                    key={scene.ordinal}
+                    from={scene.from}
                     durationInFrames={scene.durationInFrames}
+                    layout="none"
+                    name={`slide-${scene.ordinal}`}
                   >
-                    {/* Shifts the local frame so entrance motion starts when the slide
+                    <SceneLayer
+                      appearAt={appearAt}
+                      fadeIn={fadeIn}
+                      fadeOut={fadeOut}
+                      durationInFrames={scene.durationInFrames}
+                    >
+                      {/* Shifts the local frame so entrance motion starts when the slide
                     becomes visible rather than while it is still transparent. */}
-                    <Sequence from={appearAt} layout="none" name="content">
-                      <Slide
-                        scene={scene}
-                        slideCount={scenes.length}
-                        absoluteFrame={frame}
-                      />
-                    </Sequence>
-                  </SceneLayer>
-                </Sequence>
-              );
-            })}
+                      <Sequence from={appearAt} layout="none" name="content">
+                        <Slide
+                          scene={scene}
+                          slideCount={scenes.length}
+                          absoluteFrame={frame}
+                        />
+                      </Sequence>
+                    </SceneLayer>
+                  </Sequence>
+                );
+              })}
 
-            {/* Over the current slide, which keeps rendering underneath at its own present-time
+              {/* Over the current slide, which keeps rendering underneath at its own present-time
               frame: a quotation is shown *inside* the film rather than instead of it, and the two
               progress positions on screen at once are the whole of what says so. */}
-            {quotation === undefined ? null : (
-              <QuotationCard
-                {...quotation}
-                width={timeline.width}
-                height={timeline.height}
-                fps={timeline.fps}
-              />
-            )}
+              {quotation === undefined ? null : (
+                <QuotationCard
+                  {...quotation}
+                  width={timeline.width}
+                  height={timeline.height}
+                  fps={timeline.fps}
+                />
+              )}
 
-            {/* Above every scene and inside none of them: no camera transform, no world scale and
+              {/* Above every scene and inside none of them: no camera transform, no world scale and
               no per-slide fade can reach it, which is the whole of why it stays still while the
               picture moves. Inside the deck opacity, so the film still settles to background.
               *Except* while the film is quoting itself — a recalled sentence belongs to the
               recalled canvas, and drawing it in the present frame's furniture as well would both
               double it and put a caption from the past under a slide from the present. */}
-            {quoted === undefined ? (
-              <Subtitles cues={timeline.subtitles} frame={frame} />
-            ) : null}
-          </AbsoluteFill>
+              {quoted === undefined ? (
+                <Subtitles cues={timeline.subtitles} frame={frame} />
+              ) : null}
+            </AbsoluteFill>
 
-          {scenes.flatMap((scene) =>
-            scene.clips.map((clip, index) => (
-              <Sequence
-                key={`${scene.ordinal}-${index}`}
-                from={clip.from}
-                durationInFrames={clip.durationInFrames}
-                name={`narration-${scene.ordinal}-${index + 1}`}
-              >
-                <Audio src={staticFile(clip.src)} />
-              </Sequence>
-            )),
-          )}
+            {scenes.flatMap((scene) =>
+              scene.clips.map((clip, index) => (
+                <Sequence
+                  key={`${scene.ordinal}-${index}`}
+                  from={clip.from}
+                  durationInFrames={clip.durationInFrames}
+                  name={`narration-${scene.ordinal}-${index + 1}`}
+                >
+                  <Audio src={staticFile(clip.src)} />
+                </Sequence>
+              )),
+            )}
 
-          {/* The same file, placed a second time. Nothing was synthesized for it, and nothing here
+            {/* The same file, placed a second time. Nothing was synthesized for it, and nothing here
             knows that — a recalled clip is an `<Audio>` at a frame for a duration, exactly like
             every other one, which is the evidence that the replay is on the one serial track. */}
-          {scenes.flatMap((scene) =>
-            scene.recalls.map((recall) => (
-              <Sequence
-                key={`recall-audio-${scene.ordinal}-${recall.from}`}
-                from={recall.from}
-                durationInFrames={recall.durationInFrames}
-                name={`recall-${scene.ordinal}-${recall.id}`}
-              >
-                <Audio src={staticFile(recall.src)} />
-              </Sequence>
-            )),
-          )}
-        </AbsoluteFill>
-      </SubtitleBandContext>
-    </FactsContext>
+            {scenes.flatMap((scene) =>
+              scene.recalls.map((recall) => (
+                <Sequence
+                  key={`recall-audio-${scene.ordinal}-${recall.from}`}
+                  from={recall.from}
+                  durationInFrames={recall.durationInFrames}
+                  name={`recall-${scene.ordinal}-${recall.id}`}
+                >
+                  <Audio src={staticFile(recall.src)} />
+                </Sequence>
+              )),
+            )}
+          </AbsoluteFill>
+        </SubtitleBandContext>
+      </FactsContext>
+    </TypographyContext>
   );
 }
 
@@ -206,8 +211,12 @@ export function PresentationVideo({ timeline }: PresentationProps) {
 export function RecalledCanvasVideo({ timeline }: PresentationProps) {
   const frame = useCurrentFrame();
   const { scenes } = timeline;
+  const type = typographyOf(timeline.typography);
+  useTypographyGate(type);
   const band =
-    timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
+    timeline.subtitles.length === 0
+      ? 0
+      : subtitleBand(subtitleFit(timeline.subtitles, type));
 
   const quotation = quotationProps(
     recallAt(scenes, frame)?.recall,
@@ -217,15 +226,17 @@ export function RecalledCanvasVideo({ timeline }: PresentationProps) {
   );
 
   return (
-    <FactsContext value={timeline.facts}>
-      <SubtitleBandContext value={band}>
-        <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
-          <AbsoluteFill>
-            {quotation === undefined ? null : <RecalledCanvas {...quotation} />}
+    <TypographyContext value={type}>
+      <FactsContext value={timeline.facts}>
+        <SubtitleBandContext value={band}>
+          <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
+            <AbsoluteFill>
+              {quotation === undefined ? null : <RecalledCanvas {...quotation} />}
+            </AbsoluteFill>
           </AbsoluteFill>
-        </AbsoluteFill>
-      </SubtitleBandContext>
-    </FactsContext>
+        </SubtitleBandContext>
+      </FactsContext>
+    </TypographyContext>
   );
 }
 
@@ -484,9 +495,9 @@ function QuotationCard({
  * `FRAME.progressHeight`, and this one is inset between two blocks of type rather than running the
  * full bleed, so it reads as part of a caption rather than as a third edge of the frame.
  *
- * The time is set in `MONO_STACK` in the seconds idiom `figures.tsx` already uses for a derived
- * number, at one decimal: two decimals at 30fps is a digit changing three times a second in the
- * corner of a frame somebody is trying to read a quotation on.
+ * The time is set in the profile's mono face, in the seconds idiom `figures.tsx` already uses for
+ * a derived number, at one decimal: two decimals at 30fps is a digit changing three times a second
+ * in the corner of a frame somebody is trying to read a quotation on.
  */
 function QuotationFooter({
   recall,
@@ -506,6 +517,7 @@ function QuotationFooter({
   // Clamped rather than trusted: the card is only mounted inside the interval, so this is belt and
   // braces against a caller that mounts it elsewhere — and a rail that overshot would be a rail
   // reporting something the compiler did not say.
+  const type = useTypography();
   const elapsed = Math.min(Math.max(frame - recall.from, 0), recall.durationInFrames);
   const through = recall.durationInFrames === 0 ? 1 : elapsed / recall.durationInFrames;
 
@@ -520,7 +532,7 @@ function QuotationFooter({
         display: "flex",
         alignItems: "center",
         gap: RECALL.railGap,
-        fontFamily: FONT_STACK,
+        fontFamily: type.prose,
         color: COLORS.accent,
       }}
     >
@@ -566,7 +578,7 @@ function QuotationFooter({
       <div
         style={{
           flex: "none",
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: RECALL.time,
           // The elapsed half is the one that moves; the total is context, so it recedes.
           color: COLORS.dim,

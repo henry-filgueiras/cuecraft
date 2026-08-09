@@ -1,4 +1,6 @@
 import { createContext, useContext } from "react";
+
+import { useTypography } from "./fonts.tsx";
 import { interpolate, useCurrentFrame } from "remotion";
 
 import {
@@ -16,7 +18,6 @@ import {
   CODE,
   COLORS,
   FIGURE,
-  MONO_STACK,
   MOTION,
   QUOTE_LEADING,
   SPACE,
@@ -117,6 +118,7 @@ function Chronicle({
   absoluteFrame: number;
 }) {
   const band = useSubtitleBand();
+  const type = useTypography();
   const frame = useCurrentFrame();
   const current = clipAt(facts, absoluteFrame);
   const at = (value: number) => (value / facts.totalFrames) * 100;
@@ -127,11 +129,12 @@ function Chronicle({
   const measureWidth = Math.ceil(
     Math.max(...facts.clips.map((clip) => seconds(clip.seconds).length)) *
       FIGURE.measure *
-      CODE.charWidth,
+      type.width.mono,
   );
   const quote = fitQuote(
     facts.clips.map((clip) => quoted(clip.text)),
-    bodyBox(title, band).width - measureWidth - SPACE.xl,
+    bodyBox(title, type, band).width - measureWidth - SPACE.xl,
+    type,
   );
 
   const drawn = interpolate(frame, [0, MOTION.rise * 2], [0, 1], {
@@ -227,7 +230,7 @@ function Chronicle({
             top: -(FIGURE.label + SPACE.sm),
             transform: "translateX(-50%)",
             opacity: arrived,
-            fontFamily: MONO_STACK,
+            fontFamily: type.mono,
             fontSize: FIGURE.label,
             letterSpacing: "0.16em",
             textTransform: "uppercase",
@@ -247,7 +250,7 @@ function Chronicle({
             right: 0,
             display: "flex",
             justifyContent: "space-between",
-            fontFamily: MONO_STACK,
+            fontFamily: type.mono,
             fontSize: FIGURE.scale,
             color: COLORS.dim,
             opacity: drawn,
@@ -288,6 +291,7 @@ function CurrentClip({
   measureWidth: number;
   quote: { readonly size: number; readonly lines: number };
 }) {
+  const type = useTypography();
   return (
     <div
       style={{
@@ -301,7 +305,7 @@ function CurrentClip({
       <div
         style={{
           width: measureWidth,
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: FIGURE.measure,
           fontWeight: 600,
           letterSpacing: "-0.03em",
@@ -314,7 +318,7 @@ function CurrentClip({
       <div style={{ flex: 1 }}>
         <div
           style={{
-            fontFamily: MONO_STACK,
+            fontFamily: type.mono,
             fontSize: FIGURE.label,
             letterSpacing: "0.16em",
             textTransform: "uppercase",
@@ -365,6 +369,7 @@ function Resolution({
   absoluteFrame: number;
 }) {
   const band = useSubtitleBand();
+  const type = useTypography();
   const frame = useCurrentFrame();
   const current = anchorAt(facts, absoluteFrame);
   const index = facts.anchors.findIndex(
@@ -373,10 +378,11 @@ function Resolution({
 
   const quote = fitQuote(
     facts.anchors.map((anchor) => quoted(anchor.text)),
-    rowQuoteWidth(bodyBox(title, band).width),
+    rowQuoteWidth(bodyBox(title, type, band).width),
+    type,
   );
   const rowHeight = quoteHeight(quote.size, quote.lines) + 2 * SPACE.md;
-  const budget = bodyBox(title, band).height - SPACE.xxl - LEGEND_HEIGHT - SPACE.lg;
+  const budget = bodyBox(title, type, band).height - SPACE.xxl - LEGEND_HEIGHT - SPACE.lg;
   const rows = Math.max(
     FIGURE.minRows,
     Math.min(FIGURE.rows, Math.floor(budget / rowHeight)),
@@ -449,6 +455,7 @@ function Row({
   height: number;
   quote: { readonly size: number; readonly lines: number };
 }) {
+  const type = useTypography();
   const arriving = interpolate(frame, [delay, delay + MOTION.rise], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -495,7 +502,7 @@ function Row({
       <div
         style={{
           width: ROW_IDENTITY,
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: FIGURE.identity,
           color: FIGURE.authored,
           letterSpacing: "-0.01em",
@@ -507,7 +514,7 @@ function Row({
         style={{
           width: ROW_RESOLVED,
           textAlign: "right",
-          fontFamily: MONO_STACK,
+          fontFamily: type.mono,
           fontSize: FIGURE.resolved,
           fontWeight: 600,
           letterSpacing: "-0.02em",
@@ -525,8 +532,9 @@ function Row({
 
 /** The two words at the top of every figure that say which half of the frame is which. */
 function Legend({ left, right }: { left: string; right: string }) {
+  const type = useTypography();
   const style = {
-    fontFamily: MONO_STACK,
+    fontFamily: type.mono,
     fontSize: FIGURE.label,
     letterSpacing: "0.18em",
     textTransform: "uppercase" as const,

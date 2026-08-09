@@ -131,7 +131,13 @@ function presentation(
   slides: readonly CompiledSlide[],
   subtitles = false,
 ): CompiledPresentation {
-  return { title: "A deck", slides, publicDir: "/tmp/public", subtitles };
+  return {
+    title: "A deck",
+    slides,
+    publicDir: "/tmp/public",
+    subtitles,
+    typography: "default",
+  };
 }
 
 test("a duration occupies every frame it touches", () => {

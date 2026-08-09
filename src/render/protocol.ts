@@ -14,6 +14,7 @@ import {
 import { allocateLanes, type LaneAllocation, type Tenancy } from "./tenancy.ts";
 import { TRANSCRIPT } from "./theme.ts";
 import { wrapLabel } from "./world.ts";
+import { DEFAULT_TYPOGRAPHY, type Typography } from "./typography.ts";
 
 /**
  * Where an exchange sits, and where the camera looks at one.
@@ -180,17 +181,20 @@ export function protocolOf(
  * coordinates, so what the viewer is watching is a place the camera moves through rather than a
  * sequence of diagrams that happen to resemble each other.
  */
-export function layoutProtocol(protocol: {
-  actors: readonly AuthoredActor[];
-  steps: readonly AuthoredStep[];
-}): ProtocolLayout {
+export function layoutProtocol(
+  protocol: {
+    actors: readonly AuthoredActor[];
+    steps: readonly AuthoredStep[];
+  },
+  type: Typography,
+): ProtocolLayout {
   // Which column each actor holds, decided offline and never revised. See `./tenancy.ts` — nothing
   // below may consult a frame, and nothing below may move an actor.
   const allocation = allocateLanes(protocol.actors, protocol.steps);
 
   const plates = protocol.actors.map((actor) => {
-    const lines = wrapLabel(actor.text, TRANSCRIPT.actorMaxLines);
-    return { actor, lines, size: plateSize(lines) };
+    const lines = wrapLabel(actor.text, type, TRANSCRIPT.actorMaxLines);
+    return { actor, lines, size: plateSize(lines, type) };
   });
 
   // One pitch for the whole cast, still measured over every actor and not merely the ones in the
@@ -233,9 +237,9 @@ export function layoutProtocol(protocol: {
     }
 
     const measure = measureFor(sourceX, targetX, self, lanePitch);
-    const lines = wrapToMeasure(step.message, measure);
+    const lines = wrapToMeasure(step.message, measure, type);
     const labelHeight = lines.length * TRANSCRIPT.message * TRANSCRIPT.messageLineHeight;
-    const labelWidth = Math.max(...lines.map(textWidth));
+    const labelWidth = Math.max(...lines.map((line) => textWidth(line, type)));
 
     // A self-message's label hangs *beside* the hook rather than above the arrow, and level with
     // it: the hook is a shape with a middle, and a caption floating over its top edge reads as
@@ -380,10 +384,32 @@ export function layoutProtocol(protocol: {
   };
 }
 
-function plateSize(lines: readonly string[]): { width: number; height: number } {
+/**
+ * A lane's plate, sized to the name it holds.
+ *
+ * The `0.47` is this composition's own estimate and it is stated against a formula that also
+ * carries the line height, which is not what an advance width means — `actor * actorLineHeight *
+ * 0.47` comes to `actor * 0.5546`. That is a quirk rather than a design, and it is preserved
+ * rather than corrected: straightening it would narrow every actor plate in the repository by
+ * eight tenths of a percent, move the lane pitch, and change the framing of every transcript in
+ * `examples/` — a visible diff in a round that changes no default pixel.
+ *
+ * What it does do is widen *in proportion to the profile*. The actor face is the plate face, so
+ * the scaling is the plate ratio's, and the default profile scales by exactly one — `x * (a / a)`
+ * is `x` — which is what makes "unchanged" a fact about the arithmetic rather than a hope.
+ */
+function actorAdvance(type: Typography): number {
+  return (0.47 * type.width.plate) / DEFAULT_TYPOGRAPHY.width.plate;
+}
+
+function plateSize(
+  lines: readonly string[],
+  type: Typography,
+): { width: number; height: number } {
+  const advance = actorAdvance(type);
   const widest = Math.max(
     ...lines.map(
-      (line) => line.length * TRANSCRIPT.actor * TRANSCRIPT.actorLineHeight * 0.47,
+      (line) => line.length * TRANSCRIPT.actor * TRANSCRIPT.actorLineHeight * advance,
     ),
   );
   return {
@@ -399,8 +425,13 @@ function plateSize(lines: readonly string[]): { width: number; height: number } 
 }
 
 /** Advance width of a message label, estimated the way every other measure here is. */
-function textWidth(line: string): number {
-  return line.length * TRANSCRIPT.message * 0.53;
+/**
+ * A message label's width. The same class of text as a machine's event label, set at the same
+ * scale and estimated by the same ratio, so the two share the profile's number rather than each
+ * keeping a copy of it.
+ */
+function textWidth(line: string, type: Typography): number {
+  return line.length * TRANSCRIPT.message * type.width.event;
 }
 
 /**
@@ -436,7 +467,11 @@ function measureFor(
  * longer than the measure takes the line it needs and overhangs, because the alternative is
  * hyphenating somebody's endpoint.
  */
-export function wrapToMeasure(text: string, measure: number): readonly string[] {
+export function wrapToMeasure(
+  text: string,
+  measure: number,
+  type: Typography,
+): readonly string[] {
   const words = text.split(/\s+/).filter((word) => word.length > 0);
   if (words.length === 0) return [text];
 
@@ -444,7 +479,7 @@ export function wrapToMeasure(text: string, measure: number): readonly string[] 
   let line = "";
   for (const word of words) {
     const candidate = line === "" ? word : `${line} ${word}`;
-    if (line !== "" && textWidth(candidate) > measure) {
+    if (line !== "" && textWidth(candidate, type) > measure) {
       lines.push(line);
       line = word;
     } else {
