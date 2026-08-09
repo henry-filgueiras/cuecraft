@@ -1,4 +1,4 @@
-import type { CompiledPresentation } from "../compile/compile.ts";
+import type { CompiledPresentation, SpeechClip } from "../compile/compile.ts";
 import type { Scene } from "../compile/timeline.ts";
 import { SPEAKER_COLORS } from "./theme.ts";
 
@@ -44,6 +44,21 @@ import { SPEAKER_COLORS } from "./theme.ts";
  *   that is fading or over the one after it.
  *
  * Nothing is shown during `pre_say`, before anything has been said. A film opens on its title.
+ *
+ * ## A recalled sentence, and the one place bridging stops
+ *
+ * A `recall:` puts an earlier utterance back on the track (`../compile/timeline.ts`), and it is
+ * heard, so it is read. Two things about it are decided here and nowhere else:
+ *
+ * - **It says what it said then, in the voice it said it in.** The source clip's authored text and
+ *   the source clip's narrator, not the recalling slide's. The whole point of the sentence is that
+ *   somebody else already said this, and a subtitle that relabelled it would flatly contradict the
+ *   audio playing under it.
+ * - **It ends exactly when it ends.** Every other cue runs to the next one because the silence
+ *   between two sentences of one slide is a breath. The silence *after* a recall is not a breath —
+ *   it is the cut back, and the slide underneath the text has changed. So the recalled cue stops on
+ *   the frame the replay stops, an authored pause after it shows nothing, and the live cue before
+ *   it stops where the replay begins rather than bridging across a different slide.
  */
 
 /** Who said it, as the deck named them — never as the provider realised them. */
@@ -61,7 +76,14 @@ export interface SubtitleSpeaker {
 }
 
 export interface SubtitleCue {
-  /** 1-based deck-wide, in the order they are heard — the same numbering `ClipFact` uses. */
+  /**
+   * 1-based deck-wide, in the order they are heard.
+   *
+   * Heard order rather than synthesis order, which are the same list on every deck that never
+   * recalls and differ by exactly the replays on one that does. So this is no longer one-to-one
+   * with `ClipFact`, deliberately: a recalled sentence is genuinely heard twice, and numbering it
+   * once would make the count disagree with the film.
+   */
   readonly ordinal: number;
   /**
    * The sentence as the author wrote it, whole.
@@ -144,21 +166,39 @@ export function subtitleTrack(
   scenes.forEach((scene, index) => {
     const spoken = compiled.slides[index]?.narration.clips ?? [];
     const narrationUntil = scene.narrationFrom + scene.narrationDurationInFrames;
-    scene.clips.forEach((placed, clipIndex) => {
-      const source = spoken[clipIndex];
+
+    // Everything audible on this scene's track, in the order it is heard. Merged rather than walked
+    // as two lists because "where does this subtitle stop" is a question about the *next* audible
+    // thing, whichever kind it turns out to be — and because `subtitleAt` scans in order.
+    const heard = [
+      ...scene.clips.map((placed, clipIndex) => ({ from: placed.from, clipIndex })),
+      ...scene.recalls.map((recall) => ({ from: recall.from, recall })),
+    ].sort((a, b) => a.from - b.from);
+
+    heard.forEach((entry, position) => {
+      const next = heard[position + 1]?.from ?? narrationUntil;
+      const source =
+        "recall" in entry
+          ? recalledClip(
+              compiled,
+              entry.recall.sourceOrdinal,
+              entry.recall.sourceClipIndex,
+            )
+          : spoken[entry.clipIndex];
       if (source === undefined) return;
       const name = source.narrator;
       const color = name === undefined ? undefined : colors.get(name);
       cues.push({
         ordinal: cues.length + 1,
         text: source.text,
-        from: placed.from,
-        // To the next utterance of this slide, or to the end of what this slide says. Never
-        // shorter than a frame: a cue nobody could see would be a cut.
-        until: Math.max(
-          placed.from + 1,
-          scene.clips[clipIndex + 1]?.from ?? narrationUntil,
-        ),
+        from: entry.from,
+        // A replay stops on its own last frame; a live cue runs to the next utterance of this
+        // slide, or to the end of what this slide says. Never shorter than a frame: a cue nobody
+        // could see would be a cut.
+        until:
+          "recall" in entry
+            ? entry.from + entry.recall.durationInFrames
+            : Math.max(entry.from + 1, next),
         ...(withSpeakers && name !== undefined && color !== undefined
           ? { speaker: { name, color } }
           : {}),
@@ -166,6 +206,21 @@ export function subtitleTrack(
     });
   });
   return cues;
+}
+
+/**
+ * The utterance a recall replays, in the slide that first said it.
+ *
+ * By ordinal rather than by index into `compiled.slides`, because an ordinal is what the compiled
+ * record carries and what every message an author sees calls a slide.
+ */
+function recalledClip(
+  compiled: CompiledPresentation,
+  sourceOrdinal: number,
+  sourceClipIndex: number,
+): SpeechClip | undefined {
+  const slide = compiled.slides.find((entry) => entry.ordinal === sourceOrdinal);
+  return slide?.narration.clips[sourceClipIndex];
 }
 
 /**

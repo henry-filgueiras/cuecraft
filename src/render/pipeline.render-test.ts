@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { narrativeStack, stackProblem } from "../compile/timeline.ts";
 import { renderPresentationFile } from "../pipeline.ts";
+import { COMPOSITION_ID, entryPoint } from "./render.ts";
 import { describeMissingArtifacts } from "../tts/kokoro.ts";
 import { repositoryRoot } from "../tts/model.ts";
 
@@ -383,6 +384,133 @@ test(
     assert.ok(written.size > 10_000, `the MP4 is only ${written.size} bytes`);
     const probed = await probe(output);
     assert.ok(probed.streams.some((stream) => stream.codec_type === "video"));
+
+    await rm(summary.workspace, { recursive: true, force: true });
+  },
+);
+
+/**
+ * Three slides, so that a recall crosses one on its way back.
+ *
+ * The two archetypes are chosen to be visually unmistakable — a matrix of terms and a lead
+ * column — because the assertion below is about a *picture* and a fixture where both slides
+ * looked alike would pass while proving nothing.
+ */
+const RECALL_FIXTURE = `
+title: "Recall render test"
+
+narrators:
+  priya: { voice: af_heart }
+  dev: { voice: bm_george }
+
+defaults:
+  narrator: priya
+  subtitles: true
+  pre_say: 500ms
+  post_say: 800ms
+
+slides:
+  - slide:
+      title: "Saturday"
+      bullets:
+        - id: settled
+          text: The first charge settled
+        - text: The gateway said nothing
+    say:
+      - speech: "The first charge settled, and the gateway said nothing."
+        narrator: dev
+        activates: settled
+
+  - slide:
+      title: "The summary"
+      bullets: ["Duplicate submission, classified harmless and closed"]
+    say:
+      - "The summary called the retry harmless."
+
+  - slide:
+      title: "It was not harmless"
+      bullets: ["A retry is only safe if the first attempt did nothing"]
+    say:
+      - speech: "We know what happened, because you told us."
+        narrator: dev
+      - recall: settled
+      - pause: 800ms
+      - "That describes the ledger."
+`;
+
+test(
+  "a recalled frame is the frame it recalls, on the real rendering path",
+  { timeout: 900_000 },
+  async () => {
+    const input = join(workspace, "recall.yaml");
+    const output = join(workspace, "recall.mp4");
+    await writeFile(input, RECALL_FIXTURE, "utf8");
+
+    const summary = await renderPresentationFile(input, output);
+    const { timeline } = summary;
+    const [source, , third] = timeline.scenes;
+    assert.ok(source !== undefined && third !== undefined);
+
+    const recall = third.recalls[0];
+    const clip = source.clips[0];
+    assert.ok(recall !== undefined && clip !== undefined);
+    assert.equal(recall.sourceOrdinal, 1);
+    assert.equal(
+      recall.sourceFrom,
+      clip.from,
+      "the clip's first frame, not its anchor's",
+    );
+    assert.equal(recall.durationInFrames, clip.durationInFrames);
+
+    // Nothing was synthesized for the replay: five utterances are heard and four WAVs exist.
+    const wavs = (await readdir(join(summary.workspace, "public", "narration"))).filter(
+      (name) => name.endsWith(".wav"),
+    );
+    assert.equal(wavs.length, 4);
+    assert.equal(timeline.subtitles.length, 5);
+    assert.equal(timeline.subtitles[3]?.text, timeline.subtitles[0]?.text);
+    assert.equal(timeline.subtitles[3]?.speaker?.name, "dev");
+
+    // The claim, as pixels. Two frames of one film — one during the original sentence, one
+    // during the replay of it — rendered independently, from different points in the
+    // composition, through the real browser. If the sequence-local frame, the absolute frame,
+    // the anchor state or the progress rule were off by anything at all, these would differ.
+    const { bundle } = await import("@remotion/bundler");
+    const { renderStill, selectComposition } = await import("@remotion/renderer");
+    const serveUrl = await bundle({
+      entryPoint: entryPoint(),
+      publicDir: join(summary.workspace, "public"),
+      outDir: join(summary.workspace, "still-bundle"),
+    });
+    const inputProps = { timeline };
+    const composition = await selectComposition({
+      serveUrl,
+      id: COMPOSITION_ID,
+      inputProps,
+      logLevel: "error",
+    });
+
+    const shots: Buffer[] = [];
+    for (const offset of [4, Math.floor(recall.durationInFrames / 2)]) {
+      for (const frame of [recall.sourceFrom + offset, recall.from + offset]) {
+        const path = join(workspace, `still-${frame}.png`);
+        await renderStill({
+          composition,
+          serveUrl,
+          frame,
+          output: path,
+          inputProps,
+          logLevel: "error",
+        });
+        shots.push(await readFile(path));
+      }
+    }
+
+    assert.ok(shots[0]?.equals(shots[1] as Buffer), "the replay's opening frame");
+    assert.ok(
+      shots[2]?.equals(shots[3] as Buffer),
+      "a frame in the middle of the replay",
+    );
 
     await rm(summary.workspace, { recursive: true, force: true });
   },

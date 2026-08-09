@@ -21,6 +21,7 @@ import {
   type Narrator,
 } from "./narrator.ts";
 import { bindNarration, modulesOf } from "./nest.ts";
+import { bindRecalls, recallSurface, resolveRecalls } from "./recall.ts";
 import { protocolCues } from "./beat.ts";
 import { resolveProtocol } from "./protocol.ts";
 import {
@@ -1255,7 +1256,7 @@ function bodyOf(
 
 export const CUE_HINT =
   'narration text, { speech: "..." }, a pause such as { pause: "400ms" }, ' +
-  "or { enter: <entity> } to go inside one";
+  "{ enter: <entity> } to go inside one, or { recall: <id> } to say an earlier one again";
 
 /**
  * Why this is one `unknown` with a hand-written check rather than a `z.union`.
@@ -1302,6 +1303,24 @@ function checkCue(value: unknown): string | undefined {
     const target = record["enter"];
     if (typeof target !== "string" || !ANCHOR_ID.test(target)) {
       return `enter must name an entity, and an entity's identity is ${ANCHOR_ID_HINT}`;
+    }
+    return undefined;
+  }
+
+  // The second word this format has for something the narration *does*. It takes no other key for
+  // the same reason `enter:` takes none: everything about the replay — what is said, who says it,
+  // how long it lasts, what is on screen — was settled when the sentence it names was first
+  // written. A `narrator:` here would be a claim that somebody else said it, and they did not.
+  if (keys.includes("recall")) {
+    if (keys.length !== 1) {
+      return (
+        "a recall cue takes no other keys; what it says, who says it and how long it lasts " +
+        "were all settled by the cue it names"
+      );
+    }
+    const target = record["recall"];
+    if (typeof target !== "string" || !ANCHOR_ID.test(target)) {
+      return `recall must name an anchor an earlier cue activates, and an identity is ${ANCHOR_ID_HINT}`;
     }
     return undefined;
   }
@@ -1403,7 +1422,11 @@ function cueListProblems(
   // A descent counts as saying something: a slide whose narration is one `enter:` says nothing
   // itself and everything through what it entered, which is a legitimate — if unusual — thing to
   // write, and refusing it would be refusing delegation.
-  if (spoken === 0 && !value.some(isEnterCue)) {
+  //
+  // So does a recall, and for the narrower reason that it is *audible*: a slide whose whole
+  // narration is one earlier sentence played again has a clock, has sound, and has a subtitle. A
+  // pause-only `say` is still refused, because that slide has none of the three.
+  if (spoken === 0 && !value.some(isEnterCue) && !value.some(isRecallCue)) {
     problems.push({
       path: [],
       message: "must contain something to say, not only pauses",
@@ -1443,6 +1466,10 @@ function isSpeechCue(cue: unknown): cue is { speech: string; activates?: string 
 
 function isEnterCue(cue: unknown): cue is { enter: string } {
   return typeof cue === "object" && cue !== null && "enter" in cue;
+}
+
+function isRecallCue(cue: unknown): cue is { recall: string } {
+  return typeof cue === "object" && cue !== null && "recall" in cue;
 }
 
 /**
@@ -1621,12 +1648,27 @@ function buildDefaultsSchema(resolution: Resolution) {
 function buildDocumentSchema(resolution: Resolution) {
   const entrySchema = buildEntrySchema(resolution);
   const defaultsSchema = buildDefaultsSchema(resolution);
-  const documentSchema = z.strictObject({
-    title: nonEmptyString,
-    narrators: narratorsSchema.optional(),
-    defaults: defaultsSchema.optional(),
-    slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
-  });
+  // The one check that lives on the document rather than on a slide, because it is the one
+  // reference in this format that crosses a slide boundary (`./recall.ts`). It runs only once every
+  // slide has parsed, which is the right order: a recall pointing at a slide that is itself broken
+  // is a second complaint about the first problem.
+  const documentSchema = z
+    .strictObject({
+      title: nonEmptyString,
+      narrators: narratorsSchema.optional(),
+      defaults: defaultsSchema.optional(),
+      slides: z.array(entrySchema).min(1, { message: "must list at least one slide" }),
+    })
+    .superRefine((document, context) => {
+      const surfaces = document.slides.map((entry) => recallSurface(entry.say));
+      for (const issue of resolveRecalls(surfaces).issues) {
+        context.addIssue({
+          code: "custom",
+          path: ["slides", issue.slideIndex, "say", issue.cueIndex],
+          message: issue.message,
+        });
+      }
+    });
 
   /**
    * What each object accepts, keyed by its path with list indices collapsed to `[]`, so an
@@ -1730,6 +1772,11 @@ export function parsePresentation(
     );
   }
 
+  // Where every recall in this deck reaches back to, worked out once over the whole slide list.
+  // Validation ran the same resolution and reported anything wrong with it, so nothing here can be
+  // unresolved — the same relationship the flattening below has with `bindNarration`.
+  const { sources } = resolveRecalls(raw.slides.map((entry) => recallSurface(entry.say)));
+
   return {
     title: raw.title.trim(),
     voice: defaults.voice?.trim(),
@@ -1746,12 +1793,16 @@ export function parsePresentation(
       // Flattened here rather than downstream, so that everything after this point sees one
       // ordered list of cues and knows nothing about modules — or about protocols. Validation
       // already ran the same walk and reported anything wrong with it, so this one cannot fail.
+      //
+      // `bindRecalls` runs between the two because it needs the authored positions: a recall is
+      // named by the cue index the author can count to, and the splice below moves everything
+      // after a descent.
       const prologue =
         entry.say === undefined
           ? []
           : bindNarration(
               body,
-              toCues(entry.say, ROOT_SCOPE, within.narrator),
+              bindRecalls(toCues(entry.say, ROOT_SCOPE, within.narrator), index, sources),
               ROOT_SCOPE,
             ).cues;
       return {
@@ -1859,6 +1910,12 @@ function toCues(
         target: record["enter"],
         into: childScope(scope, record["enter"]),
       };
+    }
+    if (typeof record["recall"] === "string") {
+      // Which slide it reaches back to is filled in by `./recall.ts`, which is the only thing that
+      // sees the whole deck — and therefore the only thing that can tell one earlier anchor from
+      // two, or from none.
+      return { kind: "recall", scope, target: record["recall"] };
     }
 
     const pronounce = record["pronounce"] as Record<string, string> | undefined;

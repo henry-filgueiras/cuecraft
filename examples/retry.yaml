@@ -1,0 +1,82 @@
+# A payments post-incident review, in which one speaker's summary is refuted by playing the
+# other speaker's earlier sentence back at her.
+#
+#   npm run render -- examples/retry.yaml -o out/retry.mp4
+#
+# The deck exists to exercise `recall:` and nothing else. Priya is the payments lead; Dev runs
+# the on-call rotation. Slide 1 anchors the settlement Dev describes; slide 3 recalls it, and
+# the film cuts back to Dev's exact sentence — his words, his voice, his slide, his progress
+# rule — before returning to Priya with a short silence in between.
+
+title: "The Retry That Charged You Twice"
+
+narrators:
+  priya: { voice: af_heart, speed: 1.02 }
+  dev: { voice: bm_george, speed: 1.0 }
+
+defaults:
+  narrator: priya
+  subtitles: true
+  pre_say: 700ms
+  post_say: 1200ms
+
+slides:
+  - slide:
+      title: "Saturday, 14:02"
+      bullets:
+        - id: settlement
+          text: The first charge settled
+        - text: The gateway said nothing
+        - text: Our client retried
+
+    say:
+      - speech: >-
+          At two minutes past two on Saturday, a customer paid for one order and was charged for
+          it twice. Dev was on call.
+        narrator: dev
+
+      - speech: >-
+          The first charge settled. The gateway took it, the bank took it, and the money left the
+          customer's account.
+        narrator: dev
+        activates: settlement
+
+      - speech: >-
+          The gateway timed out before it could tell us that. Our client saw a timeout, assumed
+          nothing had happened, and sent the charge again.
+        narrator: dev
+
+  - slide:
+      title: "What the summary said"
+      bullets:
+        - text: "Duplicate submission: retry after transport timeout"
+        - text: "Customer impact: none"
+        - text: "Action: none required"
+
+    say:
+      - speech: >-
+          The incident summary went out on Monday. It called this a duplicate submission, and it
+          classified the retry as harmless.
+
+      - speech: "No customer impact. No action required. Closed."
+
+  - slide:
+      title: "It was not harmless"
+      bullets:
+        - text: A retry is only safe if the first attempt did nothing
+
+    say:
+      - speech: >-
+          A retry is only harmless if the thing being retried did not happen. And we know what
+          happened, because you told us on Saturday.
+        narrator: dev
+
+      - recall: settlement
+
+      - pause: 900ms
+
+      - speech: >-
+          I would say that describes the ledger rather than the customer.
+
+      - speech: "It describes both. That is the problem."
+        narrator: dev

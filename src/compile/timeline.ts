@@ -135,6 +135,32 @@ export function stackProblem(scene: Scene): string | undefined {
   return open.length === 0 ? undefined : `scope ${open.join(", ")} never returned`;
 }
 
+/**
+ * Where the clip a recall replays actually landed.
+ *
+ * `Clip.from` and never `Anchor.frame` — see `Recall` for why the difference is nine frames of
+ * somebody's first word. Read out of a scene that is already built, which is available because a
+ * recall only ever reaches backwards and slides are laid out in order.
+ *
+ * Both failures are compiler bugs rather than authoring errors: the parser resolved this reference
+ * against the whole deck and the compiler already found the clip once, to borrow its duration.
+ */
+function sourceFrameOf(
+  scenes: readonly Scene[],
+  recall: { sourceOrdinal: number; sourceClipIndex: number; id: string },
+  ordinal: number,
+): number {
+  const source = scenes.find((scene) => scene.ordinal === recall.sourceOrdinal);
+  const clip = source?.clips[recall.sourceClipIndex];
+  if (clip === undefined) {
+    throw new Error(
+      `slide ${ordinal}: recalls ${JSON.stringify(recall.id)} from slide ` +
+        `${recall.sourceOrdinal}, which has not been laid out`,
+    );
+  }
+  return clip.from;
+}
+
 /** The one rounding rule. Nothing else in cuecraft may convert seconds to frames. */
 export function framesFor(seconds: number, fps: number): number {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -240,6 +266,45 @@ export interface Beat {
 }
 
 /**
+ * An earlier clip, placed a second time, with the frames of the slide it was first said over.
+ *
+ * The compiled form of `recall:`, and it is a record on the timeline rather than an effect the
+ * renderer works out for the reason `Call` is: the replay is **scheduled**. It has a frame, it has
+ * a duration that came from a measurement, and it names the source interval outright. A renderer
+ * that inferred any of those could infer them differently, and a picture that disagrees with the
+ * sound by a frame is exactly the silent synchronization loss decision:9 exists to make impossible.
+ *
+ * ## The mapping, in one line
+ *
+ *     sourceFrame = sourceFrom + (frame - from)
+ *
+ * `sourceFrom` is the source **clip's** first frame — `Clip.from`, not `Anchor.frame`. Those differ
+ * by the measured leading silence, and the difference matters in both directions: an anchor is
+ * where the *sound* starts, which is the right place to light an element up (decision:13), and a
+ * clip is where the *utterance* starts, which is the right place to begin playing it. Starting the
+ * replay at the anchor would drop about nine frames off the front of every recalled sentence and
+ * make the picture arrive late against its own audio.
+ *
+ * `durationInFrames` is the source clip's own, so the mapping never walks off the end of the clip
+ * it is replaying: both come from `framesFor` over the same measured seconds.
+ */
+export interface Recall {
+  /** The identity the author wrote in both places. */
+  readonly id: string;
+  /** 1-based ordinal of the scene being replayed. */
+  readonly sourceOrdinal: number;
+  /** Index into that scene's `clips`. */
+  readonly sourceClipIndex: number;
+  /** The same audio the source clip carries. Placed again; never synthesized again. */
+  readonly src: string;
+  /** Absolute frame the replay begins. */
+  readonly from: number;
+  readonly durationInFrames: number;
+  /** Absolute frame the source clip begins on — the origin of the mapping above. */
+  readonly sourceFrom: number;
+}
+
+/**
  * A resolved link between a moment in the narration and an element on the slide.
  *
  * Deliberately a record of the *relationship* rather than a field on the element saying when
@@ -284,6 +349,8 @@ export interface Scene {
   readonly spans: readonly Span[];
   /** Every step of a protocol, in written order. Empty unless the body is one. */
   readonly beats: readonly Beat[];
+  /** Every earlier utterance said again, in frame order. Empty on every deck that never recalls. */
+  readonly recalls: readonly Recall[];
   /** Absolute frame at which the slide appears. */
   readonly from: number;
   readonly durationInFrames: number;
@@ -339,7 +406,12 @@ export function buildTimeline(
   const height = options.height ?? DEFAULT_HEIGHT;
 
   let from = 0;
-  const scenes = compiled.slides.map((slide): Scene => {
+  // A loop rather than a `map`, because one occupant of the track reaches backwards: a recall needs
+  // the absolute frame of a clip on an earlier *scene*, and a scene that has not been built yet has
+  // no such frame. Slides are laid out in order anyway; this makes the order load-bearing and says
+  // so, which is safer than a `map` whose callback quietly depended on an array being filled in.
+  const scenes: Scene[] = [];
+  for (const slide of compiled.slides) {
     const preSayFrames = framesFor(slide.preSayMs / 1000, fps);
     const postSayFrames = framesFor(slide.postSayMs / 1000, fps);
     const minimumFrames = framesFor(slide.minSlideMs / 1000, fps);
@@ -377,11 +449,21 @@ export function buildTimeline(
         seconds: dwell.durationSeconds,
         dwell,
       })),
+      // A recall walks the same cursor as everything else, which is the whole claim of the feature
+      // in one line: a replayed sentence is an occupant of the one serialized narrative track, not
+      // a second stream running beside it. Its seconds were measured for another slide, and the
+      // one rounding rule turns them into frames here exactly as it does for a clip.
+      ...slide.narration.recalls.map((recall) => ({
+        at: recall.offsetSeconds,
+        seconds: recall.durationSeconds,
+        recall,
+      })),
     ].sort((a, b) => a.at - b.at);
 
     let cursor = 0;
     const clips: Clip[] = [];
     const calls: Call[] = [];
+    const recalls: Recall[] = [];
     const placedDwells = new Map<Scope, number>();
     for (const entry of track) {
       cursor = Math.max(cursor, framesFor(entry.at, fps));
@@ -395,6 +477,18 @@ export function buildTimeline(
         };
       } else if ("dwell" in entry) {
         placedDwells.set(entry.dwell.address, narrationFrom + cursor);
+      } else if ("recall" in entry) {
+        recalls.push({
+          id: entry.recall.id,
+          sourceOrdinal: entry.recall.sourceOrdinal,
+          sourceClipIndex: entry.recall.sourceClipIndex,
+          src: entry.recall.src,
+          from: narrationFrom + cursor,
+          // Identical to the source clip's, because `framesFor` is a function of the seconds and
+          // these are the same seconds. That is what keeps the mapping inside the clip it replays.
+          durationInFrames,
+          sourceFrom: sourceFrameOf(scenes, entry.recall, slide.ordinal),
+        });
       } else {
         calls.push({
           kind: entry.call.kind,
@@ -520,6 +614,7 @@ export function buildTimeline(
       calls,
       spans,
       beats,
+      recalls,
       from,
       durationInFrames,
       narrationFrom,
@@ -528,8 +623,8 @@ export function buildTimeline(
     };
 
     from += durationInFrames;
-    return scene;
-  });
+    scenes.push(scene);
+  }
 
   // The last statement, deliberately: everything above is settled, and nothing below may write
   // to what it produced. This is the freeze boundary (`./facts.ts`).

@@ -427,6 +427,26 @@ is the whole feature in three slides.
 `activates:` is not a timestamp — cuecraft derives the moment from the measured audio, so rewording
 narration can never desynchronize a deck, and an identity nothing declares is a compile error.
 
+**Saying an earlier sentence again.** `recall:` names an anchor an earlier slide already activated,
+and plays that moment back — the same audio, the same picture, the same speaker's name on the
+subtitle — before cutting straight back to where it left off.
+
+```yaml
+say:
+  - speech: "We saw this fail once already."
+  - recall: settlement # the earlier cue that wrote `activates: settlement`
+  - pause: 700ms
+  - speech: "That was the first charge."
+```
+
+The anchor is the whole of the reference: there is no timecode, no clip name, and no second copy of
+the sentence. What comes back is the earlier slide rendered frame for frame over the clip's measured
+interval — its elements light up again exactly as they did, its progress rule steps back and
+returns — and nothing is synthesized a second time. A recall must name exactly one _earlier_
+root-level anchor; missing, ambiguous, forward and same-slide references are all compile errors that
+name what they found. [`examples/retry.yaml`](examples/retry.yaml) is a minute of two people
+disagreeing about a duplicate charge, settled by playing one of them back.
+
 **What the content is.** A slide carries at most one body, and which one it is says what the
 content _means_. The body picks the composition; shape decides only within the list role.
 

@@ -7,7 +7,7 @@ import type {
   Presentation,
   Scope,
 } from "../presentation/parse.ts";
-import { spokenText } from "../presentation/parse.ts";
+import { ROOT_SCOPE, spokenText } from "../presentation/parse.ts";
 
 /**
  * The compilation boundary: authored intent plus measured narration.
@@ -82,6 +82,44 @@ export interface NarrationCall {
 }
 
 /**
+ * An earlier clip, placed a second time.
+ *
+ * The fourth kind of occupant of the one serial track, and the first whose duration was neither
+ * authored, fixed, nor derived: it is **borrowed**. The clip it names was synthesized and measured
+ * when the slide that first said it was compiled, and everything about the replay — how long it
+ * lasts, what is heard, which frames of which slide go with it — is that measurement read again.
+ *
+ * Nothing is synthesized for one. That is not an optimization and must not be mistaken for
+ * decision:3's content-addressed cache, which is still parked (idea:8): a cache would notice that
+ * two *different* cues happen to say the same words. This is one cue naming another, by identity,
+ * in the source.
+ *
+ * `src` is copied rather than looked up downstream so that the record is complete on its own — the
+ * timeline places audio from it without having to reach back into another slide's clip list, and
+ * the compiled output says plainly which file gets played twice.
+ */
+export interface NarrationRecall {
+  /** The anchor's identity, as the author wrote it in both places. */
+  readonly id: string;
+  /** 1-based ordinal of the slide being replayed. */
+  readonly sourceOrdinal: number;
+  /** Index into that slide's `narration.clips`. */
+  readonly sourceClipIndex: number;
+  /** The same `src` that slide's clip carries. The same file, placed again. */
+  readonly src: string;
+  readonly scope: Scope;
+  readonly offsetSeconds: number;
+  /**
+   * The source clip's complete measured duration — including its leading silence.
+   *
+   * The whole clip, because the whole clip is what was heard the first time. Trimming the onset
+   * would make the replay a *different* utterance from the one being quoted, and decision:13's
+   * measurement exists to place things against the sound, not to cut it off.
+   */
+  readonly durationSeconds: number;
+}
+
+/**
  * A silence a protocol step owns, positioned on the same track as everything else.
  *
  * Beside the clips and the calls rather than folded into either, for the reason `NarrationCall`
@@ -111,6 +149,8 @@ export interface Narration {
   readonly calls: readonly NarrationCall[];
   /** Every unnarrated protocol step's silence, in order. Empty on every deck without one. */
   readonly dwells: readonly NarrationDwell[];
+  /** Every earlier clip said again, in order. Empty on every deck that never recalls. */
+  readonly recalls: readonly NarrationRecall[];
   /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
   /**
@@ -190,6 +230,50 @@ function narratorFor(
   return narrator;
 }
 
+/**
+ * The clip a recall names, in a slide that has already been compiled.
+ *
+ * Every failure below is a caller that built a `Presentation` by hand, or a compiler bug: the
+ * parser resolves each recall against the whole deck and refuses a missing, ambiguous, forward or
+ * same-slide target before anything reaches here (`../presentation/recall.ts`). Saying so beats
+ * silently placing a second of nothing where a sentence was supposed to be.
+ *
+ * The clip is found by the identity the author wrote rather than by a stored index, because the
+ * identity is the thing the source actually says and an index would be a second encoding of the
+ * same fact that could disagree with it.
+ */
+function recalled(
+  compiled: readonly CompiledSlide[],
+  target: string,
+  sourceOrdinal: number | undefined,
+  ordinal: number,
+): { ordinal: number; clipIndex: number; clip: SpeechClip } {
+  if (sourceOrdinal === undefined) {
+    throw new Error(
+      `slide ${ordinal}: narration recalls ${JSON.stringify(target)}, which was never resolved ` +
+        "to a slide",
+    );
+  }
+  const source = compiled.find((slide) => slide.ordinal === sourceOrdinal);
+  if (source === undefined) {
+    throw new Error(
+      `slide ${ordinal}: narration recalls ${JSON.stringify(target)} from slide ${sourceOrdinal}, ` +
+        "which has not been compiled; a recall only reaches backwards",
+    );
+  }
+  const clipIndex = source.narration.clips.findIndex(
+    (clip) => clip.scope === ROOT_SCOPE && clip.activates === target,
+  );
+  const clip = source.narration.clips[clipIndex];
+  if (clip === undefined) {
+    throw new Error(
+      `slide ${ordinal}: narration recalls ${JSON.stringify(target)}, which slide ${sourceOrdinal} ` +
+        "does not activate",
+    );
+  }
+  return { ordinal: sourceOrdinal, clipIndex, clip };
+}
+
 /** `max(minimum slide duration, pre_say + narration + post_say)` — decision:1. */
 export function deriveSceneMs(input: {
   minSlideMs: number;
@@ -228,11 +312,31 @@ export async function compilePresentation(
     const clips: SpeechClip[] = [];
     const calls: NarrationCall[] = [];
     const dwells: NarrationDwell[] = [];
+    const recalls: NarrationRecall[] = [];
     let offsetSeconds = 0;
 
     for (const cue of slide.say) {
       if (cue.kind === "pause") {
         offsetSeconds += cue.milliseconds / 1000;
+        continue;
+      }
+
+      // The one occupant of the track that costs nothing to produce. Slides are compiled in order
+      // and a recall only ever reaches backwards (`../presentation/recall.ts`), so the clip it
+      // names is already synthesized, already measured, and sitting in `slides` — which is exactly
+      // why the resolution rule is backwards-only rather than merely conventional.
+      if (cue.kind === "recall") {
+        const source = recalled(slides, cue.target, cue.sourceOrdinal, slide.ordinal);
+        recalls.push({
+          id: cue.target,
+          sourceOrdinal: source.ordinal,
+          sourceClipIndex: source.clipIndex,
+          src: source.clip.src,
+          scope: cue.scope,
+          offsetSeconds,
+          durationSeconds: source.clip.durationSeconds,
+        });
+        offsetSeconds += source.clip.durationSeconds;
         continue;
       }
 
@@ -310,6 +414,7 @@ export async function compilePresentation(
       clips,
       calls,
       dwells,
+      recalls,
       durationSeconds: offsetSeconds,
       voice: clips[0]?.voice ?? presentation.voice ?? "",
       speed: clips[0]?.speed ?? presentation.speed,

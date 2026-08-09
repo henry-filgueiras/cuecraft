@@ -111,6 +111,22 @@ export function bindNarration(
       return;
     }
 
+    // A recall reaches back across *slides*, and a module has no idea where it is mounted or what
+    // came before it — that is the whole of what `./scope.ts` says an address is for. A module that
+    // could quote the deck around it would be a module that only compiles in one deck.
+    //
+    // Refused here rather than in the schema because this is the one walk that knows which scope a
+    // cue list belongs to, and it is where a module's narration is checked against its own body.
+    if (cue.kind === "recall" && scope !== ROOT_SCOPE) {
+      issues.push({
+        path: [index],
+        message:
+          `recalls ${JSON.stringify(cue.target)}, and a recall belongs to a slide's own ` +
+          "narration; a module is written without knowing what came before it",
+      });
+      return;
+    }
+
     if (cue.kind !== "speech") {
       bound.push(cue);
       return;

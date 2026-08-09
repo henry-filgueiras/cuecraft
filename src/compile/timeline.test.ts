@@ -6,6 +6,7 @@ import type {
   CompiledSlide,
   NarrationCall,
   NarrationDwell,
+  NarrationRecall,
   SpeechClip,
 } from "./compile.ts";
 import type { AuthoredActor, AuthoredStep, SlideBody } from "../presentation/parse.ts";
@@ -51,6 +52,8 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   calls?: readonly NarrationCall[];
   /** A protocol's unnarrated steps, already measured, for the beat tests. */
   dwells?: readonly NarrationDwell[];
+  /** Earlier clips said again, already resolved, for the recall tests. */
+  recalls?: readonly NarrationRecall[];
   /** A protocol body, when the test is about one; wins over `bullets` and `steps`. */
   protocol?: { actors: readonly AuthoredActor[]; steps: readonly AuthoredStep[] };
   modules?: readonly string[];
@@ -100,6 +103,7 @@ function slide(overrides: SlideOverrides): CompiledSlide {
       clips,
       calls: overrides.calls ?? [],
       dwells: overrides.dwells ?? [],
+      recalls: overrides.recalls ?? [],
       durationSeconds: overrides.narrationSeconds ?? running,
       voice: "af_heart",
       speed: 1,
@@ -585,4 +589,139 @@ test("nothing but a protocol gains a beat", () => {
     presentation([slide({ ordinal: 1, bullets: [{ text: "a" }], narrationSeconds: 4 })]),
   );
   assert.deepEqual(timeline.scenes[0]?.beats, []);
+});
+
+/* ---------------------------------------------------------------- recall */
+
+function recall(overrides: {
+  id?: string;
+  sourceOrdinal?: number;
+  sourceClipIndex?: number;
+  at: number;
+  seconds: number;
+}): NarrationRecall {
+  return {
+    id: overrides.id ?? "settlement",
+    sourceOrdinal: overrides.sourceOrdinal ?? 1,
+    sourceClipIndex: overrides.sourceClipIndex ?? 0,
+    src: "narration/slide-01-01.wav",
+    scope: ROOT_SCOPE,
+    offsetSeconds: overrides.at,
+    durationSeconds: overrides.seconds,
+  };
+}
+
+/** Slide 1 says one 4s sentence anchored to `settlement`; slide 2 speaks, recalls, pauses, speaks. */
+function recalling(): CompiledPresentation {
+  return presentation([
+    slide({
+      ordinal: 1,
+      bullets: [{ id: "settlement", text: "Settled" }],
+      speech: [4],
+      activates: ["settlement"],
+      leadingSilence: 0.3,
+    }),
+    slide({
+      ordinal: 2,
+      speech: [2, 1],
+      offsets: [0, 6.7],
+      recalls: [recall({ at: 2, seconds: 4 })],
+      narrationSeconds: 7.7,
+    }),
+  ]);
+}
+
+test("a recall is placed on the same cursor as the speech around it", () => {
+  const [, scene] = buildTimeline(recalling()).scenes;
+  assert.ok(scene !== undefined);
+  const [placed] = scene.recalls;
+  assert.ok(placed !== undefined);
+
+  // 750ms of pre_say is 23 frames; 2s of speech is 60; 4s of replay is 120; 700ms of silence is 21.
+  assert.equal(scene.narrationFrom, 23 + scene.from);
+  assert.deepEqual(
+    scene.clips.map((clip) => clip.from - scene.narrationFrom),
+    [0, 201],
+  );
+  assert.equal(placed.from - scene.narrationFrom, 60);
+  assert.equal(placed.durationInFrames, 120);
+});
+
+test("a recall replays from the clip's first frame, not from its anchor's", () => {
+  const timeline = buildTimeline(recalling());
+  const [source, scene] = timeline.scenes;
+  assert.ok(source !== undefined && scene !== undefined);
+  const clip = source.clips[0];
+  const anchor = source.anchors[0];
+  const placed = scene.recalls[0];
+  assert.ok(clip !== undefined && anchor !== undefined && placed !== undefined);
+
+  // 300ms of measured leading silence sits between the two, and the replay must keep it: the
+  // sentence being quoted starts where the clip starts.
+  assert.equal(anchor.frame - clip.from, 9);
+  assert.equal(placed.sourceFrom, clip.from);
+  assert.notEqual(placed.sourceFrom, anchor.frame);
+});
+
+test("every frame of a replay maps into the clip it replays, and no further", () => {
+  const timeline = buildTimeline(recalling());
+  const [source, scene] = timeline.scenes;
+  assert.ok(source !== undefined && scene !== undefined);
+  const clip = source.clips[0];
+  const placed = scene.recalls[0];
+  assert.ok(clip !== undefined && placed !== undefined);
+
+  const sourceFrame = (frame: number): number =>
+    placed.sourceFrom + (frame - placed.from);
+
+  assert.equal(
+    sourceFrame(placed.from),
+    clip.from,
+    "the first frame is the clip's first",
+  );
+  assert.equal(
+    sourceFrame(placed.from + placed.durationInFrames - 1),
+    clip.from + clip.durationInFrames - 1,
+    "the last frame is the clip's last",
+  );
+  assert.equal(sourceFrame(placed.from + 47), clip.from + 47);
+  assert.equal(
+    placed.durationInFrames,
+    clip.durationInFrames,
+    "the replay is exactly as long as what it replays",
+  );
+});
+
+test("a recall lengthens the scene it is in, and the film with it", () => {
+  const withRecall = buildTimeline(recalling());
+  const without = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        bullets: [{ id: "settlement", text: "Settled" }],
+        speech: [4],
+        activates: ["settlement"],
+        leadingSilence: 0.3,
+      }),
+      slide({ ordinal: 2, speech: [2, 1], offsets: [0, 2.7], narrationSeconds: 3.7 }),
+    ]),
+  );
+
+  // The replay is 120 frames and nothing else differs, so the deck is 120 frames longer.
+  assert.equal(withRecall.totalFrames - without.totalFrames, 120);
+  const [, longer] = withRecall.scenes;
+  const [, shorter] = without.scenes;
+  assert.ok(longer !== undefined && shorter !== undefined);
+  assert.equal(longer.narrationDurationInFrames - shorter.narrationDurationInFrames, 120);
+  assert.equal(longer.durationInFrames - shorter.durationInFrames, 120);
+});
+
+test("a deck that never recalls carries an empty list and is otherwise untouched", () => {
+  const timeline = buildTimeline(
+    presentation([slide({ ordinal: 1, narrationSeconds: 4 })]),
+  );
+  const [scene] = timeline.scenes;
+  assert.ok(scene !== undefined);
+  assert.deepEqual(scene.recalls, []);
+  assert.equal(timeline.totalFrames, 23 + 120 + 36);
 });

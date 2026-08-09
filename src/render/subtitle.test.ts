@@ -394,3 +394,100 @@ slides:
 `);
   assert.equal(timeline.subtitles[0]?.text, "WitnessGlass records every call.");
 });
+
+/* -------------------------------------------------- a sentence heard twice */
+
+const RECALLED = `title: A deck
+narrators:
+  ada: { voice: af_heart }
+  meta: { voice: am_adam }
+defaults:
+  narrator: ada
+  subtitles: true
+  pre_say: 500ms
+  post_say: 900ms
+slides:
+  - slide:
+      title: One
+      bullets: [{ id: settlement, text: Settled }]
+    say:
+      - speech: "Alpha alpha alpha."
+        activates: settlement
+  - slide: { title: Two, bullets: [a thing] }
+    say:
+      - speech: "Beta beta."
+        narrator: meta
+      - recall: settlement
+      - pause: 700ms
+      - speech: "Gamma gamma gamma."
+        narrator: meta
+`;
+
+test("a recalled sentence is read in the words and the voice it was first said in", async () => {
+  const timeline = await compile(RECALLED);
+  const replay = timeline.subtitles[2];
+  assert.ok(replay !== undefined);
+
+  assert.equal(replay.text, "Alpha alpha alpha.");
+  assert.equal(
+    replay.speaker?.name,
+    "ada",
+    "the sentence belongs to whoever said it, not to whoever quoted it",
+  );
+  assert.equal(timeline.subtitles[1]?.speaker?.name, "meta", "the cue that quoted it");
+});
+
+test("the cue before a recall stops where the recall starts, rather than bridging it", async () => {
+  const timeline = await compile(RECALLED);
+  const [, scene] = timeline.scenes;
+  assert.ok(scene !== undefined);
+  const replay = scene.recalls[0];
+  const live = timeline.subtitles[1];
+  assert.ok(replay !== undefined && live !== undefined);
+
+  // A pause between two sentences of one slide is a breath and is bridged; a replay is a cut to
+  // another slide, and reading the previous sentence over it would caption the wrong picture.
+  assert.equal(live.until, replay.from);
+});
+
+test("a recalled cue ends with the replay, so the silence after it is silent", async () => {
+  const timeline = await compile(RECALLED);
+  const [, scene] = timeline.scenes;
+  assert.ok(scene !== undefined);
+  const replay = scene.recalls[0];
+  const cue = timeline.subtitles[2];
+  const next = scene.clips[1];
+  assert.ok(replay !== undefined && cue !== undefined && next !== undefined);
+
+  assert.equal(cue.until, replay.from + replay.durationInFrames);
+  assert.ok(cue.until < next.from, "the authored pause is not captioned");
+  assert.equal(subtitleAt(timeline.subtitles, cue.until), undefined);
+  assert.equal(subtitleAt(timeline.subtitles, next.from - 1), undefined);
+
+  // ...and the film picks the thread back up on the frame the next clip was placed at.
+  assert.equal(timeline.subtitles[3]?.from, next.from);
+  assert.equal(timeline.subtitles[3]?.text, "Gamma gamma gamma.");
+});
+
+test("every frame of a replay selects the recalled cue", async () => {
+  const timeline = await compile(RECALLED);
+  const replay = timeline.scenes[1]?.recalls[0];
+  assert.ok(replay !== undefined);
+  for (
+    let frame = replay.from;
+    frame < replay.from + replay.durationInFrames;
+    frame += 1
+  ) {
+    assert.equal(
+      subtitleAt(timeline.subtitles, frame)?.text,
+      "Alpha alpha alpha.",
+      `frame ${frame}`,
+    );
+  }
+});
+
+test("a recall adds no subtitle to a deck that asked for none", async () => {
+  const timeline = await compile(RECALLED.replace("  subtitles: true\n", ""));
+  assert.deepEqual(timeline.subtitles, []);
+  assert.equal(timeline.scenes[1]?.recalls.length, 1, "...and the replay still happens");
+});

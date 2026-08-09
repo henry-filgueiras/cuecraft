@@ -120,7 +120,9 @@ function transcript(cues: readonly NarrationCue[]): string[] {
         ? `pause ${cue.scope}`
         : cue.kind === "dwell"
           ? `dwell ${cue.scope} -> ${cue.address}`
-          : `${cue.kind} ${cue.scope} ${cue.into}`,
+          : cue.kind === "recall"
+            ? `recall ${cue.scope} -> ${cue.target}`
+            : `${cue.kind} ${cue.scope} ${cue.into}`,
   );
 }
 

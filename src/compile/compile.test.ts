@@ -479,3 +479,107 @@ test("a narrator the presentation does not declare fails the compile rather than
     /names narrator "ghost"/,
   );
 });
+
+/* ---------------------------------------------------------------- recall */
+
+/** Two slides; the second says `later`, and the first anchors `settlement`. */
+const RECALLING = `title: A deck
+defaults:
+  pre_say: 500ms
+  post_say: 1s
+slides:
+  - slide:
+      title: One
+      bullets: [{ id: settlement, text: Settled }]
+    say:
+      - speech: Twenty characters!!!
+        activates: settlement
+  - slide: { title: Two, bullets: [a thing] }
+    say:
+      - speech: Ten chars.
+      - recall: settlement
+      - pause: 700ms
+      - speech: Five!
+`;
+
+test("a recall places a clip that already exists and synthesizes nothing for it", async () => {
+  const narrator = fakeNarrator();
+  const compiled = await compilePresentation(parsePresentation(RECALLING, "test.yaml"), {
+    workspace: await workspace(),
+    synthesize: narrator,
+  });
+
+  // The point of the whole feature in one assertion: three sentences were written, three were
+  // synthesized, and four are heard. A fourth call here would mean the film says the same words
+  // twice in two different takes, which is not a recall.
+  assert.deepEqual(narrator.calls, ["Twenty characters!!!", "Ten chars.", "Five!"]);
+
+  const [, second] = compiled.slides;
+  assert.ok(second !== undefined);
+  assert.equal(
+    second.narration.clips.length,
+    2,
+    "the recall is not a clip of this slide",
+  );
+
+  const [recall] = second.narration.recalls;
+  assert.ok(recall !== undefined);
+  assert.equal(recall.id, "settlement");
+  assert.equal(recall.sourceOrdinal, 1);
+  assert.equal(recall.sourceClipIndex, 0);
+  assert.equal(
+    recall.src,
+    "narration/slide-01-01.wav",
+    "the same file the first slide plays",
+  );
+});
+
+test("a recall borrows the whole measured duration, and the track continues past it", async () => {
+  const compiled = await compilePresentation(parsePresentation(RECALLING, "test.yaml"), {
+    workspace: await workspace(),
+    synthesize: fakeNarrator(),
+  });
+
+  const [first, second] = compiled.slides;
+  assert.ok(first !== undefined && second !== undefined);
+  const source = first.narration.clips[0];
+  const recall = second.narration.recalls[0];
+  assert.ok(source !== undefined && recall !== undefined);
+
+  // The complete clip, onset included — the replay is the utterance, not the audible part of it.
+  assert.equal(recall.durationSeconds, source.durationSeconds);
+  assert.equal(recall.durationSeconds, 4);
+
+  // "Ten chars." is 10 characters, so 2s. The recall opens at 2 and runs to 6; the authored
+  // 700ms of silence follows it; the last sentence starts at 6.7.
+  assert.equal(recall.offsetSeconds, 2);
+  assert.deepEqual(
+    second.narration.clips.map((clip) => clip.offsetSeconds),
+    [0, 6.7],
+  );
+  assert.equal(second.narration.durationSeconds, 6.7 + 1);
+});
+
+test("a recall that resolved to nothing fails the compile rather than placing silence", async () => {
+  // Unreachable through the parser, which refuses an unresolved recall with the candidates listed.
+  const presentation = parsePresentation(RECALLING, "test.yaml");
+  const forged = {
+    ...presentation,
+    slides: presentation.slides.map((slide) => ({
+      ...slide,
+      say: slide.say.map((cue) =>
+        cue.kind === "recall"
+          ? { kind: "recall" as const, scope: cue.scope, target: cue.target }
+          : cue,
+      ),
+    })),
+  };
+
+  await assert.rejects(
+    compilePresentation(forged, {
+      workspace: await workspace(),
+      synthesize: fakeNarrator(),
+    }),
+    /recalls "settlement", which was never resolved to a slide/,
+  );
+});

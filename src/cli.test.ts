@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { parseInvocation, readVersion, UsageError } from "./cli.ts";
+import { compilePresentation } from "./compile/compile.ts";
+import { buildTimeline } from "./compile/timeline.ts";
+import { parsePresentation } from "./presentation/parse.ts";
+import { describeRecalls, parseInvocation, readVersion, UsageError } from "./cli.ts";
 
 test("no arguments prints help", () => {
   assert.deepEqual(parseInvocation([]), { kind: "help" });
@@ -111,4 +117,57 @@ test("render can be quietened for scripts and CI", () => {
     output: "presentation.mp4",
     quiet: true,
   });
+});
+
+test("a recall is reported with both timecodes, and silence when there is none", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "cuecraft-cli-"));
+  try {
+    const timeline = buildTimeline(
+      await compilePresentation(
+        parsePresentation(
+          `title: A deck
+defaults:
+  pre_say: 500ms
+  post_say: 900ms
+slides:
+  - slide:
+      title: One
+      bullets: [{ id: settlement, text: Settled }]
+    say:
+      - speech: Twenty characters!!!
+        activates: settlement
+  - slide: { title: Two, bullets: [a thing] }
+    say:
+      - speech: Ten chars.
+      - recall: settlement
+`,
+          "test.yaml",
+        ),
+        {
+          workspace,
+          synthesize: async (request) => {
+            await writeFile(request.output, "not really a wav");
+            return {
+              durationSeconds: request.text.length / 5,
+              leadingSilenceSeconds: 0.3,
+              voice: "af_heart",
+              speed: 1,
+            };
+          },
+        },
+      ),
+    );
+
+    const reported = describeRecalls(timeline);
+    assert.match(reported, /slide 2 recalls "settlement" from slide 1/);
+    assert.match(reported, /replays 00:00\.5 for 4\.0s/);
+
+    assert.equal(
+      describeRecalls({ ...timeline, scenes: [] }),
+      "",
+      "a deck that never recalls says nothing",
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });

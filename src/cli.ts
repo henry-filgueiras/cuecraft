@@ -174,6 +174,7 @@ async function runRender(
         `  narration kept in ${summary.workspace}\n` +
         describeSubtitles(timeline) +
         describeLanes(timeline) +
+        describeRecalls(timeline) +
         describeDescent(timeline),
     );
     return 0;
@@ -220,6 +221,31 @@ function describeSubtitles(timeline: Timeline): string {
     (speakers.length === 0 ? ", unlabelled" : `, labelled ${speakers.join(", ")}`) +
     "\n"
   );
+}
+
+/**
+ * Every earlier sentence a deck said again, and which frames of which slide came back with it.
+ *
+ * Printed for the reason the descent is: a recall is a *scheduled* thing with a frame, a borrowed
+ * duration and a source interval, and none of that should need a test runner to be visible. The two
+ * timecodes are the whole of the mapping — where the replay happens now, and where it is replaying
+ * from — so an author who thinks the film cut to the wrong moment can check it without watching.
+ *
+ * Silent on every deck that never recalls.
+ */
+export function describeRecalls(timeline: Timeline): string {
+  const lines: string[] = [];
+  for (const scene of timeline.scenes) {
+    for (const recall of scene.recalls) {
+      const at = formatTimecode((recall.from / timeline.fps) * 1000);
+      const source = formatTimecode((recall.sourceFrom / timeline.fps) * 1000);
+      lines.push(
+        `    slide ${scene.ordinal} recalls "${recall.id}" from slide ${recall.sourceOrdinal}: ` +
+          `${at} replays ${source} for ${(recall.durationInFrames / timeline.fps).toFixed(1)}s`,
+      );
+    }
+  }
+  return lines.length === 0 ? "" : `  recalls\n${lines.join("\n")}\n`;
 }
 
 /**

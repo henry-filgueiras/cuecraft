@@ -127,6 +127,42 @@ export type NarrationCue =
       readonly milliseconds: number;
       readonly target: string;
       readonly into: Scope;
+    }
+  | {
+      /**
+       * Say an earlier sentence again, with the picture it was said over.
+       *
+       * Authored as `recall: <id>`, where the id is one an earlier cue already wrote as
+       * `activates:`. The author states that this moment and an earlier moment are the same idea,
+       * exactly as decision:14 has them state that a moment and an element are — and the compiler
+       * works out which clip that was, how long it ran, and which frames of which slide go with it.
+       * There is no timecode in this format and this does not add one.
+       *
+       * **Not an `enter`, deliberately.** A descent takes the stream into a *scope*: a new world,
+       * a camera moving through a threshold that costs `ENTER_MS`, and new speech synthesized for
+       * it. A recall does none of those. Nothing is entered, nothing is synthesized, and the audio
+       * that plays is a WAV that already exists on disk. Reusing `NarrationCall` would make the
+       * compiled timeline assert three things that are false, so this is its own kind — and the
+       * only thing it borrows from a call is the *semantics*: the callee owns the stream, and
+       * completion returns.
+       *
+       * **It carries no duration.** Every other occupant of the track has one by the time it is a
+       * cue — authored for a pause, fixed for a threshold, derived for a dwell. A recall's is a
+       * measurement already taken of a clip compiled earlier, and a field for it here would be a
+       * field somebody could fill in with a different number.
+       */
+      readonly kind: "recall";
+      readonly scope: Scope;
+      /** The anchor's identity, as the author wrote it. */
+      readonly target: string;
+      /**
+       * The 1-based ordinal of the slide whose narration declared it.
+       *
+       * Resolved rather than authored, and kept beside `target` for the reason `address` is kept
+       * beside `activates`: one is what the source says and the other is what it resolved to.
+       * Absent until `./recall.ts` has run, which is the only thing that may fill it in.
+       */
+      readonly sourceOrdinal?: number;
     };
 
 /**
