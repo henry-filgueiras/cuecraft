@@ -5,6 +5,8 @@ import {
   dwellFor,
   dwellMs,
   machineCues,
+  occurrenceDwellFor,
+  ARRIVAL_MS,
   MAXIMUM_DWELL_MS,
   MINIMUM_DWELL_MS,
   protocolCues,
@@ -208,7 +210,35 @@ test("a silent occurrence becomes a dwell carrying the same address", () => {
   const only = cues[0];
   assert.ok(only?.kind === "dwell");
   assert.equal(only.address, "root/take-1");
-  assert.equal(only.milliseconds, dwellFor("off we go"));
+  assert.equal(only.milliseconds, occurrenceDwellFor("off we go"));
+});
+
+test("a machine's silent occurrence outlasts a protocol's, and it is the arrival that costs", () => {
+  // The divergence sprint:20 introduced, stated as the property rather than as the constant. A
+  // step's arrow only has to be traced; an occurrence has to be *seen to have arrived somewhere*,
+  // and decision:47's occupancy is what makes the difference real rather than stylistic.
+  for (const label of ["off we go", "tap", "validate the token"]) {
+    assert.ok(
+      occurrenceDwellFor(label) > dwellFor(label),
+      `${label}: an arrival should cost more than tracing an arrow`,
+    );
+    assert.ok(
+      occurrenceDwellFor(label) - TRANSIT_MS >= ARRIVAL_MS,
+      `${label}: the stable window after the crossing should be at least the arrival floor`,
+    );
+  }
+});
+
+test("the arrival floor decays across a run, and never below the run floor", () => {
+  const isolated = occurrenceDwellFor("off we go", 0);
+  const fourth = occurrenceDwellFor("off we go", 3);
+  assert.ok(fourth < isolated, "a run should accelerate");
+  assert.ok(
+    fourth - TRANSIT_MS >= ARRIVAL_MS * RUN_FLOOR - 1,
+    "...and never below the floor an arrival keeps",
+  );
+  // One decay, not two stacked: the tenth in a run is the same as the twentieth.
+  assert.equal(occurrenceDwellFor("off we go", 10), occurrenceDwellFor("off we go", 20));
 });
 
 test("a silent occurrence is timed by the event label, so rewording it retimes the frame", () => {

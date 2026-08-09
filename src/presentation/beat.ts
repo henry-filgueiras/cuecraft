@@ -104,6 +104,54 @@ export function dwellFor(label: string, run: number = 0): number {
   return Math.round(Math.max(MINIMUM_DWELL_MS * RUN_FLOOR, whole * decay));
 }
 
+/**
+ * How long a stable arrival is worth, before anything has been read.
+ *
+ * The number sprint:20 exists to find, and it is a floor rather than an allowance. Everything
+ * `dwellFor` prices is *reading*: a label appears, an eye scans it, the step is understood. A
+ * machine asks for one thing more, and it is the thing decision:47 made the whole composition
+ * about — after the traveller lands, the frame has to say **the machine is now here** and be
+ * still while it says it. That is not reading and it does not get cheaper with a shorter label; a
+ * three-word event and a nine-word event both leave occupancy in the same place and both need the
+ * same moment to be seen leaving it.
+ *
+ * Measured against the baseline rather than chosen. sprint:19's films gave a silent occurrence its
+ * whole `dwellFor` and spent the first sixteen frames of it on the crossing, which left the two
+ * shortest arrivals in the elevator with **thirteen frames** of stillness and four of the leased
+ * runner's six with **none at all** — the camera had already set off for the next one before the
+ * traveller landed. Fourteen tenths of a second is the low end of what registers as an arrival
+ * rather than as a flicker, and the round's brief proposed 1.25 to 1.75 as a hypothesis; this sits
+ * inside it and was then checked against rendered frames rather than against the hypothesis.
+ */
+export const ARRIVAL_MS = 1400;
+
+/**
+ * How long a silent *occurrence* holds the stage: the larger of what it takes to trace and what it
+ * takes to arrive.
+ *
+ * The larger, emphatically not the sum. Two padding mechanisms added together is how a film ends
+ * up four minutes long with nothing in it, and the two quantities are not additive anyway — the
+ * viewer is reading the label *during* the stable window, not after it. So whichever phase is the
+ * binding constraint sets the length and the other one is free.
+ *
+ * The finding this produced is worth recording where it happened: for every label in both example
+ * machines, the **arrival** binds and the reading allowance does not. A machine's silent
+ * occurrence is priced by occupancy, not by prose, and only a label past about forty characters
+ * takes the length back. That means `dwellFor`'s "rewording an event retimes the frame" property,
+ * which decision:46 valued, is now true of long labels and of every narrated occurrence, and is
+ * no longer true of a short silent one. It was traded deliberately: a frame that retimes to the
+ * word and cannot be perceived is not worth the property.
+ *
+ * The run decay is the *same* decay, applied once to whichever term wins, so a run of silent
+ * occurrences still accelerates and still cannot fall below `RUN_FLOOR` of an isolated one.
+ */
+export function occurrenceDwellFor(label: string, run: number = 0): number {
+  const traced = dwellFor(label, run);
+  const decay = Math.max(RUN_FLOOR, RUN_DECAY ** run);
+  const settling = TRANSIT_MS + Math.round(ARRIVAL_MS * decay);
+  return Math.max(traced, settling);
+}
+
 /** The same policy, asked about a step. What a step puts on screen to be read is its message. */
 export function dwellMs(step: AuthoredStep, run: number = 0): number {
   return dwellFor(step.message, run);
@@ -162,8 +210,12 @@ export function protocolCues(
  * against. A parameterised version would take four callbacks and be longer than both.
  *
  * What a silent occurrence puts on screen to be read is the transition's `on` label, so that is
- * what times it — which means rewording an event retimes the frame that shows it, exactly as
- * rewording a sentence does.
+ * what times it — but it is `occurrenceDwellFor` rather than `dwellFor`, because a machine owes an
+ * arrival a stable window that a protocol's arrow does not. The two agree wherever reading is the
+ * binding constraint and differ wherever occupancy is, which is most of the time. That divergence
+ * is `./machine.ts` asking for something a protocol has no equivalent of, rather than a protocol
+ * policy being bent to fit it: `dwellFor` and `dwellMs` are untouched and the transcript is timed
+ * exactly as it was.
  */
 export function machineCues(
   machine: AuthoredMachine,
@@ -176,7 +228,7 @@ export function machineCues(
     const address = childScope(scope, takeId(index));
     if (occurrence.say === undefined) {
       const transition = byId.get(occurrence.take);
-      const milliseconds = dwellFor(transition?.on ?? occurrence.take, run);
+      const milliseconds = occurrenceDwellFor(transition?.on ?? occurrence.take, run);
       run += 1;
       return { kind: "dwell", scope, milliseconds, address };
     }
