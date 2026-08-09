@@ -1881,6 +1881,19 @@ function ElisionStubs({
   const { bounds } = layout;
   if (elisions.size === 0) return null;
 
+  // On the plate's own boundary, at no distance at all, and on a diagonal.
+  //
+  // sprint:23 put these on the flank, outside everything reserved beside the plate. That is right
+  // from the geometry and wrong from the frame: `Running` has a self-loop whose reserved room
+  // includes its caption, so its stub landed some five hundred units away, vertically aligned with
+  // the plate and directly right of `lease renewed`. A mark that far off has to be worked out
+  // rather than read, and the gap that fixed the crowding made every uncrowded plate worse.
+  //
+  // A diagonal off the pill's corner is one rule for every plate, with no branch on whether a loop
+  // is present. It works because a self-loop attaches within the plate's middle band
+  // (`MACHINE.loopSpread`) and bulges sideways, so a corner diagonal is always outside it — and
+  // because every real transition in a top-down layout runs broadly vertically, so forty-five
+  // degrees is not a direction the flow uses.
   const marks: {
     key: string;
     from: Point;
@@ -1889,36 +1902,51 @@ function ElisionStubs({
     count: number;
     anchor: "start" | "end";
   }[] = [];
+  const DIAGONAL = Math.SQRT1_2;
   for (const node of layout.nodes) {
     const mark = elisions.get(node.id);
     if (mark === undefined) continue;
-    const midY = node.rect.y + node.rect.height / 2;
+    const { x, y, width, height } = node.rect;
+    const radius = Math.min(MACHINE.plateRadius, height / 2);
+    const middle = y + height / 2;
+    const step = (n: number) => n * DIAGONAL;
+
     if (mark.in > 0) {
-      const tip = node.rect.x - MACHINE.stubGap;
+      // Straight into the plate's left edge, level with it.
+      //
+      // Not the mirror of the outgoing diagonal, and the asymmetry is the finding rather than an
+      // oversight. Up-and-left was tried first and clipped: `Queued` is the topmost plate, the
+      // layout's bounds end at its top edge, and the canonical overview is fitted to those bounds —
+      // so a mark reaching above the highest node is drawn outside the only frame the film has.
+      // The composition has room below its lowest plate and beside its leftmost. It has none above
+      // its highest, and a stub is not allowed to ask for any.
+      //
+      // Level-left is available because the left flank is the one side never reserved: a self-loop
+      // always lives on the right (`selfLoop`). So each direction takes the side that is free for
+      // it, which is one rule per mark rather than one rule with a branch inside it.
+      const tip = { x, y: middle };
+      const tail = { x: tip.x - MACHINE.stubReach, y: middle };
       marks.push({
         key: `${node.id}-in`,
-        from: { x: tip - MACHINE.stubReach, y: midY },
-        to: { x: tip, y: midY },
-        at: { x: tip - MACHINE.stubReach - MACHINE.stubGap, y: midY },
+        from: tail,
+        to: tip,
+        at: { x: tail.x - MACHINE.stubGap, y: middle },
         count: mark.in,
         anchor: "end",
       });
     }
     if (mark.out > 0) {
-      // Outside everything already attached to this plate. `node.box` covers a self-loop's arc
-      // *and* its caption today, because `loopRoomFor` measures both — so this is belt and braces
-      // rather than the fix for the first render's crowding, which was the gap and is `stubGap`.
-      // Kept because the box's reservation is a fact about `./machine.ts` that this module should
-      // not be silently relying on.
-      const attached = layout.edges
-        .filter((edge) => edge.self && edge.from === node.id)
-        .map((edge) => edge.label.x + edge.label.width);
-      const root = Math.max(node.box.x + node.box.width, ...attached) + MACHINE.stubGap;
+      // Leaves the lower-right, travelling down and right away from the plate.
+      const root = { x: x + width - radius + step(radius), y: middle + step(radius) };
+      const tip = {
+        x: root.x + step(MACHINE.stubReach),
+        y: root.y + step(MACHINE.stubReach),
+      };
       marks.push({
         key: `${node.id}-out`,
-        from: { x: root, y: midY },
-        to: { x: root + MACHINE.stubReach, y: midY },
-        at: { x: root + MACHINE.stubReach + MACHINE.stubGap, y: midY },
+        from: root,
+        to: tip,
+        at: { x: tip.x + step(MACHINE.stubGap), y: tip.y + step(MACHINE.stubGap) },
         count: mark.out,
         anchor: "start",
       });
@@ -1952,7 +1980,7 @@ function ElisionStubs({
           <text
             x={mark.at.x}
             y={mark.at.y}
-            fill={withAlpha(MACHINE.edge, 0.75)}
+            fill={withAlpha(MACHINE.edge, 0.92)}
             fontSize={MACHINE.event}
             fontFamily={FONT_STACK}
             fontWeight={600}
