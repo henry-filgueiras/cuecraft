@@ -57,7 +57,6 @@ import {
   type ProtocolLayout,
 } from "./protocol.ts";
 import {
-  layoutMachine,
   machineOf,
   machinePlan,
   runProgress,
@@ -66,6 +65,20 @@ import {
   type MachineLayout,
   type MachineNode,
 } from "./machine.ts";
+import type { AuthoredMachine } from "../presentation/machine.ts";
+import { electLayout } from "./audition.ts";
+import {
+  LEDGER_GUTTER,
+  LEDGER_PAD_RIGHT,
+  LEDGER_PAD_X,
+  fitLedger,
+  fitTitle,
+  ledgerAt,
+  ledgerBand,
+  ledgerHeight,
+  type LedgerFit,
+  type LedgerRow,
+} from "./ledger.ts";
 import { pointAlong } from "./polyline.ts";
 import { tenantAt } from "./tenancy.ts";
 import { useSubtitleBand } from "./subtitles.tsx";
@@ -3073,10 +3086,6 @@ const WAKE = {
 function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
   const frame = useCurrentFrame();
   const machine = machineOf(scene.body);
-  const layout = useMemo(
-    () => (machine === undefined ? undefined : layoutMachine(machine)),
-    [machine],
-  );
   const progress = useMemo(
     () => (machine === undefined ? [] : runProgress(machine)),
     [machine],
@@ -3090,12 +3099,29 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // region the narration left rather than the whole frame, so a subtitle never lands on a state
   // plate. Zero without subtitles, which is why nothing else about the shot changes.
   const band = useSubtitleBand();
-  // The chrome takes a strip off the top of the frame and the subtitles take one off the bottom,
-  // and the camera is told about neither — it is simply given a smaller window and drawn inside
-  // it. That is what makes "the title can never be over a state" an invariant rather than a
-  // property of the two machines that happen to exist.
-  const viewport = { width: 1920, height: 1080 - band - MACHINE.chrome };
+  // Three reservations, taken off the frame before anything is laid out: the chrome at the top,
+  // the subtitles at the bottom, and the execution ledger down the left. The camera is told about
+  // none of them individually — it is simply given a smaller window and drawn inside it, which is
+  // what makes "no state is ever under the title, the subtitle, or the ledger" an invariant rather
+  // than a property of the two machines that happen to exist.
+  const viewport = {
+    width: 1920 - ledgerBand(),
+    height: 1080 - band,
+  };
   const aspect = viewport.width / viewport.height;
+
+  // Laid out by audition rather than by asking dagre once (`./audition.ts`). Still a pure function
+  // of the topology and the window — permuting the scenario moves nothing — and still computed
+  // exactly once per film.
+  const layout = useMemo(
+    () => (machine === undefined ? undefined : electLayout(machine, viewport)),
+    [machine, viewport.width, viewport.height],
+  );
+  const fit = useMemo(
+    () => (machine === undefined ? undefined : fitLedger(machine)),
+    [machine],
+  );
+  const title = useMemo(() => fitTitle(scene.title), [scene.title]);
 
   const plan = useMemo(
     () =>
@@ -3105,13 +3131,25 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
             layout,
             scene.beats,
             takes,
-            { from: scene.from, until: revealFrom(scene) },
+            {
+              from: scene.from,
+              until: revealFrom(scene),
+              end: scene.from + scene.durationInFrames,
+            },
             aspect,
+            viewport.width,
           ),
-    [layout, scene, takes, aspect],
+    [layout, scene, takes, aspect, viewport.width],
   );
 
-  if (machine === undefined || layout === undefined || plan === undefined) return null;
+  if (
+    machine === undefined ||
+    layout === undefined ||
+    plan === undefined ||
+    fit === undefined
+  ) {
+    return null;
+  }
 
   const view = cameraAt(plan.track, absoluteFrame);
   const scale = viewport.width / view.width;
@@ -3200,7 +3238,7 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
       left: 0,
       top: 0,
       transformOrigin: "0 0",
-      transform: `translate(${put.x}px, ${put.y + MACHINE.chrome}px) scale(${put.scale})`,
+      transform: `translate(${put.x}px, ${put.y}px) scale(${put.scale})`,
     };
   };
 
@@ -3213,56 +3251,69 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // The title names the machine and is wanted while the machine is all there is. Once the run
   // starts, the readout is in that corner of the frame doing a job, and two captions is one too
   // many. Derived from the first beat, exactly as a transcript's is.
-  const opened = scene.beats[0]?.from ?? Number.POSITIVE_INFINITY;
-  const titling = interpolate(absoluteFrame, [opened - 12, opened + 6], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
 
   return (
     <AbsoluteFill style={{ backgroundColor: COLORS.ink, overflow: "hidden" }}>
-      <div style={place(MACHINE.gridParallax)}>
-        <Field
-          opacity={0.42 * opening}
-          step={MACHINE.gridStep * 3}
-          scale={scale * MACHINE.gridParallax}
-        />
-      </div>
-      <div style={place(1)}>
-        <Field opacity={0.7 * opening} step={MACHINE.gridStep} scale={scale} />
-        <Routes
-          layout={layout}
-          active={edge?.id}
-          cross={cross}
-          wakeOf={wakeOf}
-          available={available}
-          attention={attention}
-          heat={arrival.heat}
-        />
-        {layout.nodes.map((node) => (
-          <StatePlate
-            key={node.id}
-            node={node}
-            occupancy={occupancyOf(node.id)}
-            been={visited.has(node.id)}
-            arriving={node.id === edge?.to ? arrival : undefined}
-            attention={attention}
-            opening={opening}
+      {/* The graph's own window, and it **clips**.
+          `place` puts the world inside a 1540 by 1080 frame and the camera is fitted to exactly
+          that, so everything the shot contains lands inside it — but a machine is bigger than its
+          shot by construction, and at a close shot the rest of it carries on past the edges. The
+          first integrated render put four states and a dozen labels underneath the ledger, which
+          is the one thing the rail's whole argument says cannot happen. A reservation that is not
+          enforced by a clip is a reservation the composition merely intends. */}
+      <div
+        style={{
+          position: "absolute",
+          left: ledgerBand(),
+          top: 0,
+          width: viewport.width,
+          height: 1080,
+          overflow: "hidden",
+        }}
+      >
+        <div style={place(MACHINE.gridParallax)}>
+          <Field
+            opacity={0.42 * opening}
+            step={MACHINE.gridStep * 3}
+            scale={scale * MACHINE.gridParallax}
           />
-        ))}
-        {layout.edges.map((entry) => (
-          <EventLabel
-            key={entry.id}
-            edge={entry}
-            wake={wakeOf(entry.id)}
-            count={taken.get(entry.id) ?? 0}
-            available={available.has(entry.id)}
-            live={entry.id === edge?.id}
+        </div>
+        <div style={place(1)}>
+          <Field opacity={0.7 * opening} step={MACHINE.gridStep} scale={scale} />
+          <Routes
+            layout={layout}
+            active={edge?.id}
+            cross={cross}
+            wakeOf={wakeOf}
+            available={available}
             attention={attention}
-            opening={opening}
+            heat={arrival.heat}
           />
-        ))}
-        {edge === undefined ? null : <Traveller edge={edge} cross={cross} />}
+          {layout.nodes.map((node) => (
+            <StatePlate
+              key={node.id}
+              node={node}
+              occupancy={occupancyOf(node.id)}
+              been={visited.has(node.id)}
+              arriving={node.id === edge?.to ? arrival : undefined}
+              attention={attention}
+              opening={opening}
+            />
+          ))}
+          {layout.edges.map((entry) => (
+            <EventLabel
+              key={entry.id}
+              edge={entry}
+              wake={wakeOf(entry.id)}
+              count={taken.get(entry.id) ?? 0}
+              available={available.has(entry.id)}
+              live={entry.id === edge?.id}
+              attention={attention}
+              opening={opening}
+            />
+          ))}
+          {edge === undefined ? null : <Traveller edge={edge} cross={cross} />}
+        </div>
       </div>
 
       {/* Screen space: the horizon the map is seen against, and the reason the edges of the frame
@@ -3276,37 +3327,69 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
         }}
       />
 
-      <Readout
-        layout={layout}
-        occupied={occupied}
-        route={route}
-        opening={opening}
-        presence={1 - titling}
-      />
-
+      {/* The gutter. The title at its head and the chronology filling up from its foot, in a
+          region the camera was never given — so neither of them is ever over a state, and the
+          machine below is never behind either of them. dragon:29's answer, taken. */}
       <div
         style={{
           position: "absolute",
-          left: FRAME.marginX,
-          top: FRAME.marginY,
-          ...reveal(frame, 0),
-          opacity: (reveal(frame, 0).opacity as number) * titling,
+          left: 0,
+          top: 0,
+          width: ledgerBand(),
+          height: 1080,
+          pointerEvents: "none",
         }}
       >
-        <Rule frame={frame} width={72} />
-        <h1
+        <div
           style={{
-            ...heading,
-            marginTop: SPACE.md,
-            fontSize: TYPE.row,
-            lineHeight: 1.08,
-            maxWidth: 1220,
-            textShadow: `0 2px 34px ${withAlpha("#05070B", 0.9)}`,
+            position: "absolute",
+            left: LEDGER_PAD_X,
+            top: FRAME.marginY,
+            width: ledgerBand() - LEDGER_PAD_X - LEDGER_PAD_RIGHT,
+            ...reveal(frame, 0),
           }}
         >
-          {scene.title}
-        </h1>
+          <Rule frame={frame} width={72} />
+          <h1
+            style={{
+              ...heading,
+              marginTop: SPACE.md,
+              fontSize: title.size,
+              lineHeight: 1.1,
+              letterSpacing: "-0.015em",
+            }}
+          >
+            {title.lines.map((line, index) => (
+              <div key={`${line}-${index}`}>{line}</div>
+            ))}
+          </h1>
+        </div>
+        <LedgerRail
+          machine={machine}
+          fit={fit}
+          current={current}
+          occupied={
+            occupied === undefined
+              ? undefined
+              : (layout.byId.get(occupied)?.label ?? occupied)
+          }
+          opening={opening}
+        />
       </div>
+
+      {/* A hairline where the gutter stops and the machine begins. The one thing that says the
+          rail is chrome rather than the left-hand edge of the map. */}
+      <div
+        style={{
+          position: "absolute",
+          left: ledgerBand(),
+          top: 0,
+          width: 1,
+          height: 1080,
+          backgroundColor: withAlpha(MACHINE.edge, 0.3 * opening),
+          pointerEvents: "none",
+        }}
+      />
     </AbsoluteFill>
   );
 }
@@ -3658,98 +3741,183 @@ function Traveller({ edge, cross }: { edge: MachineEdge; cross: number }) {
 }
 
 /**
- * Where the machine is, and how it got there, in screen space.
+ * The execution ledger, as a rail down the left of the frame.
  *
- * The transcript's rail, asked a different question. A rail names the tenant of every column the
- * shot is cutting off, because a protocol's problem is that the cast scrolls away; a machine's cast
- * never moves, and its problem is that a viewer arriving at an arbitrary frame has no way to
- * recover the *order* things happened in from a picture where everything is in one place.
+ * Screen space, outside the camera transform, and in a region taken off the camera's window before
+ * anything was laid out — so it never pans with the graph, never lands on a state, and never causes
+ * one to move. `./ledger.ts` has the argument for why a machine needs it at all; this is only how
+ * it is set.
  *
- * So this states the answer to two of the three questions outright: the current state by name, and
- * the route that reached it. Both are read straight off the beats — the route is the scenario's own
- * `after` list, which is where the picture got it too, so the caption and the map cannot disagree.
+ * Three decisions worth defending, and all three are about **not competing with the map**.
  *
- * Elided from the left rather than the right, and truncation is marked. The recent past is what a
- * viewer is reconstructing; the beginning of the run is on the map as a wake, and the frame does
- * not need to say it twice.
+ * **It is neutral.** Every row is set in the same steel the topology is drawn in, and the accent —
+ * the one warm colour in the composition — appears nowhere in it. decision:47 spent that accent
+ * entirely on occupancy, and a rail that used it to mean "latest" would be putting a second warm
+ * thing on a frame whose central claim is that there is exactly one.
+ *
+ * **Latest is loudest, and older is quieter rather than smaller.** One size for every row, because
+ * type that shrank with age would make the rail a perspective drawing and the oldest entries
+ * illegible — which is the thing this replaced. What changes with age is presence, over a short
+ * ramp that flattens: three back and four back are both simply "earlier", exactly as the wake's
+ * decay already assumes.
+ *
+ * **The overflow row is a number.** `+6 earlier` is a fact; `…` is a shrug.
+ *
+ * The rail advances *during the traversal* rather than on arrival, which is the one place this
+ * composition spends its foreknowledge of the phase budget: the crossing is the only moment in an
+ * occurrence when something is already moving, so a row arriving then costs the viewer nothing,
+ * and the stable window after the arrival stays completely still.
  */
-function Readout({
-  layout,
+function LedgerRail({
+  machine,
+  fit,
+  current,
   occupied,
-  route,
   opening,
-  presence,
 }: {
-  layout: MachineLayout;
+  machine: AuthoredMachine;
+  fit: LedgerFit;
+  current: number;
   occupied: string | undefined;
-  route: readonly string[];
   opening: number;
-  presence: number;
 }) {
-  if (occupied === undefined || presence <= 0.01) return null;
-  const name = (id: string): string => layout.byId.get(id)?.label ?? id;
-  // The route *up to* here, since the state it arrived at is set underneath it at four times the
-  // size. Repeating it in both lines would spend the readout's one strong line on an echo.
-  const before = route.slice(0, -1);
-  const shown = before.slice(-READOUT_STATES);
-  const elided = before.length > shown.length;
+  const rows = ledgerAt(machine, current, fit);
 
   return (
     <div
       style={{
         position: "absolute",
-        right: FRAME.marginX,
-        top: FRAME.marginY,
-        textAlign: "right",
-        opacity: opening * presence,
+        left: 0,
+        top: MACHINE.railTitleBlock,
+        width: ledgerBand(),
+        height: ledgerHeight(),
+        opacity: opening,
         pointerEvents: "none",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-end",
+        paddingLeft: LEDGER_PAD_X,
+        paddingRight: LEDGER_PAD_RIGHT,
+        paddingBottom: SPACE.lg,
       }}
     >
-      {/* History above, present below, and the trailing turnstile is what joins them — so the
-          block reads as one sentence rather than as a caption with a subtitle, and no eyebrow has
-          to say the word "now". */}
-      <div
-        style={{
-          maxWidth: 700,
-          height: TYPE.ordinal * 0.72 * 1.5,
-          fontSize: TYPE.ordinal * 0.72,
-          lineHeight: 1.5,
-          letterSpacing: "0.03em",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          color: COLORS.dim,
-          textShadow: `0 2px 20px ${withAlpha("#05070B", 0.95)}`,
-        }}
-      >
-        {shown.length === 0
-          ? ""
-          : `${elided ? "…  ›  " : ""}${shown.map(name).join("  ›  ")}  ›`}
-      </div>
-      <div
-        style={{
-          marginTop: SPACE.xs,
-          fontSize: TYPE.row,
-          lineHeight: 1.08,
-          fontWeight: 600,
-          letterSpacing: "-0.015em",
-          color: MACHINE.ignite,
-          textShadow: `0 0 34px ${withAlpha(MACHINE.current, 0.75)}, 0 2px 24px ${withAlpha("#05070B", 0.95)}`,
-        }}
-      >
-        {name(occupied)}
-      </div>
+      {rows.map((row, index) => (
+        <LedgerEntry
+          key={`${row.kind}-${row.ordinal ?? row.earlier ?? index}`}
+          row={row}
+          fit={fit}
+          latest={index === rows.length - 1}
+          here={occupied}
+        />
+      ))}
     </div>
   );
 }
 
 /**
- * How many states of the route the readout shows before it starts eliding.
+ * One row.
  *
- * Four, which is one more than a viewer reconstructs unaided and few enough that the line never
- * wraps at the size it is set. A longer tail would be a second, worse drawing of the wake, which is
- * already on the map and already carries the whole history.
+ * The ordinal sits in a gutter of its own so the event labels form a column a viewer can read down
+ * without their eye stepping over a number of varying width. It is set in the mono face for the
+ * reason every derived count in cuecraft is: it is a position in a list rather than a word.
  */
-const READOUT_STATES = 4;
+function LedgerEntry({
+  row,
+  fit,
+  latest,
+  here,
+}: {
+  row: LedgerRow;
+  fit: LedgerFit;
+  latest: boolean;
+  here: string | undefined;
+}) {
+  // Presence rather than size, over a ramp that flattens: the latest entry is fully present, the
+  // one before it nearly so, and everything past the third is one shade of "earlier".
+  const age = row.age ?? 0;
+  const presence = latest ? 1 : Math.max(0.42, 0.86 - 0.16 * age);
+
+  if (row.kind === "earlier") {
+    return (
+      <div
+        style={{
+          fontFamily: MONO_STACK,
+          fontSize: Math.round(fit.size * 0.78),
+          lineHeight: MACHINE.railLead,
+          letterSpacing: "0.04em",
+          color: withAlpha(MACHINE.edge, 0.85),
+          marginBottom: MACHINE.railGap,
+          paddingLeft: LEDGER_GUTTER,
+        }}
+      >
+        +{row.earlier} earlier
+      </div>
+    );
+  }
+
+  const tone = row.kind === "start" ? MACHINE.edge : MACHINE.possible;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        marginBottom: MACHINE.railGap,
+      }}
+    >
+      <div
+        style={{
+          width: LEDGER_GUTTER,
+          flexShrink: 0,
+          fontFamily: MONO_STACK,
+          fontSize: Math.round(fit.size * 0.82),
+          lineHeight: MACHINE.railLead,
+          color: withAlpha(
+            MACHINE.edge,
+            row.kind === "start" ? 0.7 : 0.55 + 0.45 * presence,
+          ),
+        }}
+      >
+        {row.kind === "start" ? "·" : row.ordinal}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {row.lines === undefined ? null : (
+          <div
+            style={{
+              fontSize: fit.size,
+              lineHeight: MACHINE.railLead,
+              fontWeight: latest ? 600 : 400,
+              color: withAlpha(tone, 0.28 + 0.72 * presence),
+            }}
+          >
+            {row.lines.map((line, index) => (
+              <div key={`${line}-${index}`}>{line}</div>
+            ))}
+          </div>
+        )}
+        {/* Where it arrived. The turnstile carries the whole grammar of the row, so no eyebrow has
+            to say the word "to" — and on the start row there is no turnstile, because nothing
+            went anywhere. */}
+        <div
+          style={{
+            fontSize: fit.stateSize,
+            lineHeight: MACHINE.railLead,
+            fontWeight: 600,
+            letterSpacing: "-0.01em",
+            color: withAlpha(
+              // The latest row's destination is where the machine *is*, and it is the one thing in
+              // the rail allowed to be as bright as paper. Not the accent: that is occupancy's, on
+              // the map, and two of them would be two current states.
+              latest && row.state === here ? COLORS.paper : MACHINE.visited,
+              latest ? 0.96 : 0.2 + 0.6 * presence,
+            ),
+          }}
+        >
+          {row.kind === "start" ? row.state : `› ${row.state}`}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Gate({ hue, degree }: { hue: string; degree: number }) {
   return (

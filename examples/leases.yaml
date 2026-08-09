@@ -34,12 +34,20 @@ title: "A job with a lease on it"
 
 defaults:
   pre_say: 900ms
-  # Long, and the length is doing something specific: the closing pull-back to the whole machine
-  # is a camera move of its own, and the first render spent almost all of this on *travelling*
-  # rather than on the settled overview it travels to. The author asks for that final shot by
-  # writing enough silence to hold it, which is a duration and not a camera instruction
-  # (decision:22's rule, and the number this round had to raise after watching one).
-  post_say: 9000ms
+  # The closing silence, and it is no longer buying the closing shot.
+  #
+  # sprint:19 set this to nine seconds because the pull-back to the whole machine was a camera
+  # move of its own and the film was spending almost all of the post-roll *travelling* rather
+  # than on the settled overview it travelled to. That was the author paying, in silence, for a
+  # framing decision — decision:22's rule stretched about as far as it goes.
+  #
+  # The planner now budgets the closing shot itself: it starts the pull-back late enough that a
+  # fixed, bounded settle follows it, and anything written beyond that is spent holding the last
+  # occurrence rather than sitting on the overview. So this is back to being what it says it is —
+  # a beat of silence at the end — and it was measured rather than guessed: nine seconds was
+  # four and a third of camera travel and four and two thirds of held overview, and the held
+  # overview is worth about three.
+  post_say: 4000ms
 
 slides:
   - slide:
