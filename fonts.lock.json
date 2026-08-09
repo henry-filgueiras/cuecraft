@@ -1,0 +1,80 @@
+{
+  "$comment": [
+    "Which faces the hyperlegible typography profile is set in, and exactly which bytes.",
+    "",
+    "The version is pinned exactly in package.json and the tarball is checksummed by",
+    "package-lock.json's `integrity`, so npm already guarantees the archive. What this file adds",
+    "is a guarantee about the *eight files cuecraft actually draws with*: their names, their",
+    "sizes and their SHA-256. A package whose contents changed under an unchanged version, a",
+    "half-extracted node_modules, or a weight quietly dropped upstream are all things the",
+    "tarball hash cannot tell you about after the fact, and all things `npm run bootstrap:fonts`",
+    "reports by name.",
+    "",
+    "Only the weights the deck sets (400, 500, 600, 700), latin only, upright only. Both",
+    "families ship OFL-1.1 in `license` below.",
+    "",
+    "See archaeology/sprints/0029-*/ and archaeology/dragons/0004-*.md."
+  ],
+  "families": [
+    {
+      "family": "Atkinson Hyperlegible Next",
+      "package": "@fontsource/atkinson-hyperlegible-next",
+      "version": "5.3.0",
+      "role": "prose",
+      "license": "LICENSE",
+      "licenseId": "OFL-1.1",
+      "files": [
+        {
+          "path": "files/atkinson-hyperlegible-next-latin-400-normal.woff2",
+          "bytes": 12096,
+          "sha256": "5cb240a4d99ab7e6fc3a4d4e6d11d89789fdffe9c86a8384000d662c53283f6f"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-next-latin-500-normal.woff2",
+          "bytes": 12620,
+          "sha256": "f5243b80fbcabc6756a4f67a2843a581216ecb89019a789335b85c924f05702e"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-next-latin-600-normal.woff2",
+          "bytes": 12672,
+          "sha256": "828f4525c741b6864718e41aa23a4acbc049b35e6271317c0fd86e0702dd5d2e"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-next-latin-700-normal.woff2",
+          "bytes": 12732,
+          "sha256": "0dbe07ed7679407db9d90f747d5ca3bd1b2bb7ccbcbe41c8246cfc6d2c7bc3bc"
+        }
+      ]
+    },
+    {
+      "family": "Atkinson Hyperlegible Mono",
+      "package": "@fontsource/atkinson-hyperlegible-mono",
+      "version": "5.3.0",
+      "role": "mono",
+      "license": "LICENSE",
+      "licenseId": "OFL-1.1",
+      "files": [
+        {
+          "path": "files/atkinson-hyperlegible-mono-latin-400-normal.woff2",
+          "bytes": 10056,
+          "sha256": "87b5b94c18025729fc6ed4e8c25221ade3746dc87213943fa4de49f1f0f26787"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-mono-latin-500-normal.woff2",
+          "bytes": 10088,
+          "sha256": "49efe8526ea1da079582132fcb83555b975ef79129bbf0ff669e103ed162f81f"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-mono-latin-600-normal.woff2",
+          "bytes": 10040,
+          "sha256": "a52c1396b3cc1b7c7e52dcb39ed9ed2aeb1b7b0ff3572bca076e441aa7d906f6"
+        },
+        {
+          "path": "files/atkinson-hyperlegible-mono-latin-700-normal.woff2",
+          "bytes": 10040,
+          "sha256": "f30319aa2ab224c5a19d177617e2141b002fcb95c1afe233214f9d342e47687d"
+        }
+      ]
+    }
+  ]
+}

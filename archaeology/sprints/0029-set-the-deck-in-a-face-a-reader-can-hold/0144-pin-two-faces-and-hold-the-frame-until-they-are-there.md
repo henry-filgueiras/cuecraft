@@ -2,9 +2,10 @@
 id: tsk_01KZM5GH30E7ETDADJQY9W5NJV
 sequence: 144
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZM5EXSYFDBB87YWSEQSC0V0
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Pin two faces, and hold the frame until they are there

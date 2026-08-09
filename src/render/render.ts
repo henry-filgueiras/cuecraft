@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 import type { Timeline } from "../compile/timeline.ts";
 import { repositoryRoot } from "../tts/model.ts";
+import { describeMissingFaces } from "./faces.ts";
 
 /**
  * Driving Remotion from Node.
@@ -69,6 +70,16 @@ export function entryPoint(): string {
 
 export async function renderPresentation(options: RenderOptions): Promise<RenderReport> {
   const { timeline } = options;
+
+  // Before anything expensive, and before anything that could succeed while being wrong.
+  //
+  // A deck that asked for the hyperlegible profile and does not have the faces installed would
+  // otherwise bundle for a minute, render for several more, and produce a film set in whatever the
+  // host happens to have — which is a *silent* failure of the only thing that deck asked for. So it
+  // fails here, by name, with the one command that fixes it. Costs eight `existsSync` calls, and
+  // nothing at all for a deck in the default profile (`./faces.ts`).
+  const missing = describeMissingFaces(timeline.typography);
+  if (missing !== undefined) throw new RenderError(missing);
 
   const [{ bundle }, { ensureBrowser, renderMedia, selectComposition }] =
     await Promise.all([import("@remotion/bundler"), import("@remotion/renderer")]);

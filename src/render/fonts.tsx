@@ -1,7 +1,31 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { continueRender, delayRender } from "remotion";
 
-import { DEFAULT_TYPOGRAPHY, type Typography } from "./typography.ts";
+/**
+ * The faces the `hyperlegible` profile is set in, declared to the browser.
+ *
+ * Imported the way `./mathfonts.tsx` imports KaTeX's, which is the whole argument for doing it
+ * this way: Remotion's own webpack resolves the `url()`s inside these stylesheets and bundles the
+ * WOFF2 next to the composition, so a render fetches nothing and needs no `publicDir` copy, no
+ * `staticFile`, and no second provisioning mechanism. `fonts.lock.json` says which bytes these are
+ * and `npm run bootstrap:fonts` proves it.
+ *
+ * Unconditional, and that is safe rather than wasteful. An `@font-face` rule is a *declaration*: a
+ * browser fetches the file when something is actually set in that family, and a default render sets
+ * nothing in it. The whole latin upright set across both families is ninety kilobytes, and only the
+ * four weights this deck draws with are here — the packages ship eight weights and two styles each,
+ * and downloading a catalogue because it is easy is how a bundle stops being reviewable.
+ */
+import "@fontsource/atkinson-hyperlegible-next/latin-400.css";
+import "@fontsource/atkinson-hyperlegible-next/latin-500.css";
+import "@fontsource/atkinson-hyperlegible-next/latin-600.css";
+import "@fontsource/atkinson-hyperlegible-next/latin-700.css";
+import "@fontsource/atkinson-hyperlegible-mono/latin-400.css";
+import "@fontsource/atkinson-hyperlegible-mono/latin-500.css";
+import "@fontsource/atkinson-hyperlegible-mono/latin-600.css";
+import "@fontsource/atkinson-hyperlegible-mono/latin-700.css";
+
+import { DEFAULT_TYPOGRAPHY, faceDescriptors, type Typography } from "./typography.ts";
 
 /**
  * Which faces this render is set in, and making sure they are actually there.
@@ -91,19 +115,6 @@ export function useFontGate(descriptors: readonly string[], label: string): void
       live = false;
     };
   }, [handle, key]);
-}
-
-/**
- * The shorthands a profile's faces need, in a stable order.
- *
- * Only the weights the deck actually sets. Asking for a weight no composition uses would block the
- * render on a file nothing is going to draw with, and asking for a family a system-stack profile
- * merely *names* would block it on a file that does not exist.
- */
-export function faceDescriptors(type: Typography): readonly string[] {
-  return type.faces.flatMap((face) =>
-    face.weights.map((weight) => `${weight} 16px "${face.family}"`),
-  );
 }
 
 /** Hold the frame until this render's profile is resident. A no-op for a system stack. */

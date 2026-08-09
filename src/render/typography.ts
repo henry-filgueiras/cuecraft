@@ -198,3 +198,21 @@ export const NO_ACCESSIBILITY: AccessibilityIntent = { dyslexia: false };
 export function typographyFor(intent: AccessibilityIntent): TypographyId {
   return intent.dyslexia ? "hyperlegible" : "default";
 }
+
+/**
+ * The CSS `font` shorthands a profile's faces have to be requested by, in a stable order.
+ *
+ * The input to the loading gate (`./fonts.tsx`), and here rather than there so it can be tested
+ * without a browser — `fonts.tsx` imports eight stylesheets and Node's test runner cannot load
+ * either those or TSX.
+ *
+ * Only the weights the deck actually sets. Asking for a weight no composition uses would block the
+ * render on a file nothing is going to draw with, and asking for a family a system-stack profile
+ * merely *names* would block it on a file that does not exist. The size in a shorthand does not
+ * affect which file loads and is required by the grammar; 16 is the conventional filler.
+ */
+export function faceDescriptors(type: Typography): readonly string[] {
+  return type.faces.flatMap((face) =>
+    face.weights.map((weight) => `${weight} 16px "${face.family}"`),
+  );
+}
