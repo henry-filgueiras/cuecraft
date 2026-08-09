@@ -557,10 +557,15 @@ function QuotationFooter({
         />
       </div>
 
+      {/* Hard against the end of the rail, not justified to the far edge of the card.
+        Right-justified was the first cut and it makes a claim the rail does not honour: the eye
+        reads the number as the rail's end label, so a thousand pixels of gap between them says the
+        track runs all the way over there. At 6.9s of 7.1s that is actively misleading — a meter
+        that looks full, ending nowhere near the total printed beside it. Where the rail stops is
+        where the reading stops, and the two now touch. */}
       <div
         style={{
-          flex: 1,
-          textAlign: "right",
+          flex: "none",
           fontFamily: MONO_STACK,
           fontSize: RECALL.time,
           // The elapsed half is the one that moves; the total is context, so it recedes.

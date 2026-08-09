@@ -29,7 +29,7 @@ a description.
 **The quotation card gains a footer in the room the inset already gave up**, immediately beneath it:
 the derived label, a short rail, and elapsed / total recall-local time.
 
-    ▬— RECALL · SLIDE 1      ▬▬▬▬▬▬▬————        3.6s / 7.1s
+    ▬— RECALL · SLIDE 1   ▬▬▬▬▬▬▬————   3.6s / 7.1s
 
 **The label moved down into it**, out of the margin above the card. That was not the point and is the
 better side of the change: the card's top edge is now uninterrupted, and the two things that describe
@@ -66,5 +66,12 @@ being quoted is unchanged, and the footer is part of the frame around it.
 - **The rail is partly redundant with the numbers**, which say the same thing more precisely. It was
   kept because it is the part that reads without being *read* — a viewer glancing at the frame gets
   the answer from the meter, and only a viewer who wants the number goes to the number.
+- **The numbers sit hard against the end of the rail, and the first cut got that wrong.** They were
+  justified to the far edge of the card, a thousand pixels past where the 300px rail stops. The eye
+  reads the total as the rail's end label, so the gap says the track runs all the way over there —
+  and at 6.9s of 7.1s that is actively misleading: a meter that looks full, ending nowhere near the
+  total printed beside it. It was the same error as the 2px rail in a different place, an element
+  implying an extent it does not have. Left-aligning the whole footer also puts it back in the
+  deck's own idiom: right-justified text was the only instance of it in the design language.
 - **decision:44 is unchanged in every other respect.** The inset, the scrim, the outline, the
   subtitle ownership and the hard cut were settled by rendering in sprint:16 and were not reopened.
