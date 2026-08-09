@@ -9,10 +9,20 @@ import {
 } from "remotion";
 
 import type { Recall, Scene, Timeline } from "../compile/timeline.ts";
+import { recallAt } from "../compile/timeline.ts";
 import { FactsContext } from "./figures.tsx";
 import { Slide } from "./layouts.tsx";
+import type { SubtitleCue } from "./subtitle.ts";
 import { SubtitleBandContext, Subtitles, subtitleFit } from "./subtitles.tsx";
-import { COLORS, MOTION, subtitleBand } from "./theme.ts";
+import {
+  COLORS,
+  FONT_STACK,
+  FRAME,
+  MOTION,
+  RECALL,
+  SUBTITLE,
+  subtitleBand,
+} from "./theme.ts";
 
 /**
  * The composition: the timeline laid out in frames, plus one restrained transition.
@@ -68,6 +78,17 @@ export function PresentationVideo({ timeline }: PresentationProps) {
   const band =
     timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
 
+  // Whether the film is quoting itself on this frame. Derived from the compiled recalls rather than
+  // stored anywhere, because a `Recall` already carries a frame and a duration and whether this
+  // frame is inside one is arithmetic (`../compile/timeline.ts`).
+  //
+  // **One decision, read twice.** The card below and the subtitle suppression further down both
+  // hang off this single answer rather than off two mechanisms that happen to agree — an earlier
+  // cut had the card gated by a `<Sequence>` and the subtitle by this, which is two ways of saying
+  // the same thing and therefore two ways of drifting apart.
+  const quoted = recallAt(scenes, frame);
+  const quotation = quotationProps(quoted?.recall, scenes, frame, timeline.subtitles);
+
   return (
     // The compilation's own facts, offered to any composition that asks. Read-only, frozen by
     // `buildTimeline`, and reaching the renderer only after everything they describe is settled.
@@ -106,31 +127,26 @@ export function PresentationVideo({ timeline }: PresentationProps) {
               );
             })}
 
-            {/* Over the current slide and under the subtitle, which is the order the two claims
-              are made in: the picture is the earlier slide's, and the text belongs to whatever is
-              being said now — which, during a replay, is the earlier slide's too. */}
-            {scenes.flatMap((scene) =>
-              scene.recalls.map((recall) => {
-                const at = scenes.findIndex((s) => s.ordinal === recall.sourceOrdinal);
-                const source = scenes[at];
-                if (source === undefined) return null;
-                return (
-                  <Replay
-                    key={`recall-${scene.ordinal}-${recall.from}`}
-                    recall={recall}
-                    source={source}
-                    appearAt={sceneMotion(source, at, scenes).appearAt}
-                    frame={frame}
-                    slideCount={scenes.length}
-                  />
-                );
-              }),
+            {/* Over the current slide, which keeps rendering underneath at its own present-time
+              frame: a quotation is shown *inside* the film rather than instead of it, and the two
+              progress positions on screen at once are the whole of what says so. */}
+            {quotation === undefined ? null : (
+              <QuotationCard
+                {...quotation}
+                width={timeline.width}
+                height={timeline.height}
+              />
             )}
 
             {/* Above every scene and inside none of them: no camera transform, no world scale and
               no per-slide fade can reach it, which is the whole of why it stays still while the
-              picture moves. Inside the deck opacity, so the film still settles to background. */}
-            <Subtitles cues={timeline.subtitles} frame={frame} />
+              picture moves. Inside the deck opacity, so the film still settles to background.
+              *Except* while the film is quoting itself — a recalled sentence belongs to the
+              recalled canvas, and drawing it in the present frame's furniture as well would both
+              double it and put a caption from the past under a slide from the present. */}
+            {quoted === undefined ? (
+              <Subtitles cues={timeline.subtitles} frame={frame} />
+            ) : null}
           </AbsoluteFill>
 
           {scenes.flatMap((scene) =>
@@ -161,6 +177,50 @@ export function PresentationVideo({ timeline }: PresentationProps) {
               </Sequence>
             )),
           )}
+        </AbsoluteFill>
+      </SubtitleBandContext>
+    </FactsContext>
+  );
+}
+
+/**
+ * The quoted canvas on its own, with nothing around it.
+ *
+ * A diagnostic surface, and the reason it exists is worth stating plainly. sprint:15's strongest
+ * evidence was an exact one: a replayed frame and the frame it replays, rendered independently
+ * through the real browser, came out **byte-identical**. Adding the quotation card necessarily
+ * destroys that equality at the composition level — the final frame now has a scrim, a transform, an
+ * outline and a label on it, and it is supposed to.
+ *
+ * What must not be destroyed is the claim underneath it: that *the thing being quoted* is still
+ * exactly the moment it claims to be. So the boundary moves rather than the rigour. This renders the
+ * same `RecalledCanvas` the card renders, at the same frames, with no framing — and the byte
+ * equality is asserted there instead. Because it is the same component and not a re-implementation,
+ * a change that broke the card's mapping would break this too.
+ *
+ * Nothing outside the render test uses it, it takes the same props as the film, and it draws nothing
+ * at all on a frame where no recall is playing.
+ */
+export function RecalledCanvasVideo({ timeline }: PresentationProps) {
+  const frame = useCurrentFrame();
+  const { scenes } = timeline;
+  const band =
+    timeline.subtitles.length === 0 ? 0 : subtitleBand(subtitleFit(timeline.subtitles));
+
+  const quotation = quotationProps(
+    recallAt(scenes, frame)?.recall,
+    scenes,
+    frame,
+    timeline.subtitles,
+  );
+
+  return (
+    <FactsContext value={timeline.facts}>
+      <SubtitleBandContext value={band}>
+        <AbsoluteFill style={{ backgroundColor: COLORS.ink }}>
+          <AbsoluteFill>
+            {quotation === undefined ? null : <RecalledCanvas {...quotation} />}
+          </AbsoluteFill>
         </AbsoluteFill>
       </SubtitleBandContext>
     </FactsContext>
@@ -203,53 +263,279 @@ function sceneMotion(
   };
 }
 
+export interface ReplayProps {
+  readonly recall: Recall;
+  readonly source: Scene;
+  readonly appearAt: number;
+  /** The composition's own frame. */
+  readonly frame: number;
+  readonly slideCount: number;
+  readonly cues: readonly SubtitleCue[];
+}
+
 /**
- * An earlier slide, played again over the frames a `recall:` bought.
+ * Everything the quotation needs, worked out once from the recall that is playing.
  *
- * Opaque and above the current slide rather than swapped for it, so the cut is a cut: the recalled
- * composition paints its own background over the whole frame, appears on one frame and is gone on
- * the next. No crossfade, no vignette, no caption saying "earlier" — decision:24's rule that the
- * camera earns its moves, applied to a move nobody asked for. The signal that this is the past is
- * the picture itself, and the progress rule stepping back to a slide already seen.
+ * A function rather than three lines inline, because both the film and the diagnostic canvas need
+ * the same answer and a second copy of "which scene is being quoted, and what was its `appearAt`"
+ * is a second copy that can be wrong.
+ */
+function quotationProps(
+  recall: Recall | undefined,
+  scenes: readonly Scene[],
+  frame: number,
+  cues: readonly SubtitleCue[],
+): ReplayProps | undefined {
+  if (recall === undefined) return undefined;
+  const at = scenes.findIndex((scene) => scene.ordinal === recall.sourceOrdinal);
+  const source = scenes[at];
+  if (source === undefined) return undefined;
+  return {
+    recall,
+    source,
+    appearAt: sceneMotion(source, at, scenes).appearAt,
+    frame,
+    slideCount: scenes.length,
+    cues,
+  };
+}
+
+/**
+ * What is being quoted: the earlier slide, whole, at the moment it is being replayed from.
+ *
+ * **This component is the correctness claim.** Everything about the replayed picture is decided
+ * here and nothing is decided by the frame around it, which is what lets the frame be added,
+ * changed or removed without anybody having to re-argue that the right moment is on screen. It
+ * renders full-bleed and unadorned, exactly as the film rendered this slide the first time.
  *
  * Two frames are handed down, and they are different numbers for different jobs:
  *
  * - **`absoluteFrame`** is `sourceFrom + (frame - from)` — where on the deck's clock the recalled
  *   slide *was*. Anchors, spans, beats and camera keys are all absolute (decision:13), so this is
  *   what makes an element that lit up during the original sentence light up again here.
- * - **The sequence-local frame** is set by the negative `from` below, so that
- *   `useCurrentFrame()` inside the composition reads exactly what it read then. The offset is the
- *   original nesting undone: a scene sits at `scene.from` and its content at `appearAt` within it.
+ * - **The sequence-local frame** is what every entrance animation in `./layouts.tsx` reads, and it
+ *   is set by the `<Sequence>` below. The wanted local frame is
+ *
+ *       L = sourceFrom + (frame - recall.from) - source.from - appearAt
+ *
+ *   — the original nesting undone, since a scene sits at `scene.from` and its content at `appearAt`
+ *   within it. Mounted at the composition root, `frame - L` is the constant below, and that is why
+ *   this component is **self-contained**: it does not have to be inside any particular `<Sequence>`
+ *   to read the right frame. An earlier cut took the offset relative to a wrapping sequence, and the
+ *   diagnostic surface that renders this without one silently drew a different moment — which is
+ *   exactly the class of bug the byte-equality proof exists to catch, and did.
+ *
+ * The subtitle is *inside* the canvas rather than outside it, because it is part of what is being
+ * quoted: the sentence and the picture were one moment, and the deck-level band is furniture
+ * belonging to the present frame (`./subtitles.tsx`). It is drawn from the same finished track the
+ * band reads, so the words, the speaker and the interval are the compiler's rather than this
+ * component's.
  */
-function Replay({
+export function RecalledCanvas({
   recall,
   source,
   appearAt,
   frame,
   slideCount,
-}: {
-  recall: Recall;
-  source: Scene;
-  appearAt: number;
-  /** The composition's own frame. */
-  frame: number;
-  slideCount: number;
-}) {
+  cues,
+}: ReplayProps) {
   return (
     <Sequence
-      from={recall.from}
-      durationInFrames={recall.durationInFrames}
+      from={recall.from + source.from + appearAt - recall.sourceFrom}
       layout="none"
-      name={`replay-${source.ordinal}-${recall.id}`}
     >
-      <Sequence from={-(recall.sourceFrom - source.from - appearAt)} layout="none">
+      <AbsoluteFill>
         <Slide
           scene={source}
           slideCount={slideCount}
           absoluteFrame={recall.sourceFrom + (frame - recall.from)}
         />
-      </Sequence>
+        <Subtitles cues={cues} frame={frame} />
+      </AbsoluteFill>
     </Sequence>
+  );
+}
+
+/**
+ * The quotation card: the past shown whole, inside something, over a present that has receded.
+ *
+ * sprint:15 played a recall full-bleed and proved the frame was byte-identical to its source. What
+ * `examples/retry.yaml` then showed at full size is that byte-identical is not the same as legible:
+ * a hard cut between two native cuecraft slides is indistinguishable from ordinary progression, so
+ * the film was correct and said nothing. A viewer who does not already remember slide 1 has no way
+ * to tell evidence from the next thing.
+ *
+ * The fix is a **frame rather than a filter**, and the distinction is the whole of the design.
+ * Cinema marks a flashback by damaging it — sepia, grain, blur, a filtered voice — and every one of
+ * those degrades the thing being quoted in order to say that it is quoted. Here the evidence *is*
+ * the sentence, so it stays undamaged and legible, and what marks it is that it is now inside
+ * something: scaled off the edges, outlined in the deck's own accent, and labelled with the slide it
+ * came from.
+ *
+ * **Both clocks are on screen at once**, which is the part that needs no new vocabulary at all. The
+ * present slide keeps rendering underneath at its own present-time frame with its progress rule at
+ * the bottom edge; the quoted canvas carries its own, retreated to where the film was. Nothing had
+ * to be invented to say "a different moment of this film" — the deck already had a way of saying
+ * where it is, and now two of them are visible.
+ *
+ * Still a hard cut in and a hard cut out. No fade, no settle, no interpolation: the card appears on
+ * one frame and is gone on the next. It needs no `<Sequence>` of its own to arrange that, because
+ * it is only mounted on the frames `recallAt` says are quoted — the compiled interval, exactly, and
+ * the same answer the subtitle band is suppressed by.
+ */
+function QuotationCard({
+  width,
+  height,
+  ...canvas
+}: ReplayProps & { width: number; height: number }) {
+  const { recall } = canvas;
+
+  // The card, in screen space. Rounded to whole pixels so the outline lands on a pixel boundary
+  // rather than on a half of one, which at a 2px hairline is the difference between a line and a
+  // smear.
+  const w = Math.round(width * RECALL.inset);
+  const h = Math.round(height * RECALL.inset);
+  const x = Math.round((width - w) / 2);
+  const y = Math.round((height - h) / 2);
+
+  return (
+    <AbsoluteFill>
+      {/* The present recedes — but its clock does not. The deck's own background at partial
+        opacity, rather than a blur or a desaturation, so nothing new appears on the frame; and it
+        stops short of the bottom edge, because the present slide's progress rule is the one thing
+        down there that is not content. Scrimmed with everything else it goes to an unreadable
+        brown, and the frame loses the second clock — which is the entire reason the present slide
+        is still on screen at all. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          bottom: FRAME.progressHeight,
+          backgroundColor: COLORS.ink,
+          opacity: RECALL.recede,
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: x,
+          top: y,
+          width: w,
+          height: h,
+          overflow: "hidden",
+          // Outside the box rather than inside it, so the hairline is exactly its own width and
+          // steals no pixel from what is being quoted.
+          outline: `${RECALL.outline}px solid ${COLORS.accent}`,
+        }}
+      >
+        {/* The canvas is laid out at full size and *then* scaled, so every fitting decision inside
+          it — type size, line breaks, the subtitle band — is the one the film made the first time.
+          Laying it out into a smaller box would re-fit it, and a quotation that rewrapped would no
+          longer be the frame it claims to be. */}
+        <div
+          style={{
+            width,
+            height,
+            transform: `scale(${RECALL.inset})`,
+            transformOrigin: "top left",
+          }}
+        >
+          <RecalledCanvas {...canvas} />
+        </div>
+      </div>
+
+      <QuotationLabel ordinal={recall.sourceOrdinal} left={x} bottom={height - y} />
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * Which slide is being quoted, in the exposed margin above the card.
+ *
+ * Renderer-owned chrome, derived entirely from `Recall.sourceOrdinal`. There is no key that could
+ * set it, no text an author writes, and it consumes no part of any composition's box — it is drawn
+ * in the room the inset gave up, which is room no slide was ever laid out into.
+ *
+ * Set in the deck's existing small-caps idiom — the subtitle's metadata row, at the same tracking
+ * and the same weight — so it reads as a label of the same kind rather than as a new register. The
+ * mark is the accent bar `Rule` draws at the top of every slide and the subtitle draws when nobody
+ * was named, turned to point back: cuecraft already has a mark that means *a block begins here*, and
+ * this is that mark saying the block began earlier.
+ */
+function QuotationLabel({
+  ordinal,
+  left,
+  bottom,
+}: {
+  ordinal: number;
+  left: number;
+  /** Distance from the bottom of the frame to the card's top edge. */
+  bottom: number;
+}) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left,
+        bottom: bottom + RECALL.labelGap,
+        display: "flex",
+        alignItems: "center",
+        gap: RECALL.labelGap,
+        fontFamily: FONT_STACK,
+        fontSize: RECALL.label,
+        fontWeight: 700,
+        letterSpacing: SUBTITLE.labelTracking,
+        textTransform: "uppercase",
+        color: COLORS.accent,
+      }}
+    >
+      <Backmark />
+      {`Recall · Slide ${ordinal}`}
+    </div>
+  );
+}
+
+/**
+ * The deck's accent bar with a return on it, drawn rather than typed.
+ *
+ * A glyph would have been shorter — `↶` says exactly this — and dragon:4 is the reason it is
+ * not used: cuecraft's typography depends on whatever fonts the host machine has, and an arrow that
+ * renders as a tofu box on one machine is worse than no mark at all. Two divs cannot go missing.
+ */
+function Backmark() {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: SUBTITLE.markWidth,
+        height: RECALL.label,
+        flex: "none",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          bottom: Math.round(RECALL.label / 2) - SUBTITLE.markHeight,
+          width: SUBTITLE.markWidth,
+          height: SUBTITLE.markHeight,
+          backgroundColor: COLORS.accent,
+        }}
+      />
+      {/* The turn back: a short stroke rising from the bar's left end, so the mark reads as
+        something returning to where it started rather than as a plain rule. */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          bottom: Math.round(RECALL.label / 2) - SUBTITLE.markHeight,
+          width: SUBTITLE.markHeight,
+          height: RECALL.backmarkRise,
+          backgroundColor: COLORS.accent,
+        }}
+      />
+    </div>
   );
 }
 

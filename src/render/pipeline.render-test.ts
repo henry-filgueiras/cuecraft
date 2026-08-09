@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 
 import { narrativeStack, stackProblem } from "../compile/timeline.ts";
 import { renderPresentationFile } from "../pipeline.ts";
-import { COMPOSITION_ID, entryPoint } from "./render.ts";
+import { CANVAS_ID, COMPOSITION_ID, entryPoint } from "./render.ts";
 import { describeMissingArtifacts } from "../tts/kokoro.ts";
 import { repositoryRoot } from "../tts/model.ts";
 
@@ -471,10 +471,17 @@ test(
     assert.equal(timeline.subtitles[3]?.text, timeline.subtitles[0]?.text);
     assert.equal(timeline.subtitles[3]?.speaker?.name, "dev");
 
-    // The claim, as pixels. Two frames of one film — one during the original sentence, one
-    // during the replay of it — rendered independently, from different points in the
-    // composition, through the real browser. If the sequence-local frame, the absolute frame,
-    // the anchor state or the progress rule were off by anything at all, these would differ.
+    // ## Where the exact claim lives now
+    //
+    // sprint:15 asserted this against the *film*: a replayed frame and the frame it replays came
+    // out byte-identical. sprint:16 put a quotation card around a replay, so that equality is now
+    // false on purpose — the final frame carries a scrim, a transform, an outline and a label that
+    // the original does not.
+    //
+    // What has not changed is the claim underneath it, so the boundary moves rather than the
+    // rigour. `recalled-canvas` renders the same `RecalledCanvas` component the card draws, with no
+    // framing, and the byte equality is asserted there. Because it is the same component and not a
+    // second implementation of the mapping, anything that broke the card would break this.
     const { bundle } = await import("@remotion/bundler");
     const { renderStill, selectComposition } = await import("@remotion/renderer");
     const serveUrl = await bundle({
@@ -483,35 +490,136 @@ test(
       outDir: join(summary.workspace, "still-bundle"),
     });
     const inputProps = { timeline };
-    const composition = await selectComposition({
-      serveUrl,
-      id: COMPOSITION_ID,
-      inputProps,
-      logLevel: "error",
-    });
+    const [film, canvas] = await Promise.all(
+      [COMPOSITION_ID, CANVAS_ID].map((id) =>
+        selectComposition({ serveUrl, id, inputProps, logLevel: "error" }),
+      ),
+    );
+    assert.ok(film !== undefined && canvas !== undefined);
 
-    const shots: Buffer[] = [];
-    for (const offset of [4, Math.floor(recall.durationInFrames / 2)]) {
-      for (const frame of [recall.sourceFrom + offset, recall.from + offset]) {
-        const path = join(workspace, `still-${frame}.png`);
-        await renderStill({
-          composition,
-          serveUrl,
-          frame,
-          output: path,
-          inputProps,
-          logLevel: "error",
-        });
-        shots.push(await readFile(path));
-      }
+    const shoot = async (
+      composition: typeof film,
+      frame: number,
+      label: string,
+    ): Promise<string> => {
+      const path = join(workspace, `still-${label}-${frame}.png`);
+      await renderStill({
+        composition,
+        serveUrl,
+        frame,
+        output: path,
+        inputProps,
+        logLevel: "error",
+      });
+      return path;
+    };
+
+    const offsets = [4, Math.floor(recall.durationInFrames / 2)];
+    for (const offset of offsets) {
+      // The original moment, as the film actually showed it — full frame, no card.
+      const original = await readFile(
+        await shoot(film, recall.sourceFrom + offset, "src"),
+      );
+      // The same moment as the card quotes it, with the card taken off.
+      const quoted = await readFile(await shoot(canvas, recall.from + offset, "canvas"));
+      assert.ok(
+        original.equals(quoted),
+        `the quoted canvas at +${offset} is not the frame it quotes`,
+      );
     }
 
-    assert.ok(shots[0]?.equals(shots[1] as Buffer), "the replay's opening frame");
+    // ...and the film really does frame it. Same frame, same props, different composition: if the
+    // card were somehow not being drawn, this would pass the equality above and fail here.
+    const framedPath = await shoot(film, recall.from + offsets[0]!, "framed");
+    const framed = await readFile(framedPath);
+    const unframed = await readFile(
+      join(workspace, `still-canvas-${recall.from + offsets[0]!}.png`),
+    );
+    assert.ok(!framed.equals(unframed), "the film draws a replay unframed");
+
+    // The card's edge, in pixels. `COLORS.accent` on the outline, exactly where the inset puts it.
+    const inset = 0.9;
+    const cardTop = Math.round(
+      (timeline.height - Math.round(timeline.height * inset)) / 2,
+    );
+    assert.deepEqual(
+      await pixel(framedPath, timeline.width / 2, cardTop - 1),
+      [0xd9, 0xa0, 0x5b],
+      "the quotation card is outlined in the deck's accent",
+    );
+
+    // And the recalled subtitle is drawn once. The deck-level band is the strip *below* the card;
+    // during a replay it must carry no text at all, because the sentence belongs to the quotation.
+    //
+    // Measured rather than asserted, and the two things legitimately down there set the threshold:
+    // the receded present slide, and — deliberately *not* receded — the present slide's own
+    // progress rule, which is the second clock the card exists to keep visible. The rule is
+    // excluded by stopping the probe above it; everything left is scrimmed content, which cannot
+    // come near paper's 245.
+    const below = cardTop + Math.round(timeline.height * inset) + 2;
+    const band = timeline.height - 5 - below;
+    assert.ok(band > 20, `no deck band left to probe: ${band}px`);
     assert.ok(
-      shots[2]?.equals(shots[3] as Buffer),
-      "a frame in the middle of the replay",
+      (await brightest(framedPath, timeline.width, band, 0, below)) < 150,
+      "a subtitle is drawn in the deck band as well as in the card",
+    );
+
+    // ...and the same probe over the card finds the sentence, so the check above is not passing
+    // because there is no subtitle anywhere.
+    assert.ok(
+      (await brightest(framedPath, timeline.width, 120, 0, below - 200)) > 200,
+      "the quotation card carries no subtitle either",
     );
 
     await rm(summary.workspace, { recursive: true, force: true });
   },
 );
+
+/** One pixel of a rendered still, as RGB. Decoded with ffmpeg, which is already a dependency. */
+async function pixel(
+  path: string,
+  x: number,
+  y: number,
+): Promise<[number, number, number]> {
+  const { stdout } = await run(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-i",
+      path,
+      "-vf",
+      `crop=1:1:${x}:${y}`,
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "rgb24",
+      "-",
+    ],
+    { encoding: "buffer", maxBuffer: 1 << 20 },
+  );
+  const bytes = stdout as unknown as Buffer;
+  return [bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0];
+}
+
+/** The brightest pixel in a region, as ffmpeg's luma. Used to ask whether text is drawn there. */
+async function brightest(
+  path: string,
+  w: number,
+  h: number,
+  x: number,
+  y: number,
+): Promise<number> {
+  const { stderr } = await run("ffmpeg", [
+    "-i",
+    path,
+    "-vf",
+    `crop=${w}:${h}:${x}:${y},signalstats,metadata=print:key=lavfi.signalstats.YMAX`,
+    "-f",
+    "null",
+    "-",
+  ]);
+  const found = /YMAX=(\d+)/.exec(String(stderr));
+  assert.ok(found?.[1] !== undefined, `ffmpeg reported no YMAX for ${path}`);
+  return Number(found[1]);
+}

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { compilePresentation, type SynthesizeNarration } from "../compile/compile.ts";
-import { buildTimeline, type Timeline } from "../compile/timeline.ts";
+import { buildTimeline, recallAt, type Timeline } from "../compile/timeline.ts";
 import { parsePresentation } from "../presentation/parse.ts";
 import { subtitleAt, type SubtitleCue } from "./subtitle.ts";
 import { SPEAKER_COLORS } from "./theme.ts";
@@ -490,4 +490,38 @@ test("a recall adds no subtitle to a deck that asked for none", async () => {
   const timeline = await compile(RECALLED.replace("  subtitles: true\n", ""));
   assert.deepEqual(timeline.subtitles, []);
   assert.equal(timeline.scenes[1]?.recalls.length, 1, "...and the replay still happens");
+});
+
+test("the deck band and the quotation card never both hold the cue", async () => {
+  // The rule the renderer applies, checked where it is decidable without a browser: on exactly
+  // the frames a replay owns, the deck-level band is suppressed and the card draws the cue
+  // instead — so a viewer sees the sentence once, on the picture it belongs to.
+  const timeline = await compile(RECALLED);
+  const replay = timeline.scenes[1]?.recalls[0];
+  assert.ok(replay !== undefined);
+
+  for (const frame of [
+    replay.from,
+    replay.from + 40,
+    replay.from + replay.durationInFrames - 1,
+  ]) {
+    assert.ok(recallAt(timeline.scenes, frame) !== undefined, `frame ${frame} is quoted`);
+    assert.equal(
+      subtitleAt(timeline.subtitles, frame)?.text,
+      "Alpha alpha alpha.",
+      "the card has a cue to draw",
+    );
+  }
+
+  // Either side of it, the ordinary band owns whatever is being said — including nothing.
+  assert.equal(recallAt(timeline.scenes, replay.from - 1), undefined);
+  assert.equal(
+    recallAt(timeline.scenes, replay.from + replay.durationInFrames),
+    undefined,
+  );
+  assert.equal(
+    subtitleAt(timeline.subtitles, replay.from + replay.durationInFrames),
+    undefined,
+    "and the authored pause after the replay is still nobody's",
+  );
 });

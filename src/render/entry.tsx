@@ -6,7 +6,7 @@ import {
   DEFAULT_WIDTH,
   type Timeline,
 } from "../compile/timeline.ts";
-import { PresentationVideo } from "./Presentation.tsx";
+import { PresentationVideo, RecalledCanvasVideo } from "./Presentation.tsx";
 
 /**
  * The Remotion entry point.
@@ -23,6 +23,20 @@ import { PresentationVideo } from "./Presentation.tsx";
  */
 
 export const COMPOSITION_ID = "presentation";
+
+/**
+ * The quoted canvas, unframed — a diagnostic surface, not a film.
+ *
+ * Registered beside the presentation because sprint:16 put a quotation card around a replay, which
+ * necessarily ended sprint:15's byte-equality between a replayed frame and the frame it replays: the
+ * final composition now carries a scrim, a transform, an outline and a label, deliberately. The
+ * claim underneath that equality — that what is being quoted is exactly the moment it claims to be —
+ * is asserted here instead, against the same `RecalledCanvas` the card draws.
+ *
+ * It renders nothing on any frame where no recall is playing, which is every frame of every deck
+ * that never quotes itself.
+ */
+export const CANVAS_ID = "recalled-canvas";
 
 const PLACEHOLDER: Timeline = {
   title: "cuecraft",
@@ -41,23 +55,38 @@ const PLACEHOLDER: Timeline = {
   subtitles: [],
 };
 
+/** Both compositions size themselves to the timeline they are handed, and to nothing else. */
+const metadata = ({ props }: { props: { timeline: Timeline } }) => ({
+  durationInFrames: Math.max(1, props.timeline.totalFrames),
+  fps: props.timeline.fps,
+  width: props.timeline.width,
+  height: props.timeline.height,
+});
+
 function Root() {
   return (
-    <Composition
-      id={COMPOSITION_ID}
-      component={PresentationVideo}
-      defaultProps={{ timeline: PLACEHOLDER }}
-      durationInFrames={PLACEHOLDER.totalFrames}
-      fps={PLACEHOLDER.fps}
-      width={PLACEHOLDER.width}
-      height={PLACEHOLDER.height}
-      calculateMetadata={({ props }) => ({
-        durationInFrames: Math.max(1, props.timeline.totalFrames),
-        fps: props.timeline.fps,
-        width: props.timeline.width,
-        height: props.timeline.height,
-      })}
-    />
+    <>
+      <Composition
+        id={COMPOSITION_ID}
+        component={PresentationVideo}
+        defaultProps={{ timeline: PLACEHOLDER }}
+        durationInFrames={PLACEHOLDER.totalFrames}
+        fps={PLACEHOLDER.fps}
+        width={PLACEHOLDER.width}
+        height={PLACEHOLDER.height}
+        calculateMetadata={metadata}
+      />
+      <Composition
+        id={CANVAS_ID}
+        component={RecalledCanvasVideo}
+        defaultProps={{ timeline: PLACEHOLDER }}
+        durationInFrames={PLACEHOLDER.totalFrames}
+        fps={PLACEHOLDER.fps}
+        width={PLACEHOLDER.width}
+        height={PLACEHOLDER.height}
+        calculateMetadata={metadata}
+      />
+    </>
   );
 }
 

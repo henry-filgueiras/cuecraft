@@ -70,6 +70,12 @@ time. Hard cut in, hard cut out. No crossfade, no vignette, no "earlier" caption
 this is the past is the picture itself and the progress rule stepping back to a slide already seen.
 decision:24's rule that the camera earns its moves, applied to a move nobody asked for.
 
+> **The last two sentences of that paragraph are superseded by decision:44.** Rendered at full size,
+> a full-bleed hard cut between two native cuecraft slides reads as ordinary progression: the
+> retreating progress rule is five pixels at the bottom edge and cannot carry the claim on its own.
+> A recall is now drawn as a quotation card. Everything else on this page stands — what is retracted
+> is the belief that a frame identical to its source could say that it *is* a quotation.
+
 **Resolution is backwards-only and unique**, against an earlier slide's *root-scoped* `activates`.
 Forward is a spoiler with a cut in it; same-slide would not change the picture and would read as a
 stutter; two candidates would make one word mean two things, and "first wins" is the wrong default

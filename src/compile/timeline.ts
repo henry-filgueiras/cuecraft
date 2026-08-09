@@ -69,6 +69,33 @@ export type StackEvent =
       readonly durationInFrames: number;
     };
 
+/**
+ * The replay happening on a frame, or nothing.
+ *
+ * Derived rather than stored. A renderer needs to know "is the film quoting itself right now" on
+ * every frame it draws, and the temptation is to precompute that into the timeline — a flag, an
+ * index, a per-frame lookup table. All of those would be *renderer state on a compiled artifact*,
+ * which is a second source of truth for something the first one already says: a `Recall` has a frame
+ * and a duration, and whether a frame is inside it is arithmetic.
+ *
+ * Linear over a deck's handful of recalls, for the reason `subtitleAt` is linear over its cues: this
+ * runs once per frame, and a scan anybody can check against the interval rule is worth more than the
+ * microseconds.
+ */
+export function recallAt(
+  scenes: readonly Scene[],
+  frame: number,
+): { readonly scene: Scene; readonly recall: Recall } | undefined {
+  for (const scene of scenes) {
+    for (const recall of scene.recalls) {
+      if (frame >= recall.from && frame < recall.from + recall.durationInFrames) {
+        return { scene, recall };
+      }
+    }
+  }
+  return undefined;
+}
+
 export function narrativeStack(scene: Scene): readonly StackEvent[] {
   const byClip = new Map(
     scene.anchors.map((anchor) => [anchor.clipIndex, anchor.address]),

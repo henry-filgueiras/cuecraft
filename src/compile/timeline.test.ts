@@ -11,7 +11,7 @@ import type {
 } from "./compile.ts";
 import type { AuthoredActor, AuthoredStep, SlideBody } from "../presentation/parse.ts";
 import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
-import { buildTimeline, DEFAULT_FPS, framesFor } from "./timeline.ts";
+import { buildTimeline, DEFAULT_FPS, framesFor, recallAt } from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
   if (overrides.protocol !== undefined) {
@@ -724,4 +724,39 @@ test("a deck that never recalls carries an empty list and is otherwise untouched
   assert.ok(scene !== undefined);
   assert.deepEqual(scene.recalls, []);
   assert.equal(timeline.totalFrames, 23 + 120 + 36);
+});
+
+test("the replay happening on a frame is arithmetic, not a stored flag", () => {
+  const timeline = buildTimeline(recalling());
+  const [, scene] = timeline.scenes;
+  assert.ok(scene !== undefined);
+  const placed = scene.recalls[0];
+  assert.ok(placed !== undefined);
+
+  assert.equal(recallAt(timeline.scenes, placed.from - 1), undefined, "before it starts");
+  assert.equal(recallAt(timeline.scenes, placed.from)?.recall, placed, "its first frame");
+  assert.equal(
+    recallAt(timeline.scenes, placed.from + placed.durationInFrames - 1)?.recall,
+    placed,
+    "its last frame",
+  );
+  assert.equal(
+    recallAt(timeline.scenes, placed.from + placed.durationInFrames),
+    undefined,
+    "the frame after it ends — the cut back is a cut",
+  );
+  assert.equal(
+    recallAt(timeline.scenes, placed.from)?.scene.ordinal,
+    scene.ordinal,
+    "the slide doing the quoting, not the one being quoted",
+  );
+});
+
+test("a deck that never quotes itself is never quoting itself", () => {
+  const timeline = buildTimeline(
+    presentation([slide({ ordinal: 1, narrationSeconds: 4 })]),
+  );
+  for (let frame = 0; frame < timeline.totalFrames; frame += 1) {
+    assert.equal(recallAt(timeline.scenes, frame), undefined, `frame ${frame}`);
+  }
 });

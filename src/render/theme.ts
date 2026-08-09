@@ -816,6 +816,59 @@ export const SUBTITLE = {
 } as const;
 
 /**
+ * How the film shows itself a moment it has already had.
+ *
+ * sprint:15 played a recall full-bleed on the theory that a hard cut to a slide already seen would
+ * read as a return. It does not. Rendered at full size, `examples/retry.yaml` cuts from one native
+ * cuecraft slide to another native cuecraft slide, and there is nothing on the frame that
+ * distinguishes "we are being shown evidence" from "this is the next thing" — a viewer who does not
+ * happen to remember slide 1 sees ordinary progression. The picture being byte-identical to its
+ * source turned out to be necessary and nowhere near sufficient.
+ *
+ * So the past is **framed rather than filtered**. Everything cinema does to mark a flashback —
+ * sepia, grain, blur, desaturation, a filtered voice — works by damaging the thing being quoted,
+ * and in cuecraft the thing being quoted is the argument. It stays whole, legible and undamaged,
+ * and what marks it is that it is now *inside* something.
+ *
+ * ## The numbers, and what the renders decided
+ *
+ * Three insets were rendered against `examples/retry.yaml` at the same replay frame and looked at.
+ *
+ * - **`inset` is capped by the label, not by taste.** 0.94 leaves 32px of exposed frame above the
+ *   card, and the label needs `label + labelGap` = 36 — so at 0.94 "RECALL · SLIDE 1" prints into
+ *   the card's own outline. That is a hard floor on the margin and it rules out anything above about
+ *   0.93. 0.86 is comfortable and spends four percent of the quotation on margin that, on an
+ *   ordinary composition, contains nothing at all. 0.90 is the largest quotation that still leaves
+ *   the label its own air.
+ * - **`recede` does nothing on most slides, and that is not a defect.** cuecraft's own margins
+ *   (`FRAME.marginX/marginY`) keep every bordered composition's content well inside the strip the
+ *   inset exposes, so on `retry.yaml` the scrim is ink over ink and invisible. It earns its keep on
+ *   the two compositions that have no margin to keep — `atlas` and `transcript` bleed to all four
+ *   edges (dragon:21) — and a world deck rendered to check it shows exactly what it is for: the
+ *   present world's grid and node edges survive as faint texture around the card instead of
+ *   competing with the quotation.
+ * - **A consequence worth stating: the present slide is *not* recognizable by its content.** At any
+ *   inset in this range the exposed strip is margin, so what stays readable of the present is its
+ *   field and its clock. Exposing actual content would need roughly 0.78, at which point the
+ *   quotation reads as a thumbnail. The clock is the part that was load-bearing anyway.
+ * - **`outline`** is a hairline and not a border: two pixels of accent, drawn outside the card so it
+ *   steals nothing from the picture. Thicker reads as a UI panel, which is the one thing cuecraft's
+ *   design language has never had.
+ */
+export const RECALL = {
+  /** How much of the frame the quoted canvas takes, laid out at full size and then scaled. */
+  inset: 0.9,
+  /** How far the present slide goes behind the quotation, as ink over it. */
+  recede: 0.72,
+  outline: 2,
+  /** The label, in the subtitle's small-caps idiom at the size of its metadata row. */
+  label: 22,
+  labelGap: 14,
+  /** How far the return stroke rises off the accent bar. */
+  backmarkRise: 14,
+} as const;
+
+/**
  * A colour per narrator, in the order the film first hears them.
  *
  * Four, and every one of them is a colour this deck already owns: the accent that means "narration

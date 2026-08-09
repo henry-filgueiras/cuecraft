@@ -19,6 +19,16 @@ import { repositoryRoot } from "../tts/model.ts";
 
 export const COMPOSITION_ID = "presentation";
 
+/**
+ * The diagnostic composition registered beside the film (`./entry.tsx`).
+ *
+ * Mirrored here for the reason `COMPOSITION_ID` is: `entry.tsx` is TSX handed to Remotion's own
+ * toolchain and is never imported by Node, so anything Node needs to name has to be named twice.
+ * Nothing in the render path uses this — it exists so the recall byte-equivalence proof has a
+ * surface to be asserted against now that the film itself frames a quotation.
+ */
+export const CANVAS_ID = "recalled-canvas";
+
 export class RenderError extends Error {}
 
 /** The parts of a render worth telling a waiting human about. */

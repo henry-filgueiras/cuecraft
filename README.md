@@ -440,12 +440,21 @@ say:
 ```
 
 The anchor is the whole of the reference: there is no timecode, no clip name, and no second copy of
-the sentence. What comes back is the earlier slide rendered frame for frame over the clip's measured
-interval — its elements light up again exactly as they did, its progress rule steps back and
-returns — and nothing is synthesized a second time. A recall must name exactly one _earlier_
-root-level anchor; missing, ambiguous, forward and same-slide references are all compile errors that
-name what they found. [`examples/retry.yaml`](examples/retry.yaml) is a minute of two people
-disagreeing about a duplicate charge, settled by playing one of them back.
+the sentence. What comes back is the earlier slide rendered frame for frame over **that one speech
+cue's** measured interval — its elements light up again exactly as they did, and nothing is
+synthesized a second time. The window is the clip and only the clip: an authored `pause:` beside the
+anchored sentence, and the speech on the far side of it, are outside it (see `dragon:25`). A recall
+must name exactly one _earlier_ root-level anchor; missing, ambiguous, forward and same-slide
+references are all compile errors that name what they found.
+
+It is drawn as a **quotation card**. The present slide stays on screen and recedes; the recalled
+canvas is inset, outlined in the deck's accent, and labelled with the slide it came from — so the
+frame carries two progress positions at once, the present one along the bottom edge and the
+historical one inside the card. The recalled sentence is captioned inside the card too, in the words
+and the voice it was first said in. Playing it full-bleed was tried first and read as ordinary
+progression rather than as evidence ([`decision:44`](archaeology/decisions/)); there is no filter,
+no fade and no authored control over any of it. [`examples/retry.yaml`](examples/retry.yaml) is a
+minute of two people disagreeing about a duplicate charge, settled by playing one of them back.
 
 **What the content is.** A slide carries at most one body, and which one it is says what the
 content _means_. The body picks the composition; shape decides only within the list role.

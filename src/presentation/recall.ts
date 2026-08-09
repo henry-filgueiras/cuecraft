@@ -29,6 +29,13 @@ import type { NarrationCue } from "./cue.ts";
  *   `Span` in `../compile/timeline.ts`). A recall replays one clip whole, which is a moment's worth
  *   of narration, and a population that accumulates across a sentence is a different claim.
  *
+ * **What "one" means, exactly.** The anchor selects one *speech cue*, and the window is that cue's
+ * measured clip end to end — not the passage it introduces. An authored `pause:` written beside it,
+ * and the sentence on the far side of that pause, are outside the quotation even when an author
+ * would read all three as one piece of evidence. That gap between the author's unit and the
+ * compiler's is real and is recorded as dragon:25; it is not fixed by widening this rule, because
+ * every obvious widening reads an extent into a key that only carries a point.
+ *
  * Together those make a cycle unreachable. A recall can only point backwards, only at a speech cue,
  * and a speech cue can never be a recall — so there is no edge to close a loop with, and no cycle
  * detector was built for a graph that cannot have one.
