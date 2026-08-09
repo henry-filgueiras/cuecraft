@@ -1,10 +1,12 @@
 import type { NarrationCue } from "./cue.ts";
+import type { AuthoredMachine } from "./machine.ts";
+import { takeId } from "./machine.ts";
 import type { AuthoredProtocol, AuthoredStep } from "./protocol.ts";
 import { stepId } from "./protocol.ts";
 import { childScope, type Scope } from "./scope.ts";
 
 /**
- * How long a step gets, and how a protocol becomes cues.
+ * How long a silent occurrence gets, and how a body that carries its own narration becomes cues.
  *
  * This module exists because of one allowance in `./protocol.ts`: `say:` is optional. Everything
  * else in cuecraft is timed by a measurement — a scene lasts as long as its narration, an anchor
@@ -49,6 +51,21 @@ import { childScope, type Scope } from "./scope.ts";
  * messages. `MAXIMUM` is where a silent step stops being a beat and starts being a pause the film
  * is taking — past two seconds with nobody talking, a viewer starts wondering whether something
  * broke, and a label long enough to need more than that is a label that wanted a sentence.
+ *
+ * ## The second caller, and what it proved
+ *
+ * `./machine.ts` arrived with the same allowance and no protocol anywhere in it: an occurrence of a
+ * transition may be silent, and something has to decide how long it owns the stage. The four rules
+ * above transferred **without a constant changing**, which is a real result rather than a
+ * convenience. The reason they transferred is that none of them is about messages: the label is
+ * whatever the picture is asking the viewer to read (`message` for a step, `on` for a transition),
+ * the transit is whatever has to cross the frame before there is anything to read, and the run
+ * decay is about a viewer with nobody talking to them, which is a fact about silence.
+ *
+ * So `dwellFor` takes a label and a run position, and `dwellMs` is the protocol's name for it. What
+ * is *not* shared is the lowering: two bodies with different identities, different scopes and
+ * different notions of what an occurrence is write eleven lines each, and nothing was made generic
+ * to let them.
  */
 
 /** How long the arrow takes to cross and land, before anybody has read anything. */
@@ -73,18 +90,23 @@ export const RUN_DECAY = 0.92;
 export const RUN_FLOOR = 0.78;
 
 /**
- * How long a silent step holds the stage.
+ * How long a silent occurrence holds the stage, given what it puts on screen to be read.
  *
- * `run` is how many silent steps have already gone by without a word between them: zero for the
- * first one after any narration, one for the one after that, and so on. It is the only piece of
- * context the policy consults, and it is deliberately not "how far into the protocol we are" —
- * fatigue is about the *run*, not about the film.
+ * `run` is how many silent occurrences have already gone by without a word between them: zero for
+ * the first one after any narration, one for the one after that, and so on. It is the only piece of
+ * context the policy consults, and it is deliberately not "how far into the body we are" — fatigue
+ * is about the *run*, not about the film.
  */
-export function dwellMs(step: AuthoredStep, run: number = 0): number {
-  const read = step.message.length * PER_CHARACTER_MS;
+export function dwellFor(label: string, run: number = 0): number {
+  const read = label.length * PER_CHARACTER_MS;
   const whole = Math.min(MAXIMUM_DWELL_MS, Math.max(MINIMUM_DWELL_MS, TRANSIT_MS + read));
   const decay = Math.max(RUN_FLOOR, RUN_DECAY ** run);
   return Math.round(Math.max(MINIMUM_DWELL_MS * RUN_FLOOR, whole * decay));
+}
+
+/** The same policy, asked about a step. What a step puts on screen to be read is its message. */
+export function dwellMs(step: AuthoredStep, run: number = 0): number {
+  return dwellFor(step.message, run);
 }
 
 /**
@@ -127,6 +149,46 @@ export function protocolCues(
       address,
       ...(narrator === undefined ? {} : { narrator }),
       ...(step.pronounce === undefined ? {} : { pronounce: step.pronounce }),
+    };
+  });
+}
+
+/**
+ * A machine's scenario, as cues.
+ *
+ * The same eleven lines with the nouns changed, and they are eleven lines *again* rather than one
+ * shared function taking a strategy, because what differs between the two is every single noun:
+ * which list is walked, what identity an occurrence gets, and what text the dwell is measured
+ * against. A parameterised version would take four callbacks and be longer than both.
+ *
+ * What a silent occurrence puts on screen to be read is the transition's `on` label, so that is
+ * what times it — which means rewording an event retimes the frame that shows it, exactly as
+ * rewording a sentence does.
+ */
+export function machineCues(
+  machine: AuthoredMachine,
+  scope: Scope,
+  narrator?: string,
+): readonly NarrationCue[] {
+  const byId = new Map(machine.transitions.map((entry) => [entry.id, entry] as const));
+  let run = 0;
+  return machine.scenario.map((occurrence, index): NarrationCue => {
+    const address = childScope(scope, takeId(index));
+    if (occurrence.say === undefined) {
+      const transition = byId.get(occurrence.take);
+      const milliseconds = dwellFor(transition?.on ?? occurrence.take, run);
+      run += 1;
+      return { kind: "dwell", scope, milliseconds, address };
+    }
+    run = 0;
+    return {
+      kind: "speech",
+      scope,
+      text: occurrence.say,
+      activates: takeId(index),
+      address,
+      ...(narrator === undefined ? {} : { narrator }),
+      ...(occurrence.pronounce === undefined ? {} : { pronounce: occurrence.pronounce }),
     };
   });
 }

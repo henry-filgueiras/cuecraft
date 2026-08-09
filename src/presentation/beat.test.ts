@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  dwellFor,
   dwellMs,
+  machineCues,
   MAXIMUM_DWELL_MS,
   MINIMUM_DWELL_MS,
   protocolCues,
@@ -10,6 +12,7 @@ import {
   TRANSIT_MS,
 } from "./beat.ts";
 import type { NarrationCue } from "./cue.ts";
+import type { AuthoredMachine, AuthoredOccurrence } from "./machine.ts";
 import type { AuthoredProtocol, AuthoredStep } from "./protocol.ts";
 import { ROOT_SCOPE } from "./scope.ts";
 
@@ -156,4 +159,124 @@ test("nothing an author writes can reach the clock", () => {
   // duration is a function of the message and the run alone. There is no key in `STEP_KEYS` that
   // appears in this call, and adding one is the thing the sprint's non-goals refuse.
   assert.equal(dwellMs(step("hello")), dwellMs({ from: "x", to: "y", message: "hello" }));
+});
+
+/* ------------------------------------------------ the clock's second caller */
+
+/**
+ * A machine's scenario, through the same policy.
+ *
+ * decision:35 wrote four rules and calibrated them against arrows between lanes. The claim this
+ * section makes is that none of the four was ever about arrows: what is read is whatever label the
+ * picture is putting up, and the run decay is about a viewer with nobody talking to them. So the
+ * numbers are asserted to be *identical* for a transition whose event label is a step's message,
+ * character for character — if they ever diverge, one of the two bodies has grown a clock of its
+ * own and the sprint's claim about sharing is false.
+ */
+
+function machine(...scenario: readonly AuthoredOccurrence[]): AuthoredMachine {
+  return {
+    states: [
+      { id: "a", text: "A" },
+      { id: "b", text: "B" },
+    ],
+    transitions: [
+      { id: "there", from: "a", to: "b", on: "off we go" },
+      { id: "back", from: "b", to: "a", on: "and back again" },
+    ],
+    scenario,
+  };
+}
+
+test("a narrated occurrence becomes a speech cue that activates it, in scenario order", () => {
+  assert.deepEqual(
+    shape(
+      machineCues(
+        machine(
+          { take: "there", say: "It leaves." },
+          { take: "back", say: "It comes back." },
+        ),
+        ROOT_SCOPE,
+      ),
+    ),
+    ['speak root/take-1 "It leaves."', 'speak root/take-2 "It comes back."'],
+  );
+});
+
+test("a silent occurrence becomes a dwell carrying the same address", () => {
+  const cues = machineCues(machine({ take: "there" }), ROOT_SCOPE);
+  const only = cues[0];
+  assert.ok(only?.kind === "dwell");
+  assert.equal(only.address, "root/take-1");
+  assert.equal(only.milliseconds, dwellFor("off we go"));
+});
+
+test("a silent occurrence is timed by the event label, so rewording it retimes the frame", () => {
+  const brief = machineCues(machine({ take: "there" }), ROOT_SCOPE)[0];
+  const wordy = machineCues(
+    {
+      ...machine({ take: "there" }),
+      transitions: [
+        {
+          id: "there",
+          from: "a",
+          to: "b",
+          on: "visibility timeout expires while the result commit is still in flight",
+        },
+      ],
+    },
+    ROOT_SCOPE,
+  )[0];
+  assert.ok(brief?.kind === "dwell" && wordy?.kind === "dwell");
+  assert.ok(wordy.milliseconds > brief.milliseconds);
+});
+
+test("the two bodies share one clock rather than two that agree today", () => {
+  for (const label of ["tap", "validate token", "x".repeat(200)]) {
+    for (const run of [0, 1, 5, 40]) {
+      assert.equal(
+        dwellMs({ from: "a", to: "b", message: label }, run),
+        dwellFor(label, run),
+        `the protocol's dwell and the shared policy disagree about ${JSON.stringify(label.slice(0, 12))} at run ${run}`,
+      );
+    }
+  }
+});
+
+test("the same transition, taken twice, is two occurrences with two addresses", () => {
+  assert.deepEqual(
+    shape(
+      machineCues(
+        machine({ take: "there" }, { take: "back" }, { take: "there" }),
+        ROOT_SCOPE,
+      ),
+    ).map((entry) => entry.split(" ")[1]),
+    ["root/take-1", "root/take-2", "root/take-3"],
+  );
+});
+
+test("a run of silent occurrences accelerates, exactly as a run of silent steps does", () => {
+  const cues = machineCues(
+    machine({ take: "there" }, { take: "back" }, { take: "there" }, { take: "back" }),
+    ROOT_SCOPE,
+  );
+  const times = cues.map((cue) => (cue.kind === "dwell" ? cue.milliseconds : 0));
+  // Alternating labels, so compare like with like: occurrences 0 and 2 take the same transition.
+  assert.ok((times[2] as number) < (times[0] as number));
+  assert.ok((times[3] as number) < (times[1] as number));
+});
+
+test("narration inside a scenario resets the run", () => {
+  const cues = machineCues(
+    machine(
+      { take: "there" },
+      { take: "back", say: "Something is said here." },
+      { take: "there" },
+    ),
+    ROOT_SCOPE,
+  );
+  const first = cues[0];
+  const third = cues[2];
+  assert.ok(first?.kind === "dwell" && third?.kind === "dwell");
+  assert.equal(first.milliseconds, third.milliseconds);
 });

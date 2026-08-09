@@ -1,4 +1,5 @@
 import { bodyAddresses, type SlideBody } from "../presentation/body.ts";
+import { takeId } from "../presentation/machine.ts";
 import { stepId } from "../presentation/protocol.ts";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { chooseLayout, type LayoutArchetype } from "../render/layout.ts";
@@ -281,7 +282,7 @@ export interface Span {
  * with five seconds still to say.
  */
 export interface Beat {
-  /** Index into the protocol's steps, in written order. */
+  /** Index into the body's ordered occurrences — a protocol's steps, or a scenario's takes. */
   readonly index: number;
   readonly address: Scope;
   /** Absolute frame at which the transition begins. */
@@ -374,7 +375,10 @@ export interface Scene {
   readonly calls: readonly Call[];
   /** Every population accumulating over a sentence. Empty on almost every deck. */
   readonly spans: readonly Span[];
-  /** Every step of a protocol, in written order. Empty unless the body is one. */
+  /**
+   * Every occurrence a body carries in its own order — a protocol's steps, a scenario's takes.
+   * Empty unless the body is one of those.
+   */
   readonly beats: readonly Beat[];
   /** Every earlier utterance said again, in frame order. Empty on every deck that never recalls. */
   readonly recalls: readonly Recall[];
@@ -593,17 +597,27 @@ export function buildTimeline(
       framesFor(slide.narration.durationSeconds, fps),
     );
 
-    // Every step, in written order, however it came by its frame. A narrated one was already
+    // Every occurrence, in written order, however it came by its frame. A narrated one was already
     // resolved above as an ordinary anchor; a silent one has a placed dwell. Neither branch knows
     // anything the other does not, which is the point: the composition consumes one list.
+    //
+    // Two bodies produce beats now, and they produce them through *one* path. What differs is only
+    // which addresses to look up, which is one expression rather than a second loop — the merge,
+    // the "never zero" rule, the run to the next beat and the throw are stated once and neither
+    // body can drift from the other.
     const beats: Beat[] = [];
-    if (slide.body.kind === "protocol") {
+    const occurrences: readonly Scope[] =
+      slide.body.kind === "protocol"
+        ? slide.body.steps.map((_, index) => childScope(ROOT_SCOPE, stepId(index)))
+        : slide.body.kind === "machine"
+          ? slide.body.scenario.map((_, index) => childScope(ROOT_SCOPE, takeId(index)))
+          : [];
+    if (occurrences.length > 0) {
       const narrationUntil = narrationFrom + narrationDurationInFrames;
       const byAddress = new Map(
         anchors.map((anchor) => [anchor.address, anchor] as const),
       );
-      const starts = slide.body.steps.map((_, index) => {
-        const address = childScope(ROOT_SCOPE, stepId(index));
+      const starts = occurrences.map((address, index) => {
         const anchor = byAddress.get(address);
         const from = anchor?.frame ?? placedDwells.get(address);
         return { index, address, from, clipIndex: anchor?.clipIndex };
@@ -611,7 +625,7 @@ export function buildTimeline(
       starts.forEach((start, position) => {
         if (start.from === undefined) {
           throw new Error(
-            `slide ${slide.ordinal}: step ${position + 1} was never placed on the narration track`,
+            `slide ${slide.ordinal}: occurrence ${position + 1} was never placed on the narration track`,
           );
         }
         const next = starts.slice(position + 1).find((entry) => entry.from !== undefined);

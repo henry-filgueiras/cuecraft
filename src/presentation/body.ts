@@ -1,5 +1,7 @@
 import type { FigureKind } from "./figure.ts";
 import type { AuthoredFormulaLine } from "./formula.ts";
+import type { AuthoredOccurrence, AuthoredState, AuthoredTransition } from "./machine.ts";
+import { takeId } from "./machine.ts";
 import type { AuthoredSeriesGroup } from "./series.ts";
 import type { CodeLanguage } from "./language.ts";
 import type { AuthoredActor, AuthoredStep } from "./protocol.ts";
@@ -97,6 +99,17 @@ export type SlideBody =
       readonly kind: "protocol";
       readonly actors: readonly AuthoredActor[];
       readonly steps: readonly AuthoredStep[];
+    }
+  | {
+      /**
+       * A state machine and one run of it — see `./machine.ts`. The first body that is a
+       * *structure* and a *sequence* at once: the topology is true before anything is said, and
+       * the scenario happens an occurrence at a time.
+       */
+      readonly kind: "machine";
+      readonly states: readonly AuthoredState[];
+      readonly transitions: readonly AuthoredTransition[];
+      readonly scenario: readonly AuthoredOccurrence[];
     };
 
 /**
@@ -148,6 +161,19 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
       // The steps' identities are the compiler's own (`./protocol.ts`), which is why an author
       // writes none.
       return [...body.actors, ...body.steps.map((_, index) => ({ id: stepId(index) }))];
+    case "machine":
+      // States first, then occurrences, which is the protocol rule with the nouns changed. What
+      // it buys is the same thing: a prologue may reach a *state* by name — "this is where it
+      // starts" — and may not reach into the lowering of the scenario, because the compiler wrote
+      // both ends of that relationship (`./machine.ts`).
+      //
+      // Transitions are deliberately absent. They are the machine's third kind of identity and
+      // the only one narration cannot reach, because an edge is not a moment: what happens at a
+      // moment is an *occurrence* of one, and the scenario already addresses those.
+      return [
+        ...body.states,
+        ...body.scenario.map((_, index) => ({ id: takeId(index) })),
+      ];
     default:
       return body.items;
   }
@@ -250,6 +276,16 @@ export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAd
         ...body.steps.map((_, index) => ({
           address: childScope(scope, stepId(index)),
           scope: childScope(scope, stepId(index)),
+        })),
+      ];
+    case "machine":
+      return [
+        ...body.states.map((state) => named(state.id)),
+        // Each occurrence in a scope of its own, exactly as a step is, so that `activates: take-3`
+        // written by an author is an unknown identity rather than a way to reach into the lowering.
+        ...body.scenario.map((_, index) => ({
+          address: childScope(scope, takeId(index)),
+          scope: childScope(scope, takeId(index)),
         })),
       ];
     default:

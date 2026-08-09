@@ -38,6 +38,7 @@ export type LayoutArchetype =
   | "revision"
   | "atlas"
   | "transcript"
+  | "circuit"
   | "figure"
   | "formula"
   | "series";
@@ -103,6 +104,10 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   the atlas pointed at a different kind of space: one where position on one axis is *who* and
  *   position on the other is *when*. The second composition with a camera, which is what turned
  *   the camera into its own module (`./camera.ts`) rather than part of the world.
+ * - **circuit** — a state machine and one run of it. A map, laid out once from the topology alone,
+ *   with a traveller on it: the whole of what could happen is drawn from the first frame, and what
+ *   moves is which state is occupied. Third camera, and the first composition where the strongest
+ *   signal on the frame is a *persistent* one rather than a transient.
  * - **formula** — mathematics. Set by KaTeX at a size derived from the longest line, because a
  *   definition is not points and not source: it is one line whose spacing carries its meaning.
  * - **series** — a bounded population. A derived field of members, filling in reading order over
@@ -132,6 +137,7 @@ export function chooseLayout(content: SlideContent): LayoutArchetype {
   if (content.body.kind === "change") return "revision";
   if (content.body.kind === "world") return "atlas";
   if (content.body.kind === "protocol") return "transcript";
+  if (content.body.kind === "machine") return "circuit";
   if (content.body.kind === "steps") return "cascade";
 
   const shape = analyzeContent(content);

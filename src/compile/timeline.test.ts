@@ -9,13 +9,23 @@ import type {
   NarrationRecall,
   SpeechClip,
 } from "./compile.ts";
-import type { AuthoredActor, AuthoredStep, SlideBody } from "../presentation/parse.ts";
+import type {
+  AuthoredActor,
+  AuthoredOccurrence,
+  AuthoredState,
+  AuthoredStep,
+  AuthoredTransition,
+  SlideBody,
+} from "../presentation/parse.ts";
 import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
 import { buildTimeline, DEFAULT_FPS, framesFor, recallAt } from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
   if (overrides.protocol !== undefined) {
     return { kind: "protocol", ...overrides.protocol };
+  }
+  if (overrides.machine !== undefined) {
+    return { kind: "machine", ...overrides.machine };
   }
   if (overrides.change !== undefined) {
     return {
@@ -56,6 +66,12 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   recalls?: readonly NarrationRecall[];
   /** A protocol body, when the test is about one; wins over `bullets` and `steps`. */
   protocol?: { actors: readonly AuthoredActor[]; steps: readonly AuthoredStep[] };
+  /** A machine body, the other one that carries its own occurrences. */
+  machine?: {
+    states: readonly AuthoredState[];
+    transitions: readonly AuthoredTransition[];
+    scenario: readonly AuthoredOccurrence[];
+  };
   modules?: readonly string[];
 };
 
@@ -584,11 +600,99 @@ test("a beat runs to its successor, and the last runs to the end of the narratio
   }
 });
 
-test("nothing but a protocol gains a beat", () => {
+test("nothing but a body that carries its own occurrences gains a beat", () => {
   const timeline = buildTimeline(
     presentation([slide({ ordinal: 1, bullets: [{ text: "a" }], narrationSeconds: 4 })]),
   );
   assert.deepEqual(timeline.scenes[0]?.beats, []);
+});
+
+/**
+ * The second body with occurrences, through the same path.
+ *
+ * What matters here is not that a machine produces beats — it is that it produces them through the
+ * code the protocol already ran. If the two ever diverge, one of them will drift by a frame under
+ * some rounding nobody thought about, and the film that drifts will be the one nobody rendered
+ * that week.
+ */
+const MACHINE = {
+  states: [
+    { id: "a", text: "A" },
+    { id: "b", text: "B" },
+  ],
+  transitions: [
+    { id: "there", from: "a", to: "b", on: "off we go" },
+    { id: "back", from: "b", to: "a", on: "and back again" },
+  ],
+  scenario: [
+    { take: "there", say: "The first thing happens." },
+    { take: "back" },
+    { take: "there" },
+    { take: "back", say: "And then the last." },
+  ],
+} as const;
+
+test("every occurrence of a scenario becomes a beat, narrated or not", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        machine: MACHINE,
+        speech: [3, 4],
+        offsets: [0, 5],
+        activates: ["take-1", "take-4"],
+        dwells: [dwell("root/take-2", 3, 1), dwell("root/take-3", 4, 1)],
+        narrationSeconds: 9,
+        preSayMs: 0,
+        postSayMs: 0,
+        leadingSilence: 0,
+      }),
+    ]),
+  );
+
+  const scene = timeline.scenes[0];
+  assert.ok(scene !== undefined);
+  assert.equal(scene.layout, "circuit");
+  // Frame for frame the protocol's answer to the same shape of narration, which is the point.
+  assert.deepEqual(
+    scene.beats.map((beat) => [beat.index, beat.from, beat.durationInFrames]),
+    [
+      [0, 0, 90],
+      [1, 90, 30],
+      [2, 120, 30],
+      [3, 150, 120],
+    ],
+  );
+  assert.deepEqual(
+    scene.beats.map((beat) => beat.clipIndex),
+    [0, undefined, undefined, 1],
+  );
+});
+
+test("a repeated transition is two beats, not one", () => {
+  const timeline = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        machine: MACHINE,
+        speech: [3, 4],
+        offsets: [0, 5],
+        activates: ["take-1", "take-4"],
+        dwells: [dwell("root/take-2", 3, 1), dwell("root/take-3", 4, 1)],
+        narrationSeconds: 9,
+        preSayMs: 0,
+        postSayMs: 0,
+        leadingSilence: 0,
+      }),
+    ]),
+  );
+  const beats = timeline.scenes[0]?.beats ?? [];
+  // `there` is taken at occurrence 0 and again at occurrence 2, and they are separate records
+  // with separate frames. An occurrence is addressed by its position in the run, never by which
+  // transition it took, which is exactly what lets the film show the second one happening again.
+  assert.equal(beats.length, 4);
+  assert.notEqual(beats[0]?.from, beats[2]?.from);
+  assert.notEqual(beats[0]?.address, beats[2]?.address);
 });
 
 /* ---------------------------------------------------------------- recall */

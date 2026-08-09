@@ -22,7 +22,8 @@ import {
 } from "./narrator.ts";
 import { bindNarration, modulesOf } from "./nest.ts";
 import { bindRecalls, recallSurface, resolveRecalls } from "./recall.ts";
-import { protocolCues } from "./beat.ts";
+import { machineCues, protocolCues } from "./beat.ts";
+import { resolveMachine } from "./machine.ts";
 import { resolveProtocol } from "./protocol.ts";
 import {
   MAX_SERIES_TOTAL,
@@ -78,6 +79,14 @@ export {
   type AuthoredProtocol,
   type AuthoredStep,
 } from "./protocol.ts";
+export {
+  scenarioPath,
+  takeId,
+  type AuthoredMachine,
+  type AuthoredOccurrence,
+  type AuthoredState,
+  type AuthoredTransition,
+} from "./machine.ts";
 export { MAX_MODULE_DEPTH, ROOT_SCOPE, type Scope } from "./scope.ts";
 export { CODE_LANGUAGES, type CodeLanguage } from "./language.ts";
 
@@ -656,6 +665,7 @@ function buildSlideSchema(resolution: Resolution) {
       change: z.unknown().optional(),
       world: z.unknown().optional(),
       protocol: z.unknown().optional(),
+      machine: z.unknown().optional(),
       figure: z.unknown().optional(),
       formula: z.unknown().optional(),
       series: z.unknown().optional(),
@@ -732,6 +742,15 @@ function buildSlideSchema(resolution: Resolution) {
           });
         }
       }
+      if (slide.machine !== undefined) {
+        for (const issue of resolveMachine(slide.machine).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["machine", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
     });
 }
 
@@ -782,10 +801,34 @@ const BODY_KEYS = [
   "change",
   "world",
   "protocol",
+  "machine",
   "figure",
   "formula",
   "series",
 ] as const;
+
+/**
+ * The bodies an entity's interior may not be, in either spelling.
+ *
+ * One rule with two members rather than a special case for each. What the two have in common is
+ * the thing that makes them impossible to nest: both are **larger than the frame and carry a
+ * camera of their own**, and a camera inside a camera is a question about how two viewports
+ * compose, not a question about interiors. `world` has the older exemption — it may arrive as a
+ * `child:`, because a file is what turns nesting into a module (decision:31) and the chamber then
+ * runs a whole atlas inside itself. A machine has no such exemption yet, because nobody has built
+ * the descent for one, and quietly half-supporting it would be worse than refusing it.
+ */
+const NO_INTERIOR: Partial<Record<(typeof BODY_KEYS)[number], string>> = {
+  world:
+    "a world written here cannot contain a world; an inline interior is ordinary slide " +
+    "content, narrated by the narration around it. A world that wants to contain a world puts " +
+    "it in its own file and names it with `child:`, because what makes that safe is the file, " +
+    "not the nesting",
+  machine:
+    "a machine cannot be an interior; it is larger than the frame and moves a camera of its " +
+    "own, and how two cameras compose is not a question this format has answered. A machine " +
+    "belongs on a slide of its own",
+};
 
 /**
  * Every group of a series, and the one thing only the whole list knows.
@@ -877,10 +920,10 @@ function formulaProblems(
 }
 
 /**
- * What an entity's interior may be: any slide body except another world.
+ * What an entity's interior may be: any slide body that does not carry a camera.
  *
  * The reuse is the point. An interior is validated by the same checks, normalized into the same
- * closed union, and rendered by the same seven compositions as a slide — so `detail` added a key
+ * closed union, and rendered by the same compositions as a slide — so `detail` added a key
  * to the format and no new machinery underneath it. Nesting is refused here rather than by the
  * type system, because the error an author needs is a sentence, not a missing overload.
  */
@@ -893,20 +936,10 @@ function detailResolver(resolution: Resolution): DetailResolver {
       };
     }
     const record = value as Record<string, unknown>;
-    if (record["world"] !== undefined) {
-      return {
-        body: undefined,
-        issues: [
-          {
-            path: ["world"],
-            message:
-              "a world written here cannot contain a world; an inline interior is ordinary " +
-              "slide content, narrated by the narration around it. A world that wants to " +
-              "contain a world puts it in its own file and names it with `child:`, because " +
-              "what makes that safe is the file, not the nesting",
-          },
-        ],
-      };
+    for (const [key, message] of Object.entries(NO_INTERIOR)) {
+      if (record[key] !== undefined) {
+        return { body: undefined, issues: [{ path: [key], message }] };
+      }
     }
 
     return resolveInterior(record, resolution);
@@ -1007,7 +1040,7 @@ function resolveInterior(
   }
 }
 
-const DETAIL_HINT = BODY_KEYS.filter((key) => key !== "world").join(", ");
+const DETAIL_HINT = BODY_KEYS.filter((key) => NO_INTERIOR[key] === undefined).join(", ");
 
 /**
  * `child: ./payment.yaml` — a file becomes an interior and a narration.
@@ -1102,6 +1135,21 @@ function childResolver(resolution: Resolution): ChildResolver {
       scope,
     };
 
+    // A world is the one body a file may bring that an inline `detail` may not, and the file is
+    // exactly what makes it safe (decision:31). A machine is refused in both spellings, because
+    // what stops it is not the nesting — it is that the chamber would have to run a second camera
+    // inside the one already looking at it.
+    if (shape.key === "machine") {
+      return {
+        ...nothing,
+        issues: [
+          {
+            path: [],
+            message: `module ${JSON.stringify(path)}: ${NO_INTERIOR.machine as string}`,
+          },
+        ],
+      };
+    }
     const resolved =
       shape.key === "world"
         ? worldInterior(shape.body, inside)
@@ -1199,6 +1247,7 @@ function bodyOf(
     change?: unknown;
     world?: unknown;
     protocol?: unknown;
+    machine?: unknown;
     figure?: unknown;
     formula?: unknown;
     series?: unknown;
@@ -1232,6 +1281,17 @@ function bodyOf(
     if (protocol === undefined)
       throw new Error("protocol passed validation but did not resolve");
     return { kind: "protocol", actors: protocol.actors, steps: protocol.steps };
+  }
+  if (slide.machine !== undefined) {
+    const { machine } = resolveMachine(slide.machine);
+    if (machine === undefined)
+      throw new Error("machine passed validation but did not resolve");
+    return {
+      kind: "machine",
+      states: machine.states,
+      transitions: machine.transitions,
+      scenario: machine.scenario,
+    };
   }
   if (slide.code !== undefined) {
     const { body } = resolveCode(slide.code, read);
@@ -1524,7 +1584,7 @@ function buildEntrySchema(resolution: Resolution) {
       // The one thing about narration a field schema cannot decide, because it depends on a
       // sibling: a slide has to say something unless its body already does.
       if (entry.say === undefined) {
-        if (entry.slide.protocol === undefined) {
+        if (entry.slide.protocol === undefined && entry.slide.machine === undefined) {
           context.addIssue({ code: "custom", path: ["say"], message: "is required" });
         }
         return;
@@ -1809,14 +1869,17 @@ export function parsePresentation(
         ordinal: index + 1,
         title: entry.slide.title.trim(),
         body,
-        // A protocol's steps append themselves to whatever the author said first. The prologue
-        // goes through `bindNarration` because it names things by hand; the steps do not, because
-        // the compiler wrote both ends of that relationship and has nothing to look up. Both are
-        // spoken by the slide's narrator: a step is narration, and an actor is not a speaker.
+        // A body that carries its own narration appends it to whatever the author said first. The
+        // prologue goes through `bindNarration` because it names things by hand; the occurrences
+        // do not, because the compiler wrote both ends of that relationship and has nothing to
+        // look up. Both are spoken by the slide's narrator: an occurrence is narration, and
+        // neither an actor nor a state is a speaker.
         say:
           body.kind === "protocol"
             ? [...prologue, ...protocolCues(body, ROOT_SCOPE, within.narrator)]
-            : prologue,
+            : body.kind === "machine"
+              ? [...prologue, ...machineCues(body, ROOT_SCOPE, within.narrator)]
+              : prologue,
         preSayMs: optionalDuration(entry.pre_say) ?? preSayMs,
         postSayMs: optionalDuration(entry.post_say) ?? postSayMs,
         minSlideMs,
