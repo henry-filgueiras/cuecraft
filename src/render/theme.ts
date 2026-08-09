@@ -601,6 +601,29 @@ export const MACHINE = {
    * only collision policy for a hand-drawn shape that actually holds.
    */
   loopReach: 150,
+  /**
+   * A stub saying a plate lost edges: how far it reaches, and how far its count sits beyond it.
+   *
+   * Drawn in room the composition already has — outside `node.box`, which is the plate plus
+   * whatever was reserved beside it for self-loops — so this adds nothing to the layout and no
+   * machine moves because of it. If a stub can only be made to work by reserving new room through
+   * dagre, that is a finding rather than a constant to raise (sprint:23).
+   *
+   * Short on purpose. It is a footnote about the map and not a road on it: long enough to read as
+   * an edge going somewhere, too short to be mistaken for one that arrives.
+   */
+  stubReach: 96,
+  /**
+   * How far a stub stands off the plate it belongs to.
+   *
+   * Raised from 26 after the first render. `Running` carries both a self-loop and three elided
+   * exits, and at the smaller gap its stub sat close enough to `lease renewed` that the two read as
+   * one mark — a caption with an arrow and a number after it, which is the `×N` grammar exactly.
+   * The stub is a footnote *about a plate*, so it has to be nearer to nothing than it is to the
+   * plate, and on the busiest state in the machine that costs more room than it looks like it
+   * should.
+   */
+  stubGap: 78,
   loopSpread: 0.6,
 
   /** The blueprint field behind it, as the atlas and the transcript have. */

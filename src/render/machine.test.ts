@@ -11,6 +11,7 @@ import { electLayout } from "./audition.ts";
 import { fitWidth, marginOf, union, viewRect, type Rect } from "./camera.ts";
 import {
   canonicalOverview,
+  elisionsOf,
   essentialBounds,
   sameShot,
   layoutMachine,
@@ -581,6 +582,64 @@ test("a reduction reports what it left out, in counts", () => {
   assert.equal(reduction.transitionsDeclared, HARD.transitions.length);
   assert.ok(reduction.statesShown < reduction.statesDeclared);
   assert.ok(reduction.transitionsShown < reduction.transitionsDeclared);
+});
+
+test("a whole-scope machine elides nothing, on every plate", () => {
+  // The property that keeps every existing deck untouched, and it holds because nothing was
+  // dropped rather than because a branch checked the scope.
+  for (const specimen of [ELEVATOR, HARD]) {
+    assert.equal(elisionsOf(bodyOf(specimen, "whole")).size, 0);
+  }
+});
+
+test("a reduced plate reports the edges it lost, in both directions", () => {
+  const marks = elisionsOf(bodyOf(HARD, "narrated"));
+  const shown = machineOf(bodyOf(HARD, "narrated")) as NonNullable<
+    ReturnType<typeof machineOf>
+  >;
+  const drawn = new Set(shown.transitions.map((transition) => transition.id));
+
+  // Every mark is the difference between what the machine declares about that state and what the
+  // slide draws — checked against the declaration rather than against a hand-copied expectation,
+  // so the test cannot drift when the specimen does.
+  for (const state of shown.states) {
+    const gone = HARD.transitions.filter((transition) => !drawn.has(transition.id));
+    const out = gone.filter((transition) => transition.from === state.id).length;
+    const arriving = gone.filter((transition) => transition.to === state.id).length;
+    const mark = marks.get(state.id);
+    if (out === 0 && arriving === 0) {
+      assert.equal(mark, undefined, `${state.id} lost nothing and should carry no mark`);
+    } else {
+      assert.deepEqual(mark, { out, in: arriving });
+    }
+  }
+
+  // ...and it is sparse, which is the whole case for the notation carrying information rather
+  // than decorating. If a specimen ever marks every plate, the frames get to argue about it.
+  assert.ok(marks.size > 0 && marks.size < shown.states.length);
+});
+
+test("a self-transition on a surviving state is never elided", () => {
+  // Written expecting the opposite, and the assertion was wrong rather than the code. A self-loop's
+  // endpoints are both the state itself, so the induced subgraph keeps it whenever it keeps the
+  // state — there is no run that drops `heartbeat` while drawing `Running`. Worth pinning, because
+  // it is the one shape where "the run never took it" and "the slide does not draw it" come apart,
+  // and a later criterion that broke it would be quietly hiding a state's own loop.
+  const withoutLoop = {
+    ...HARD,
+    scenario: HARD.scenario.filter((occurrence) => occurrence.take !== "heartbeat"),
+  };
+  const shown = machineOf(bodyOf(withoutLoop, "narrated")) as NonNullable<
+    ReturnType<typeof machineOf>
+  >;
+  assert.ok(
+    shown.transitions.some((transition) => transition.id === "heartbeat"),
+    "a self-loop on a drawn state must stay drawn",
+  );
+  // `commit-in-flight` leaves to `orphaned`, which the run never occupies. That is the only exit
+  // this specimen loses, and the loop is not counted among them.
+  const mark = elisionsOf(bodyOf(withoutLoop, "narrated")).get("running");
+  assert.equal(mark?.out, 1, "the exit to the pruned state, and not the loop");
 });
 
 test("a hold says whether the move was refused or was impossible", () => {

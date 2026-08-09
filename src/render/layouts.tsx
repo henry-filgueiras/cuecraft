@@ -57,6 +57,7 @@ import {
   type ProtocolLayout,
 } from "./protocol.ts";
 import {
+  elisionsOf,
   machineOf,
   machinePlan,
   reductionOf,
@@ -66,6 +67,7 @@ import {
   type MachineLayout,
   type MachineNode,
   type MachineReduction,
+  type Elision,
 } from "./machine.ts";
 import type { AuthoredMachine } from "../presentation/machine.ts";
 import { electLayout } from "./audition.ts";
@@ -1840,6 +1842,131 @@ function Relations({
 }
 
 /** The head of a relation, built from its own last segment rather than from an SVG marker. */
+/**
+ * The edges a plate lost, as one stub per direction with the count it stands for.
+ *
+ * decision:54's counts under the title are an aggregate — they say how many transitions are missing
+ * and cannot say *where*. In `examples/leases-narrated.yaml`, `Running` draws four of its seven
+ * exits, and without this nothing on the frame says so. Omitting a state is announced in the counts;
+ * understating a state that was **kept** was announced nowhere, and that is the more damaging of the
+ * two because it is a claim about a state the picture chose to show.
+ *
+ * Four decisions, and each has a refusal behind it.
+ *
+ * **One stub per direction, not one per dropped edge.** Three separate stubs off `Running` would be
+ * three roads to nowhere and would read as topology. One stub carrying `3` is a footnote.
+ *
+ * **It carries a number.** A stub without one says "something is missing", which is the `…`
+ * decision:49 threw out of the ledger for saying less than nothing.
+ *
+ * **Horizontal, on the flanks.** Every real transition in a top-down layout arrives from above and
+ * leaves below, so a mark on the left or right cannot be misread as part of the flow. Incoming sits
+ * left and points *into* the plate; outgoing sits right and points *away*. Both arrowheads run the
+ * same direction, so the pair reads as through-flow rather than as two unrelated ornaments — and
+ * the outgoing one starts outside `node.box`, which is past any room reserved for a self-loop.
+ *
+ * **Dashed, in the topology's steel, below the weight of a real edge.** Never the accent: the one
+ * warm thing on a machine frame is occupancy, and a footnote competing with it would be answering a
+ * question nobody asked at the cost of the one the composition exists to answer.
+ */
+function ElisionStubs({
+  layout,
+  elisions,
+  opening,
+}: {
+  layout: MachineLayout;
+  elisions: ReadonlyMap<string, Elision>;
+  opening: number;
+}) {
+  const { bounds } = layout;
+  if (elisions.size === 0) return null;
+
+  const marks: {
+    key: string;
+    from: Point;
+    to: Point;
+    at: Point;
+    count: number;
+    anchor: "start" | "end";
+  }[] = [];
+  for (const node of layout.nodes) {
+    const mark = elisions.get(node.id);
+    if (mark === undefined) continue;
+    const midY = node.rect.y + node.rect.height / 2;
+    if (mark.in > 0) {
+      const tip = node.rect.x - MACHINE.stubGap;
+      marks.push({
+        key: `${node.id}-in`,
+        from: { x: tip - MACHINE.stubReach, y: midY },
+        to: { x: tip, y: midY },
+        at: { x: tip - MACHINE.stubReach - MACHINE.stubGap, y: midY },
+        count: mark.in,
+        anchor: "end",
+      });
+    }
+    if (mark.out > 0) {
+      // Outside everything already attached to this plate. `node.box` covers a self-loop's arc
+      // *and* its caption today, because `loopRoomFor` measures both — so this is belt and braces
+      // rather than the fix for the first render's crowding, which was the gap and is `stubGap`.
+      // Kept because the box's reservation is a fact about `./machine.ts` that this module should
+      // not be silently relying on.
+      const attached = layout.edges
+        .filter((edge) => edge.self && edge.from === node.id)
+        .map((edge) => edge.label.x + edge.label.width);
+      const root = Math.max(node.box.x + node.box.width, ...attached) + MACHINE.stubGap;
+      marks.push({
+        key: `${node.id}-out`,
+        from: { x: root, y: midY },
+        to: { x: root + MACHINE.stubReach, y: midY },
+        at: { x: root + MACHINE.stubReach + MACHINE.stubGap, y: midY },
+        count: mark.out,
+        anchor: "start",
+      });
+    }
+  }
+
+  return (
+    <svg
+      width={bounds.width}
+      height={bounds.height}
+      viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
+      style={{
+        position: "absolute",
+        left: bounds.x,
+        top: bounds.y,
+        overflow: "visible",
+        opacity: opening,
+      }}
+    >
+      {marks.map((mark) => (
+        <g key={mark.key}>
+          <path
+            d={`M ${mark.from.x} ${mark.from.y} L ${mark.to.x} ${mark.to.y}`}
+            fill="none"
+            stroke={withAlpha(MACHINE.edge, 0.5)}
+            strokeWidth={MACHINE.edgeStroke * 0.8}
+            strokeLinecap="round"
+            strokeDasharray="14 12"
+          />
+          <ArrowHead points={[mark.from, mark.to]} color={MACHINE.edge} opacity={0.55} />
+          <text
+            x={mark.at.x}
+            y={mark.at.y}
+            fill={withAlpha(MACHINE.edge, 0.75)}
+            fontSize={MACHINE.event}
+            fontFamily={FONT_STACK}
+            fontWeight={600}
+            textAnchor={mark.anchor === "start" ? "start" : "end"}
+            dominantBaseline="central"
+          >
+            {mark.count}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function ArrowHead({
   points,
   color,
@@ -3123,6 +3250,9 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // *body* rather than from `machine`, because `machineOf` has already pruned by the time anything
   // else sees it — the counts are the one thing that has to remember the whole declaration.
   const reduction = useMemo(() => reductionOf(scene.body), [scene.body]);
+  // Which plates lost edges. Empty for a whole-scope machine, so this costs an existing deck
+  // nothing by construction rather than by a branch (sprint:23).
+  const elisions = useMemo(() => elisionsOf(scene.body), [scene.body]);
   const fit = useMemo(
     () =>
       machine === undefined ? undefined : fitLedger(machine, reduction !== undefined),
@@ -3296,6 +3426,7 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
             attention={attention}
             heat={arrival.heat}
           />
+          <ElisionStubs layout={layout} elisions={elisions} opening={opening} />
           {layout.nodes.map((node) => (
             <StatePlate
               key={node.id}

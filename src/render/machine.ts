@@ -220,6 +220,46 @@ function reduceToRun(machine: AuthoredMachine): AuthoredMachine {
  * counts and no reserved space — and so that "is this slide reduced" is a question about presence
  * rather than about comparing two numbers.
  */
+/** How many of a state's declared transitions the slide does not draw. Zero on both counts is not
+ * reported at all — see `elisionsOf`. */
+export interface Elision {
+  readonly out: number;
+  readonly in: number;
+}
+
+/**
+ * What each surviving plate lost, so the frame can say which states it is understating.
+ *
+ * decision:54's counts under the title are an *aggregate*: they say how many transitions are
+ * missing and cannot say where. That gap is not academic — in `examples/leases-narrated.yaml`,
+ * `Running` draws four of its seven exits and nothing else on the frame says so, and a viewer
+ * reading that plate believes the machine says something it does not. Omitting a state is announced
+ * in the counts; understating a state that was *kept* was announced nowhere.
+ *
+ * **Derived from the declaration against what is drawn, never from the scope.** A whole-scope
+ * machine yields an empty map because nothing was dropped, not because a branch checked the key —
+ * so every existing deck is untouched by construction, and any future mechanism that elides an edge
+ * gets the notation for free.
+ *
+ * A self-transition counts as both leaving and arriving, exactly as `MachineNode.out` and `.in` do,
+ * so a dropped self-loop is reported twice rather than not at all.
+ */
+export function elisionsOf(body: SlideBody): ReadonlyMap<string, Elision> {
+  const marks = new Map<string, Elision>();
+  if (body.kind !== "machine") return marks;
+  const shown = machineOf(body);
+  if (shown === undefined) return marks;
+  const drawn = new Set(shown.transitions.map((transition) => transition.id));
+
+  for (const state of shown.states) {
+    const gone = body.transitions.filter((transition) => !drawn.has(transition.id));
+    const out = gone.filter((transition) => transition.from === state.id).length;
+    const arriving = gone.filter((transition) => transition.to === state.id).length;
+    if (out > 0 || arriving > 0) marks.set(state.id, { out, in: arriving });
+  }
+  return marks;
+}
+
 export function reductionOf(body: SlideBody): MachineReduction | undefined {
   if (body.kind !== "machine" || body.scope !== "narrated") return undefined;
   const shown = machineOf(body);
