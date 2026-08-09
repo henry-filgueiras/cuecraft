@@ -6,6 +6,12 @@
 # picture back. Base R only: no packages are installed, and nothing here writes to an R
 # library. If a deck ever needs a package, that is a decision, not a bootstrap step.
 #
+# It also checks for ffmpeg, because a program that hands back a *film* has to encode one
+# (decision:64) and cuecraft delegates encoding rather than implementing it. That is a check
+# rather than an install: ffmpeg is not needed to render any deck that has no temporal exhibit
+# in it, and a bootstrap that installed it unconditionally would be installing a media
+# toolchain for a checkout that may never want one.
+#
 # Safe to rerun: an R that is already present and working is verified, not reinstalled.
 #
 # See archaeology/decisions/ for why the boundary looks like this, and src/compute/r.ts
@@ -27,6 +33,14 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # --- detection ---------------------------------------------------------------------
 
 have_rscript() { command -v Rscript >/dev/null 2>&1; }
+
+have_ffmpeg() { command -v ffmpeg >/dev/null 2>&1; }
+
+# Not "is ffmpeg there" but "can it write the one thing a temporal exhibit needs": an H.264
+# MP4 a browser will decode. A build without libx264 is on PATH and fails at the encode.
+ffmpeg_works() {
+  ffmpeg -hide_banner -encoders 2>/dev/null | grep -q ' libx264 '
+}
 
 # A working Rscript, not merely one on PATH. A half-installed R — a Homebrew formula
 # whose dependencies moved, a leftover shim from an uninstalled bundle — puts the binary
@@ -119,17 +133,30 @@ main() {
 
   smoke_test
 
+  info "Checking for ffmpeg, which an animated exhibit encodes with"
+  if have_ffmpeg && ffmpeg_works; then
+    info "$(ffmpeg -version 2>&1 | head -1) at $(command -v ffmpeg)"
+  elif have_ffmpeg; then
+    warn "ffmpeg is on PATH but has no libx264 encoder.
+examples/kmeans/ will fail at the encode. On macOS: brew reinstall ffmpeg"
+  else
+    warn "no ffmpeg on PATH. Decks with a still exhibit are fine; examples/kmeans/ needs one.
+On macOS: brew install ffmpeg"
+  fi
+
   cat <<EOF
 
 $(info "R is ready")
 
   Rscript          $(command -v Rscript)
-  packages         none, deliberately — the demo is base R
+  packages         none, deliberately — the demos are base R
+  ffmpeg           $(command -v ffmpeg || echo "not installed (only animated exhibits need it)")
 
 Try it:
 
   npm run test:r                                          # the runner, against real R
   npm run render -- examples/revenue/revenue.yaml -o out/revenue.mp4
+  npm run render -- examples/kmeans/kmeans.yaml -o out/kmeans.mp4    # needs ffmpeg
 
 EOF
 }
