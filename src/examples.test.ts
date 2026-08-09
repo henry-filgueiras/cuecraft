@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import type { SlideBody } from "./presentation/body.ts";
+import { columnId, rowId } from "./presentation/exhibit.ts";
 import { parsePresentation } from "./presentation/parse.ts";
 import { repositoryRoot } from "./repository.ts";
 
@@ -406,6 +407,169 @@ test("no image is committed beside the deck that claims none is", () => {
   assert.deepEqual(entries.sort(), [
     "quarterly-revenue.R",
     "revenue.yaml",
+    "transactions.csv",
+  ]);
+});
+
+/* ----------------------------------------------------- examples/pivot/ */
+
+/**
+ * Whether the pivot deck's spoken claims are true of the CSV it ships beside.
+ *
+ * The revenue block above checks a deck whose picture cuecraft cannot read. This one checks a deck
+ * that gets **data** back, which makes the same failure both easier to commit and easier to catch:
+ * every row identity the narration reaches is derived from a cell, so a deck can be left pointing
+ * at a row that no longer exists by an edit to the transactions and nothing else.
+ *
+ * Nothing here renders anything or runs R. What is asserted is that the arithmetic the narration
+ * *states* is the arithmetic in the file, and that every `shows:` name is one the data will
+ * actually generate — which is the parse-time half of a check materialization does again for real.
+ */
+const PIVOT_DIR = join(repositoryRoot(), "examples", "pivot");
+
+function pivotTransactions(): readonly {
+  readonly region: string;
+  readonly product: string;
+  readonly quarter: number;
+  readonly revenue: number;
+}[] {
+  const [header = "", ...rows] = readFileSync(join(PIVOT_DIR, "transactions.csv"), "utf8")
+    .trim()
+    .split("\n");
+  assert.equal(header, "date,region,product,revenue");
+  return rows.map((row) => {
+    const [date = "", region = "", product = "", revenue = ""] = row.split(",");
+    const month = Number(date.slice(5, 7));
+    return {
+      region,
+      product,
+      quarter: Math.floor((month - 1) / 3) + 1,
+      revenue: Number(revenue),
+    };
+  });
+}
+
+/** The same grouping `quarterly-table.R` does, in the language the deck is written in. */
+function segments(): ReadonlyMap<string, readonly number[]> {
+  const totals = new Map<string, number[]>();
+  for (const row of pivotTransactions()) {
+    const key = `${row.region} ${row.product}`;
+    const quarters = totals.get(key) ?? [0, 0, 0, 0];
+    quarters[row.quarter - 1] = (quarters[row.quarter - 1] ?? 0) + row.revenue;
+    totals.set(key, quarters);
+  }
+  return totals;
+}
+
+test("the pivot deck says how many transactions there are, and there are", () => {
+  const spoken = readFileSync(join(PIVOT_DIR, "pivot.yaml"), "utf8");
+  assert.equal(pivotTransactions().length, 673);
+  assert.ok(
+    spoken.includes("Six hundred and seventy-three"),
+    "the deck no longer states the population it was written against",
+  );
+  assert.ok(
+    spoken.includes("Twenty-four segments"),
+    "the deck no longer states how many segments the pivot produces",
+  );
+  assert.equal(segments().size, 24);
+});
+
+test("every row the pivot deck reaches is a row the data will generate", () => {
+  const path = join(PIVOT_DIR, "pivot.yaml");
+  const deck = parsePresentation(readFileSync(path, "utf8"), path);
+  const body = deck.slides.find(
+    (slide) => slide.body.kind === "exhibit" && slide.body.key !== undefined,
+  )?.body;
+  assert.ok(body?.kind === "exhibit", "the pivot deck no longer carries a table exhibit");
+
+  // The identities materialization will generate, derived here from the raw data rather than from
+  // the program's output — so a segment renamed in the CSV fails against the deck immediately.
+  const generated = new Set([
+    ...[...segments().keys()].map((key) => rowId(key)),
+    ...["segment", "Q1", "Q2", "Q3", "Q4", "movement"].map((header) => columnId(header)),
+  ]);
+  for (const name of body.shows) {
+    assert.ok(
+      generated.has(name),
+      `${name} is shown and the data generates no such identity`,
+    );
+  }
+
+  // And the key column is one the program writes, spelled the way the deck spells it.
+  assert.equal(body.key, "segment");
+});
+
+test("the pivot deck's reading of the regional chart is what the data does", () => {
+  const byRegion = new Map<string, number[]>();
+  for (const row of pivotTransactions()) {
+    const quarters = byRegion.get(row.region) ?? [0, 0, 0, 0];
+    quarters[row.quarter - 1] = (quarters[row.quarter - 1] ?? 0) + row.revenue;
+    byRegion.set(row.region, quarters);
+  }
+  const at = (region: string, quarter: number): number =>
+    byRegion.get(region)?.[quarter - 1] ?? 0;
+
+  // "West opened the year as the largest region." / "It closed the year slightly smaller."
+  const openers = [...byRegion].map(([region]) => [region, at(region, 1)] as const);
+  assert.equal(openers.sort((a, b) => b[1] - a[1])[0]?.[0], "West");
+  assert.ok(at("West", 4) < at("West", 1));
+
+  // "South opened as the smallest by some distance." / "It closed level with West."
+  assert.equal(openers.at(-1)?.[0], "South");
+  assert.ok(Math.abs(at("South", 4) - at("West", 4)) / at("West", 4) < 0.05);
+
+  // "It also wrote a name onto each of the sixteen bars."
+  assert.equal(byRegion.size * 4, 16);
+});
+
+test("the pivot deck's reading of the table is what the segments do", () => {
+  const totals = [...segments()].map(
+    ([key, quarters]) => [key, quarters, quarters.reduce((a, b) => a + b, 0)] as const,
+  );
+  const ordered = [...totals].sort((a, b) => b[2] - a[2]);
+
+  // "The largest is East's Fathom line, and it grew all year."
+  const [largest] = ordered;
+  assert.equal(largest?.[0], "East Fathom");
+  assert.ok((largest?.[1][3] ?? 0) > (largest?.[1][0] ?? 0));
+
+  // "West's Cirrus line lost two thirds of its revenue, and it is twelve rows down."
+  const cirrus = ordered.findIndex(([key]) => key === "West Cirrus");
+  assert.equal(cirrus + 1, 12, "West Cirrus is no longer the twelfth row");
+  const west = ordered[cirrus]?.[1] ?? [];
+  assert.ok(
+    (west[3] ?? 0) / (west[0] ?? 1) < 0.4,
+    "West Cirrus no longer loses two thirds",
+  );
+
+  // "South's Ember line is further down still, and it more than quadrupled."
+  const ember = ordered.findIndex(([key]) => key === "South Ember");
+  assert.ok(ember > cirrus, "South Ember is no longer further down than West Cirrus");
+  const south = ordered[ember]?.[1] ?? [];
+  assert.ok((south[3] ?? 0) / (south[0] ?? 1) > 4, "South Ember no longer quadruples");
+
+  // The claim the whole slide rests on: the two rows narration goes and finds are not on screen
+  // when it asks for them. Seven is the most a register ever shows in this deck's room, so a row
+  // past it is offscreen whatever the subtitle band turns out to cost.
+  assert.ok(cirrus >= 7, "West Cirrus is now visible without the table moving");
+  assert.ok(ember >= 7, "South Ember is now visible without the table moving");
+});
+
+test("no artifact is committed beside the pivot deck either", () => {
+  const entries = readdirSync(PIVOT_DIR);
+  const artifacts = entries.filter((entry) =>
+    /\.(png|jpe?g|gif|webp|svg|pdf)$/i.test(entry),
+  );
+  assert.deepEqual(
+    artifacts,
+    [],
+    "a committed artifact in examples/pivot/ makes the deck's central claim false",
+  );
+  assert.deepEqual(entries.sort(), [
+    "pivot.yaml",
+    "quarterly-chart.R",
+    "quarterly-table.R",
     "transactions.csv",
   ]);
 });

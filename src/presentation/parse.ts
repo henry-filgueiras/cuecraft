@@ -1293,6 +1293,7 @@ function bodyOf(
       source: exhibit.source,
       inputs: exhibit.inputs,
       shows: exhibit.shows,
+      ...(exhibit.key === undefined ? {} : { key: exhibit.key }),
     };
   }
   if (slide.formula !== undefined) {

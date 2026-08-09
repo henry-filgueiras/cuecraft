@@ -237,7 +237,60 @@ no duration ([`decision:57`](archaeology/decisions/),
 
 Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
 
-### 7. Self-demo — the practical core
+### 7. Evidence, addressed — a table R computed, and a chart that names its own bars
+
+<!-- VIDEO: pivot -->
+
+<!-- Not yet attached. See runme/upload-pivot.md — drop out/upload/pivot.mp4 on the blank line
+     above this comment using GitHub's web editor, then delete this comment. -->
+
+**Source: [`examples/pivot/`](examples/pivot/)** — a 673-row CSV, two R programs and a 125-line
+deck, for 2:12 of video.
+
+The other half of the R experiment, and the one where cuecraft stops receiving pictures. Two slides
+in this deck are exhibits and neither says what kind:
+
+```yaml
+exhibit:
+  run: examples/pivot/quarterly-chart.R # declares an SVG -> a picture, addressed by element
+  with: { transactions: examples/pivot/transactions.csv }
+  shows: [west-q1, west-q4, south-q1, south-q4]
+```
+
+```yaml
+exhibit:
+  run: examples/pivot/quarterly-table.R # declares a CSV -> a table cuecraft draws itself
+  with: { transactions: examples/pivot/transactions.csv }
+  key: segment
+  shows: [row-east-fathom, row-west-cirrus, row-south-ember, column-q4]
+```
+
+**The chart names its own bars.** `quarterly-chart.R` writes `data-cuecraft="south-q4"` onto each of
+the sixteen rectangles it draws, so cuecraft addresses the shape rather than a rectangle laid over
+it — and when the narration moves on, the picture returns to exactly what R wrote, because cuecraft
+never changed it in the first place ([`decision:59`](archaeology/decisions/)).
+
+**The table is not a picture at all.** `quarterly-table.R` derives a quarter from each date, derives
+a segment from each region and product, groups, aggregates and pivots 673 transactions into 24 rows,
+and writes a CSV. Cuecraft reads it, measures the columns, sets the type, and generates an identity
+for every row from the data. Six rows fit; there are twenty-four.
+
+So when the narration says
+
+```yaml
+- speech: "South's Ember line is further down still, and it more than quadrupled."
+  activates: row-south-ember
+```
+
+about a row that is fifteenth in a window showing six — **the table goes and gets it.** It moves its
+viewport by the least it can, brings the row into view, emphasises it, and lets it go when the
+sentence ends. There is no scroll instruction in the deck and there is no key that could express
+one: the deck names a row, and the exhibit owns whatever satisfying that costs
+([`decision:60`](archaeology/decisions/)).
+
+Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
+
+### 8. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 
@@ -374,12 +427,14 @@ npm run bootstrap:tts    # once: ~321 MB of Kokoro weights, SHA-256 verified
 npm run render -- examples/observatory.yaml -o out/observatory.mp4
 ```
 
-One deck needs a second bootstrap. `examples/revenue/` hands a computation to R, so it needs an R:
+Two decks need a second bootstrap. `examples/revenue/` and `examples/pivot/` hand a computation to
+R, so they need an R:
 
 ```bash
 npm run bootstrap:r      # once: installs R through Homebrew if it is missing, then verifies
 
 npm run render -- examples/revenue/revenue.yaml -o out/revenue.mp4
+npm run render -- examples/pivot/pivot.yaml -o out/pivot.mp4
 ```
 
 ```
@@ -560,9 +615,9 @@ and the picture it produces becomes the slide's whole visual.
 **There is no `image:` key.** A deck cannot name a PNG in the checkout and show it, by decision
 rather than by omission ([`decision:55`](archaeology/decisions/)): a slide that could display a
 checked-in image could display a stale one, and the whole claim an exhibit makes is that the
-picture was computed from the source data on this run. `run:`, `with:` and `shows:` are the only
-three keys, every path must be inside the checkout, and there is nothing to write about size,
-position, colour, format or output filename.
+artifact was computed from the source data on this run. `run:`, `with:`, `shows:` and `key:` are
+the only four keys, every path must be inside the checkout, and there is nothing to write about
+size, position, colour, format or output filename.
 
 **What the program is told**, through its environment — it parses nothing:
 
@@ -590,11 +645,18 @@ cannot set a size or a colour" true through the escape hatch rather than only up
 output that was not declared does not exist. The file is named relative to the output directory, so
 a declaration cannot reach outside it. Every other line of stdout is ordinary R diagnostics —
 `print()` and `message()` keep working, and what they said is quoted back if the run fails. A
-declared file is checked all the way to its bytes: it must exist, be a file, be non-empty, and
-begin with a PNG signature and header, whose width and height cuecraft reads back out.
+declared file is checked all the way to its bytes: it must exist, be a file, be non-empty, and be
+the thing it claims to be.
 
-A slide shows one picture, so a program declares exactly one output. PNG is the only type; SVG is
-parked with its reasons attached ([`idea:24`](archaeology/ideas/)).
+A slide shows one thing, so a program declares exactly one output. There are three types it may be,
+and **the deck says which it expects nowhere** — the program decides, and cuecraft picks the
+composition from what came back:
+
+```
+png   pixels. Cuecraft places them and can say nothing about what is in them.
+svg   geometry that carries its own names, so narration can reach a part of it.
+csv   not a picture at all. Structured data cuecraft lays out itself, as a table.
+```
 
 **Talking into the picture.** A program may also say _where_ it drew something, in fractions of the
 image it produced:
@@ -634,6 +696,47 @@ picture shows; the slide shows "latin-america", which the program did not draw; 
 Narration reaches whatever the program was willing to name, and nothing finer. It cannot reach the
 third bar unless the program declares the third bar
 ([`decision:57`](archaeology/decisions/)).
+
+**A drawing carries its own names.** A raster needs a region beside it because it cannot hold
+anything; an SVG can. A program writes `data-cuecraft="south-q4"` onto the element it drew — in base
+R, by drawing in a colour nobody else uses and rewriting its own output afterwards — and cuecraft
+_discovers_ the names instead of being handed rectangles:
+
+```yaml
+exhibit:
+  run: examples/pivot/quarterly-chart.R
+  with: { transactions: examples/pivot/transactions.csv }
+  shows: [west-q1, west-q4, south-q1, south-q4]
+```
+
+Emphasis then inverts: instead of veiling everything around a box, the other named elements recede
+and the one being talked about lifts, while the axes and labels — which the program never named —
+carry on. **Nothing is ever restored**, because nothing is ever changed: the markup is inlined once
+and the emphasis is a stylesheet computed from the frame, so at rest there is no rule at all and the
+element is byte for byte what R wrote ([`decision:59`](archaeology/decisions/)).
+
+**A CSV becomes a table cuecraft draws.** The program groups, aggregates and pivots, and hands back
+data rather than pixels. Cuecraft measures the columns, sets the type, bounds the viewport and
+generates an identity for every row and column from the data itself:
+
+```yaml
+exhibit:
+  run: examples/pivot/quarterly-table.R
+  with: { transactions: examples/pivot/transactions.csv }
+  key: segment
+  shows: [row-east-fathom, row-west-cirrus, row-south-ember, column-q4]
+```
+
+`key:` names the column that identifies a row, and it is the only new vocabulary — it does not
+select, filter, order or compute. **`activates:` addresses identities and will never take a query**:
+no `#id=`, no predicate, no selector, no SQL. An anchor resolves at parse time against a list of
+names, and a query would have to be evaluated against data that does not exist yet.
+
+The interesting part is what happens when the row is not on screen. Narration says
+`activates: row-south-ember` and means _pay attention to that row_; the table works out that it has
+to move, and by how much, and does it — then emphasises the row, then returns it to ground when the
+narration leaves. Nothing in the deck says to scroll, and there is no key that could
+([`decision:60`](archaeology/decisions/)).
 
 **There is no cache.** The program runs on every render. Correct invalidation would have to cover
 the source, every input, R's version and whatever packages it has, and getting it wrong shows a

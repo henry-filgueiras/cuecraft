@@ -53,24 +53,97 @@ export interface ExhibitRegion {
   readonly bottom: number;
 }
 
-/** What materialization put where, once the program has actually run. */
-export interface ExhibitResource {
-  /** Relative to the render workspace's public directory, for `staticFile()`. */
-  readonly src: string;
+/** What every materialized exhibit carries, whatever the program handed back. */
+interface ExhibitResourceCommon {
   /** Which output the program declared. Carried so a diagnostic can name it. */
   readonly name: string;
-  readonly width: number;
-  readonly height: number;
   readonly bytes: number;
-  /** In the order the slide declared them, which is the order anchors resolve against. */
-  readonly regions: readonly ExhibitRegion[];
 }
 
-export const EXHIBIT_KEYS = ["run", "with", "shows"] as const;
+/**
+ * What materialization put where, once the program has actually run.
+ *
+ * Three shapes, and **the deck chooses none of them**. A slide says `run:` and `with:`; what comes
+ * back decides whether it is a picture, a drawing or a table, and therefore which composition draws
+ * it. That is decision:10's rule reaching one step further out than it ever has: composition is
+ * chosen from the shape of the content, and here the content's shape is not known until a
+ * subprocess has finished.
+ *
+ * The three differ in exactly one respect that matters — **how much of the artifact cuecraft can
+ * see** — and they are ordered by it:
+ *
+ *     picture   nothing. A rectangle, plus rectangles the program said things were in.
+ *     drawing   the names the program wrote into it, and no geometry.
+ *     table     all of it. The first exhibit cuecraft lays out itself.
+ */
+export type ExhibitResource =
+  | (ExhibitResourceCommon & {
+      readonly kind: "picture";
+      /** Relative to the render workspace's public directory, for `staticFile()`. */
+      readonly src: string;
+      readonly width: number;
+      readonly height: number;
+      /** In the order the slide declared them, which is the order anchors resolve against. */
+      readonly regions: readonly ExhibitRegion[];
+    })
+  | (ExhibitResourceCommon & {
+      readonly kind: "drawing";
+      /**
+       * The markup itself, carried in the timeline rather than fetched from `public/`.
+       *
+       * `staticFile()` and `<Img>` put an SVG in secure static mode, where cuecraft's own stylesheet
+       * cannot reach a single element in it — which is the whole point of this format (idea:24). The
+       * alternative to inlining is reading the file at render time behind `delayRender`, which makes
+       * every still asynchronous to buy nothing: a specimen already carries a whole quoted source
+       * file through the timeline, and a cairo SVG is the same order of size.
+       */
+      readonly markup: string;
+      readonly width: number;
+      readonly height: number;
+      /**
+       * What narration can reach, in the order the slide declared it — so an anchor's element
+       * index means the same thing here as it does for every other body.
+       */
+      readonly elements: readonly string[];
+      /**
+       * Every name in the file, which is usually many more.
+       *
+       * The two lists are different questions and the first rendered frame is what taught the
+       * difference. `elements` is *addressable*: four bars this deck talks about. `tagged` is
+       * *drawn*: all sixteen. Receding only the addressable ones left the twelve nobody had
+       * mentioned at full brightness beside the one being emphasized, so the frame said "these
+       * thirteen matter" — which is the opposite of what the sentence said.
+       */
+      readonly tagged: readonly string[];
+    })
+  | (ExhibitResourceCommon & {
+      readonly kind: "table";
+      readonly table: ExhibitTable;
+    });
+
+/**
+ * A table a program computed, with the identities narration can address it by.
+ *
+ * Derived at materialization from the CSV and the deck's `key:`, so that nothing downstream ever
+ * re-derives an identity from a cell — two places that agree about a slug are one edit away from
+ * disagreeing about it.
+ */
+export interface ExhibitTable {
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly string[])[];
+  /** Which column identifies a row. An index into `columns`, resolved from the deck's `key:`. */
+  readonly keyColumn: number;
+  /** `row-<key>` per row, in row order. Parallel to `rows`. */
+  readonly rowIds: readonly string[];
+  /** `column-<header>` per column, in column order. Parallel to `columns`. */
+  readonly columnIds: readonly string[];
+}
+
+export const EXHIBIT_KEYS = ["run", "with", "shows", "key"] as const;
 
 export const EXHIBIT_HINT =
   "{ run: <path to an .R program>, with: { <name>: <path to an input> }, " +
-  "shows: [<identity the program will declare>] }";
+  "shows: [<identity the program will declare>], key: <column that identifies a row> }";
 
 /** What cuecraft can run. One entry, and the extension is how a deck says which. */
 export const EXHIBIT_PROGRAM_EXTENSIONS = [".R", ".r"] as const;
@@ -111,6 +184,56 @@ export interface AuthoredExhibit {
    * this existed.
    */
   readonly shows: readonly string[];
+  /**
+   * Which column of a computed table identifies a row, when the program hands one back.
+   *
+   * The one piece of vocabulary this round adds, and it is deliberately a *name* rather than a
+   * mechanism. It does not select rows, filter them, order them or compute anything; it says which
+   * column the deck intends to address rows by, which is the same statement `shows:` makes one
+   * level down. Guessing it was the alternative — "the first column is the key" is true of every
+   * pivot R will ever write — and a guess that is right most of the time produces identities that
+   * silently change meaning when a program's output gains a column.
+   *
+   * Authored rather than declared by the program, for decision:57's reason: reading the YAML should
+   * tell you what the slide can be asked about without running R. Absent on every exhibit that
+   * hands back a picture, and refused at materialization if the CSV has no such column.
+   */
+  readonly key?: string;
+}
+
+/**
+ * Turning a cell or a header into something `activates:` can name.
+ *
+ * Lowercased, non-alphanumerics collapsed to hyphens, and prefixed by what it is. The prefix is
+ * doing real work: `row-west` and `column-west` are different objects on the same table, and a
+ * scheme without it would make a key column named after a header ambiguous.
+ *
+ * Deliberately lossy and deliberately checked. Two rows whose keys slug to the same identity are a
+ * refusal at materialization rather than a silently merged pair, because the alternative is
+ * narration reaching one row and lighting another.
+ */
+export function rowId(key: string): string | undefined {
+  const stem = slug(key);
+  return stem === "" ? undefined : `row-${stem}`;
+}
+
+export function columnId(header: string): string | undefined {
+  const stem = slug(header);
+  return stem === "" ? undefined : `column-${stem}`;
+}
+
+/**
+ * A cell reduced to the part of it that can be a name.
+ *
+ * Empty when nothing survived — a key cell of `—` or `2024/Q1 (est.)` reduced to punctuation — and
+ * that emptiness is a refusal rather than a fallback, because a row that cannot be named is a row
+ * narration would appear to be able to reach and could not.
+ */
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 export interface ExhibitIssue {
@@ -228,6 +351,19 @@ export function resolveExhibit(
     }
   }
 
+  let key: string | undefined;
+  const declaredKey = record["key"];
+  if (declaredKey !== undefined) {
+    if (typeof declaredKey !== "string" || declaredKey.trim() === "") {
+      issues.push({
+        path: ["key"],
+        message: "must name a column of the table the program will write",
+      });
+    } else {
+      key = declaredKey.trim();
+    }
+  }
+
   if (issues.length > 0) return { issues };
 
   // Read last, so a deck with two mistakes reports both rather than failing on the filesystem
@@ -244,7 +380,16 @@ export function resolveExhibit(
     };
   }
 
-  return { exhibit: { program: program as string, source, inputs, shows }, issues: [] };
+  return {
+    exhibit: {
+      program: program as string,
+      source,
+      inputs,
+      shows,
+      ...(key === undefined ? {} : { key }),
+    },
+    issues: [],
+  };
 }
 
 /**

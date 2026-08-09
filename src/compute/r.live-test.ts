@@ -237,9 +237,80 @@ test("the shipped demo program runs, against the shipped data", async () => {
 
   assert.equal(result.outputs.length, 1);
   assert.equal(result.outputs[0]?.name, "quarterly-revenue");
-  assert.equal(result.outputs[0]?.width, FRAME.width);
+  const chart = result.outputs[0];
+  assert.equal(chart?.type === "png" ? chart.width : undefined, FRAME.width);
   // The program reports what it actually read, so the deck's claims have something to check.
   assert.match(result.notes, /468 transactions, 4 regions, 4 quarters/);
+});
+
+/**
+ * The two formats sprint:28 added, against the interpreter that has to produce them.
+ *
+ * `./csv.test.ts` and `./svg.test.ts` prove cuecraft can *read* a good file. What only a real R can
+ * establish is that base R can *write* one — in particular that the tagging technique works against
+ * whatever cairo this machine has, which is the finding decision:57's spike said was impossible and
+ * this round says is not.
+ */
+
+test("the showcase's table program runs, and hands back a table", async () => {
+  const result = await runR({
+    source: await readFile(
+      join(repositoryRoot(), "examples", "pivot", "quarterly-table.R"),
+      "utf8",
+    ),
+    label: "examples/pivot/quarterly-table.R",
+    outputDir: join(workspace, "pivot-table"),
+    inputs: [
+      {
+        name: "transactions",
+        path: join(repositoryRoot(), "examples", "pivot", "transactions.csv"),
+      },
+    ],
+    frame: FRAME,
+  });
+
+  const output = result.outputs[0];
+  assert.equal(output?.type, "csv");
+  assert.ok(output?.type === "csv");
+  assert.deepEqual(output.table.columns, ["segment", "Q1", "Q2", "Q3", "Q4", "movement"]);
+  assert.equal(output.table.rows.length, 24);
+  // Quoted by write.csv, and unquoted by the reader: what comes back is the value, not the file.
+  assert.equal(output.table.rows[0]?.[0], "East Fathom");
+  assert.match(result.notes, /673 transactions in, 24 segments out/);
+});
+
+test("the showcase's chart program runs, and every bar it drew has a name", async () => {
+  const result = await runR({
+    source: await readFile(
+      join(repositoryRoot(), "examples", "pivot", "quarterly-chart.R"),
+      "utf8",
+    ),
+    label: "examples/pivot/quarterly-chart.R",
+    outputDir: join(workspace, "pivot-chart"),
+    inputs: [
+      {
+        name: "transactions",
+        path: join(repositoryRoot(), "examples", "pivot", "transactions.csv"),
+      },
+    ],
+    frame: FRAME,
+  });
+
+  const output = result.outputs[0];
+  assert.equal(output?.type, "svg");
+  assert.ok(output?.type === "svg");
+  assert.equal(output.elements.length, 16, "four regions by four quarters");
+  assert.ok(output.elements.includes("south-q4"));
+
+  // The sentinel is an implementation detail of the program and must not survive into the film:
+  // a leftover one is a bar drawn in pure red. The program refuses rather than shipping it, and
+  // this is the check that the refusal never has to fire.
+  const markup = await readFile(output.path, "utf8");
+  assert.ok(
+    !markup.includes("rgb(100%, 0%,"),
+    "a tagged element was left as its sentinel",
+  );
+  assert.match(markup, /data-cuecraft="west-q1" fill="/);
 });
 
 async function failing(request: Parameters<typeof runR>[0]): Promise<RError> {

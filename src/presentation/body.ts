@@ -133,6 +133,8 @@ export type SlideBody =
       readonly inputs: readonly AuthoredExhibitInput[];
       /** The identities the picture will have. These are what narration can reach — decision:57. */
       readonly shows: readonly string[];
+      /** Which column identifies a row, when what comes back is a table rather than a picture. */
+      readonly key?: string;
       /**
        * What the program produced, and where it landed.
        *

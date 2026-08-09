@@ -42,7 +42,8 @@ export type LayoutArchetype =
   | "figure"
   | "formula"
   | "series"
-  | "exhibit";
+  | "exhibit"
+  | "register";
 
 export interface SlideContent {
   readonly title: string;
@@ -118,6 +119,9 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   whose content cuecraft has never looked inside: it places the picture and nothing else, because
  *   everything a composition normally decides — what is emphasized, what is recessive, what wraps —
  *   was decided on the far side of a process boundary by the program that drew it.
+ * - **register** — a table a foreign program computed. The only archetype whose *content* came
+ *   from outside and whose *layout* did not: cuecraft measures the columns, sets the type, bounds
+ *   the viewport, and moves it when narration names a row that is not on screen.
  * - **figure** — the compilation's own facts. One archetype rather than one per kind, because
  *   `timing` and `anchors` are two shapes of the same role — "show what the compiler worked out"
  *   — and the role picks the composition while the shape decides within it, which is the rule
@@ -135,7 +139,13 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   on the right.
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
-  if (content.body.kind === "exhibit") return "exhibit";
+  // The only archetype in this function chosen from something the *deck did not write*. An
+  // exhibit's program decides whether what comes back is a picture or a table, and therefore which
+  // composition draws it — decision:10's rule reaching one step past the source, because the shape
+  // of this content is not knowable until a subprocess has finished.
+  if (content.body.kind === "exhibit") {
+    return content.body.resource?.kind === "table" ? "register" : "exhibit";
+  }
   if (content.body.kind === "figure") return "figure";
   if (content.body.kind === "formula") return "formula";
   if (content.body.kind === "series") return "series";

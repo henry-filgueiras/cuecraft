@@ -1,0 +1,125 @@
+# The deck where cuecraft stops receiving pixels.
+#
+#   cuecraft render examples/pivot/pivot.yaml -o out/pivot.mp4
+#
+# Two slides in here are exhibits, and they are the two halves of the same idea.
+#
+#   quarterly-chart.R  draws an SVG and writes a name onto each bar it draws, so narration
+#                      reaches the bar itself rather than a rectangle laid over it.
+#   quarterly-table.R  draws nothing at all. It groups, aggregates and pivots 673 transaction
+#                      rows into 24, hands back a CSV, and cuecraft lays the table out.
+#
+# Neither slide says which of those will happen. There is no `svg:` key and no `table:` key —
+# the program decides by what it declares, and cuecraft picks the composition from what came
+# back. Edit transactions.csv and rerender: both slides change and nothing else does.
+
+title: "Evidence, addressed"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1100ms
+  subtitles: true
+
+slides:
+  - slide:
+      title: "Six hundred and seventy-three sales, and no summary of them"
+
+    say:
+      - "A date, a region, a product, and an amount."
+      - "Nothing in that file says which quarter a sale fell in,"
+      - "and nothing in it says how a region did over the year."
+      - pause: 400ms
+      - "Both of those are arithmetic. Neither of them is a presentation."
+
+  # An exhibit whose program returns an SVG -> the picture, addressed element by element.
+  - slide:
+      title: "A chart that names its bars"
+      exhibit:
+        run: examples/pivot/quarterly-chart.R
+        with:
+          transactions: examples/pivot/transactions.csv
+        shows: [west-q1, west-q4, south-q1, south-q4]
+
+    say:
+      - "While this video was being compiled, R read those transactions and drew this."
+      - pause: 350ms
+      - "It also wrote a name onto each of the sixteen bars, inside the file."
+      - "So the narration can point at one."
+      - pause: 500ms
+      - speech: "West opened the year as the largest region."
+        activates: west-q1
+      - speech: "It closed the year slightly smaller."
+        activates: west-q4
+      - pause: 300ms
+      - speech: "South opened as the smallest by some distance."
+        activates: south-q1
+      - speech: "It closed level with West."
+        activates: south-q4
+      - pause: 400ms
+      - "Cuecraft never looked at a pixel of that. It was told four names and it lit four shapes."
+
+  # The deck quoting itself -> specimen. What the YAML says about the next slide, which is
+  # four lines and none of them is a layout.
+  - slide:
+      title: "What this file says about the table"
+      code:
+        file: examples/pivot/pivot.yaml
+        slide: "Where the year actually went"
+        opens: "exhibit:"
+        marks:
+          - id: program
+            line: "run:"
+          - id: key
+            line: "key:"
+
+    say:
+      - speech: "A program to run."
+        activates: program
+      - speech: "And which column of whatever it writes identifies a row."
+        activates: key
+      - pause: 350ms
+      - "That is the whole of it. No columns, no widths, no sizes, and no way to say how many rows fit."
+      - "The names underneath are the rows this presentation is going to talk about."
+
+  # An exhibit whose program returns a CSV -> the table, laid out by cuecraft.
+  - slide:
+      title: "Where the year actually went"
+      exhibit:
+        run: examples/pivot/quarterly-table.R
+        with:
+          transactions: examples/pivot/transactions.csv
+        key: segment
+        shows:
+          - row-east-fathom
+          - row-west-cirrus
+          - row-south-ember
+          - column-q4
+
+    say:
+      - "This is not a picture. R handed back a comma-separated file, and cuecraft set the table."
+      - pause: 400ms
+      - "Twenty-four segments, and a slide holds the first few of them."
+      - speech: "The largest is East's Fathom line, and it grew all year."
+        activates: row-east-fathom
+      - pause: 300ms
+      - "But the region that fell was West, and nothing on screen says why."
+      - speech: "West's Cirrus line lost two thirds of its revenue, and it is twelve rows down."
+        activates: row-west-cirrus
+      - pause: 300ms
+      - "The narration did not ask the table to scroll. It asked for a row."
+      - speech: "South's Ember line is further down still, and it more than quadrupled."
+        activates: row-south-ember
+      - pause: 400ms
+      - speech: "Read the last quarter and the whole year is in one column."
+        activates: column-q4
+
+  - slide:
+      title: "Neither of those was a picture cuecraft was handed"
+
+    say:
+      - "One was geometry with names in it. The other was a file with numbers in it."
+      - pause: 350ms
+      - "In both cases the computation happened somewhere that is good at computation,"
+      - "and the attention happened somewhere that is good at attention."
+      - pause: 450ms
+      - "A row is an object a sentence can point at, and the exhibit works out what pointing at it costs."

@@ -352,6 +352,25 @@ export const EXHIBIT = {
   veil: 0.55,
   /** How the veil moves. Frames at 30fps; the *hold* between them is derived, never set here. */
   focus: { rise: 12, fall: 26, move: 12 },
+  /**
+   * The same emphasis on a picture that can recolour part of itself.
+   *
+   * A raster leaves only subtraction: dim two thirds of the frame, because the one third cannot be
+   * lifted. An SVG can be reached element by element, so the treatment inverts — **what recedes is
+   * the other named things, not the whole picture**, and the attended one gains rather than merely
+   * surviving. The axes, gridlines and labels are untouched, because they were never named and a
+   * chart whose axis dims while its bars do not is answering a question nobody asked.
+   *
+   * Both numbers are pure CSS over markup that is never modified, which is why ground state is not
+   * something this restores. At strength zero there is no rule at all, so the element is byte for
+   * byte what the program drew — see the round trip in `./drawing.ts`.
+   */
+  drawing: {
+    /** How far an unattended named element gives way. Recessive, never hidden (`anchor.ts`). */
+    recede: 0.62,
+    /** How much brighter the attended one gets. Small: it is already the only thing at full alpha. */
+    lift: 0.28,
+  },
   /** The mark a reached region keeps afterwards. Quiet on purpose; the moment already happened. */
   markAlpha: 0.5,
   markWidth: 3,
@@ -1092,6 +1111,43 @@ export const FIGURE = {
  * characters in ordinary prose runs slightly wider relative to the em.
  */
 export const BODY_CHAR_WIDTH = 0.52;
+
+/**
+ * How a table a program computed is set.
+ *
+ * The first exhibit whose type cuecraft chooses, which is why there is a ladder here and not in
+ * `EXHIBIT`: a picture is handed a box and fills it, and a table has to be *set* into one.
+ *
+ * The ladder tops out at 30 rather than at heading scale because a table is read as a block — a
+ * viewer scans a column, they do not read a row aloud — and it bottoms out at 20 because below that
+ * a value is not legible from a room at 1080p, which is the same floor `fitIndex` works to.
+ */
+export const REGISTER = {
+  sizes: [30, 28, 26, 24, 22, 20],
+  lineHeight: 1.3,
+  /** Two, and the second one has to be earned. A three-line cell is a paragraph in a table. */
+  maxLines: 2,
+  padX: 18,
+  padY: 12,
+  /** Below eight characters a column holds the beginning of a value rather than a value. */
+  minChars: 8,
+  charWidth: BODY_CHAR_WIDTH,
+  headerGap: 10,
+  /**
+   * What a row being talked about looks like, and what the rest of the table does about it.
+   *
+   * Additive rather than subtractive, which a table can afford and a raster cannot: the row gains a
+   * wash and its type comes up to full, and the rows around it give up a little contrast rather
+   * than being pushed into the dark. `anchor.ts`'s rule holds — a recessive row is still a row
+   * somebody can read, because the table's whole claim is that the numbers are checkable.
+   */
+  rowWash: 0.18,
+  columnWash: 0.1,
+  /** How far an unattended row recedes while another is being talked about. */
+  recede: 0.34,
+  /** The rule down the left edge of the row in focus. */
+  markWidth: 4,
+} as const;
 
 /**
  * How a numbered row and a staircase stage are set, and how tight either may get.

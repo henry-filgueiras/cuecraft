@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { parsePresentation, PresentationError } from "./parse.ts";
-import { pathProblem, resolveExhibit } from "./exhibit.ts";
+import { columnId, pathProblem, resolveExhibit, rowId } from "./exhibit.ts";
 
 /**
  * What a deck may say about a computation, and everything it may not.
@@ -310,3 +310,69 @@ function failure(run: () => unknown): string {
   }
   throw new assert.AssertionError({ message: "expected a failure" });
 }
+
+/* ------------------------------------------------- key, and the identities derived from it */
+
+/**
+ * The one key sprint:28 added, and the smallest thing it could be.
+ *
+ * `key:` names a column. It does not select, filter, order, or compute, and the tests below exist
+ * as much to record that as to check it: the moment this accepts anything with an operator in it,
+ * `activates:` has acquired a query language and decision:60's central refusal is gone.
+ */
+
+test("a key names the column a deck intends to address rows by", () => {
+  const { exhibit, issues } = resolveExhibit(
+    { run: "examples/revenue/quarterly-revenue.R", key: "account_id" },
+    read,
+  );
+  assert.deepEqual(issues, []);
+  assert.equal(exhibit?.key, "account_id");
+});
+
+test("a key is absent on an exhibit that never gets a table, and that is not an error", () => {
+  const { exhibit, issues } = resolveExhibit(
+    { run: "examples/revenue/quarterly-revenue.R" },
+    read,
+  );
+  assert.deepEqual(issues, []);
+  assert.equal(exhibit?.key, undefined);
+  // Whether one was needed is a question for materialization, which is the first moment anybody
+  // knows whether a table came back.
+  assert.ok(!("key" in (exhibit ?? {})));
+});
+
+test("an empty key is refused rather than treated as absent", () => {
+  const { issues } = resolveExhibit(
+    { run: "examples/revenue/quarterly-revenue.R", key: "   " },
+    read,
+  );
+  assert.deepEqual(issues, [
+    { path: ["key"], message: "must name a column of the table the program will write" },
+  ]);
+});
+
+test("an exhibit still takes four keys and no fifth", () => {
+  const { issues } = resolveExhibit(
+    { run: "examples/revenue/quarterly-revenue.R", columns: ["a", "b"] },
+    read,
+  );
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.message ?? "", /unknown key "columns"/);
+  assert.match(issues[0]?.message ?? "", /allowed: run, with, shows, key/);
+});
+
+test("a row identity is the key cell reduced to a name, and a column identity its header", () => {
+  assert.equal(rowId("Asia Pacific"), "row-asia-pacific");
+  assert.equal(rowId("West / Cirrus"), "row-west-cirrus");
+  assert.equal(rowId("  2025 Q1  "), "row-2025-q1");
+  assert.equal(columnId("Revenue (thousands)"), "column-revenue-thousands");
+});
+
+test("a cell with nothing nameable in it has no identity at all", () => {
+  // Absent rather than `row-`, because a row that cannot be named is one narration would appear
+  // to be able to reach and could not. Materialization turns this into a refusal.
+  assert.equal(rowId("—"), undefined);
+  assert.equal(rowId(""), undefined);
+  assert.equal(columnId("!!"), undefined);
+});

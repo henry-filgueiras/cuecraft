@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { open } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+
+import { readCsv, type CsvTable } from "./csv.ts";
+import { readSvg } from "./svg.ts";
 
 /**
  * Handing one computation to R, and taking back what it declared.
@@ -64,8 +67,23 @@ export const RSCRIPT = "Rscript";
  */
 export const RSCRIPT_ARGS = ["--vanilla", "-"] as const;
 
-/** The one output type this round validates. A second format needs a reason the first did not. */
-export const R_OUTPUT_TYPES = ["png"] as const;
+/**
+ * What cuecraft will take back, and the shape of the list is the argument.
+ *
+ * decision:56 shipped one entry and said adding another was "a line in a list plus a validator".
+ * Two rounds later that turned out to be exactly true, and the two that arrived are not variations
+ * of the first:
+ *
+ *     png   pixels. cuecraft places them and can say nothing about what is in them.
+ *     svg   geometry that can carry its own names, so cuecraft can address a *part* of it.
+ *     csv   not a picture at all. Structured data cuecraft lays out itself.
+ *
+ * The third is the interesting one. Everything decision:55 refuses is about pixels — a stale image,
+ * a checked-in asset, a composition cuecraft cannot read — and none of those objections survive the
+ * artifact being data. So an exhibit's evidence no longer has to be something cuecraft cannot
+ * understand; it has to be something cuecraft did not *compute*.
+ */
+export const R_OUTPUT_TYPES = ["png", "svg", "csv"] as const;
 export type ROutputType = (typeof R_OUTPUT_TYPES)[number];
 
 /** Why a run did not produce a result. Distinct kinds because the fixes are distinct. */
@@ -147,17 +165,42 @@ export interface RRequest {
   readonly timeoutMs?: number;
 }
 
-export interface ROutput {
+/** What every output has, whatever it carries. */
+interface ROutputCommon {
   readonly name: string;
-  readonly type: ROutputType;
   /** As the program declared it: relative to the output directory. */
   readonly file: string;
   readonly path: string;
   readonly bytes: number;
-  /** Read out of the PNG header, so the run can be checked against the box it was given. */
-  readonly width: number;
-  readonly height: number;
 }
+
+/**
+ * One declared output, discriminated on what it is.
+ *
+ * A union rather than a record with three optional halves, because a caller asking a table for its
+ * pixel width has made a mistake the compiler should be catching. It also keeps the *reading* of
+ * each format where its refusals are: `./csv.ts` and `./svg.ts` say what a good one looks like, and
+ * this module only says what happens to a bad one.
+ */
+export type ROutput =
+  | (ROutputCommon & {
+      readonly type: "png";
+      /** Read out of the PNG header, so the run can be checked against the box it was given. */
+      readonly width: number;
+      readonly height: number;
+    })
+  | (ROutputCommon & {
+      readonly type: "svg";
+      /** From the `viewBox`. Only the ratio matters: a vector picture is fitted, not placed. */
+      readonly width: number;
+      readonly height: number;
+      /** Every name the program wrote into the picture, discovered rather than declared. */
+      readonly elements: readonly string[];
+    })
+  | (ROutputCommon & {
+      readonly type: "csv";
+      readonly table: CsvTable;
+    });
 
 /**
  * Somewhere the program says it drew something, in fractions of the picture it produced.
@@ -216,6 +259,16 @@ export const REGION_SHAPE = "#cuecraft region <name> <left> <top> <right> <botto
 
 /** The first eight bytes of every PNG. Checked so that "it exists" is not mistaken for "it is one". */
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * How large a text output may be, because both text formats are read whole.
+ *
+ * A PNG is checked at its header and never loaded; an SVG and a CSV have to be parsed to be
+ * validated at all, so there is a number here and there was not one before. Sixteen megabytes is
+ * far past any honest exhibit — the showcase's derived CSV is under two kilobytes — and the point
+ * of the limit is to refuse in a sentence rather than to fail in an allocator.
+ */
+export const MAX_TEXT_OUTPUT_BYTES = 16_000_000;
 
 /**
  * Whether this machine can run R at all, phrased as advice.
@@ -551,15 +604,51 @@ async function resolveDeclaration(
       `declared output ${JSON.stringify(name)} is empty: ${JSON.stringify(file)}`,
     );
   }
-  const size = await pngSize(path);
-  if (size === undefined) {
-    return refuse(
-      `declared output ${JSON.stringify(name)} is not a PNG: ${JSON.stringify(file)} ` +
-        "has no PNG signature and header",
-    );
+
+  const common = { name, file, path, bytes };
+
+  if (type === "png") {
+    const size = await pngSize(path);
+    if (size === undefined) {
+      return refuse(
+        `declared output ${JSON.stringify(name)} is not a PNG: ${JSON.stringify(file)} ` +
+          "has no PNG signature and header",
+      );
+    }
+    return { ...common, type: "png", ...size };
   }
 
-  return { name, type: type as ROutputType, file, path, bytes, ...size };
+  // Text from here down. Both remaining formats are read whole, which is the ceiling on what an
+  // output may be: a program that wants to hand back a gigabyte has misunderstood what an exhibit
+  // is, and finding that out as an allocation failure is finding it out in the wrong way.
+  if (bytes > MAX_TEXT_OUTPUT_BYTES) {
+    return refuse(
+      `declared output ${JSON.stringify(name)} is ${(bytes / 1_000_000).toFixed(1)}MB, and ` +
+        `cuecraft reads a ${type} output whole, up to ` +
+        `${MAX_TEXT_OUTPUT_BYTES / 1_000_000}MB`,
+    );
+  }
+  const text = await readFile(path, "utf8");
+
+  if (type === "svg") {
+    const { artifact, problem } = readSvg(text);
+    if (artifact === undefined) {
+      return refuse(
+        `declared output ${JSON.stringify(name)} is not an SVG cuecraft can take: ` +
+          `${JSON.stringify(file)} — ${problem}`,
+      );
+    }
+    return { ...common, type: "svg", ...artifact };
+  }
+
+  const { table, problem } = readCsv(text);
+  if (table === undefined) {
+    return refuse(
+      `declared output ${JSON.stringify(name)} is not a CSV cuecraft can take: ` +
+        `${JSON.stringify(file)} — ${problem}`,
+    );
+  }
+  return { ...common, type: "csv", table };
 }
 
 /**

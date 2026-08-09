@@ -13,6 +13,7 @@ import {
   type Timeline,
 } from "./compile/timeline.ts";
 import { formatTimecode } from "./presentation/duration.ts";
+import type { ExhibitResource } from "./presentation/exhibit.ts";
 import { parsePresentation, PresentationError } from "./presentation/parse.ts";
 import { renderPresentationFile, StageError, workspaceFor } from "./pipeline.ts";
 import { formatAudition } from "./render/audition.ts";
@@ -182,7 +183,7 @@ async function runRender(
       onExhibit: (exhibit) => {
         note(
           `    slide ${exhibit.ordinal}: ${exhibit.program} -> ` +
-            `${exhibit.resource.width}x${exhibit.resource.height} png, ` +
+            `${describeResource(exhibit.resource)}, ` +
             `${(exhibit.resource.bytes / 1024).toFixed(0)} kB ` +
             `in ${exhibit.elapsedSeconds.toFixed(1)}s`,
         );
@@ -323,12 +324,42 @@ function describeExhibits(exhibits: readonly MaterializedExhibit[]): string {
     (exhibit) =>
       `    slide ${exhibit.ordinal}: ${exhibit.program} computed ` +
       `${exhibit.resource.name} in ${exhibit.elapsedSeconds.toFixed(1)}s` +
-      // What the picture can be talked about, and therefore what a `shows:` was checked against.
-      (exhibit.resource.regions.length === 0
+      // What the artifact can be talked about, and therefore what a `shows:` was checked against.
+      (addressable(exhibit.resource).length === 0
         ? ""
-        : `, showing ${exhibit.resource.regions.map((region) => region.name).join(", ")}`),
+        : `, showing ${addressable(exhibit.resource).join(", ")}`),
   );
   return `  exhibits\n${lines.join("\n")}\n`;
+}
+
+/** What a program handed back, in one phrase, because the three kinds are not interchangeable. */
+function describeResource(resource: ExhibitResource): string {
+  switch (resource.kind) {
+    case "picture":
+      return `${resource.width}x${resource.height} png`;
+    case "drawing":
+      return `${resource.width}x${resource.height} svg, ${resource.elements.length} named`;
+    case "table":
+      return `csv, ${resource.table.rows.length} rows x ${resource.table.columns.length} columns`;
+  }
+}
+
+/**
+ * Every identity narration could reach on this exhibit.
+ *
+ * A picture and a drawing publish exactly what the slide declared; a table publishes what its data
+ * generated, which is frequently more than any deck talks about, so the summary reports the whole
+ * address space rather than the part that was used.
+ */
+function addressable(resource: ExhibitResource): readonly string[] {
+  switch (resource.kind) {
+    case "picture":
+      return resource.regions.map((region) => region.name);
+    case "drawing":
+      return resource.elements;
+    case "table":
+      return [...resource.table.rowIds, ...resource.table.columnIds];
+  }
 }
 
 /**

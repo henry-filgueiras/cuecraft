@@ -49,5 +49,23 @@ a strategy object gets born.
 
 ## Evidence
 
+**The experiment was run in sprint:28, and the answer is still no** — see decision:61.
+
+This idea's own criterion was that one caller is not evidence and that a second implementation would
+show what actually gets shared. Two arrived: a named element of an R-drawn SVG, and a row of a
+computed table. What they share with the chart region is an **envelope over intervals** — when
+attention starts, when it ends, whether two claims are one, how far a handover has got — and that
+now lives in `render/attention.ts`, read by the exhibit family.
+
+What they do not share is a *quantity elements carry*, which is what a fourth number beside `degree`,
+`heat` and `sweep` would be. The prediction in the paragraph above held exactly: occupancy in a
+machine is exclusive because a scenario has one traveller, occupancy on a table is exclusive *per
+axis* rather than outright, and occupancy in a transcript is still not obviously exclusive at all.
+Promoting it would hand eleven archetypes a number none of them reads.
+
+So this stays parked, and it is now parked on measurement rather than on caution.
+
+The transcript rewrite below is still the outstanding half of the test and was not attempted.
+
 The cheap test, when it comes: rewrite the transcript's `current` / `presence` / `lit` derivation
 against a shared occupancy and see whether it gets shorter or merely gets a parameter.

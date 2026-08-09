@@ -124,6 +124,7 @@ test("only the exhibit slides are run, and the rest come through untouched", asy
   const body = presentation.slides[1]?.body;
   assert.equal(body?.kind, "exhibit");
   assert.deepEqual(body?.kind === "exhibit" ? body.resource : undefined, {
+    kind: "picture",
     src: "exhibits/slide-02-chart/chart.png",
     name: "chart",
     regions: [],
@@ -278,7 +279,8 @@ test("what the slide shows and what the program drew are matched, in the slide's
 
   const body = presentation.slides[1]?.body;
   assert.equal(body?.kind, "exhibit");
-  const regions = body?.kind === "exhibit" ? body.resource?.regions : undefined;
+  const resource = body?.kind === "exhibit" ? body.resource : undefined;
+  const regions = resource?.kind === "picture" ? resource.regions : undefined;
   assert.deepEqual(
     regions?.map((region) => region.name),
     ["b", "a"],
@@ -324,5 +326,234 @@ test("an exhibit that shows nothing is not asked about regions at all", async ()
     },
   );
   const body = presentation.slides[1]?.body;
-  assert.deepEqual(body?.kind === "exhibit" ? body.resource?.regions : undefined, []);
+  const shown = body?.kind === "exhibit" ? body.resource : undefined;
+  assert.deepEqual(shown?.kind === "picture" ? shown.regions : undefined, []);
+});
+
+/* ------------------------------- what comes back that is not a picture */
+
+/**
+ * The two artifacts sprint:28 added, at the stage that turns them into something a slide can draw.
+ *
+ * Every refusal below is a program that **succeeded**. That is the whole reason they are refusals
+ * rather than fallbacks: a table drawn from a key column that does not identify a row would render
+ * perfectly and light the wrong line, which is the same failure mode decision:55 refuses for a
+ * stale picture, one layer in.
+ */
+
+/** A runner that hands back a CSV, parsed, exactly as `resolveOutputs` would have. */
+function tableRunner(
+  columns: readonly string[],
+  rows: readonly (readonly string[])[],
+): (request: RRequest) => Promise<RResult> {
+  return async (request) => {
+    await mkdir(request.outputDir, { recursive: true });
+    return {
+      outputs: [
+        {
+          name: "summary",
+          type: "csv" as const,
+          file: "summary.csv",
+          path: join(request.outputDir, "summary.csv"),
+          bytes: 128,
+          table: { columns, rows },
+        },
+      ],
+      regions: [],
+      notes: "",
+      stderr: "",
+      elapsedSeconds: 0.1,
+    };
+  };
+}
+
+const SEGMENTS = [
+  ["West", "10"],
+  ["East", "20"],
+] as const;
+
+async function tableFailure(
+  exhibit: string,
+  run: (request: RRequest) => Promise<RResult>,
+): Promise<MaterializeError> {
+  try {
+    await materializePresentation(deck(exhibit), {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      run,
+    });
+  } catch (error) {
+    assert.ok(error instanceof MaterializeError, `expected a MaterializeError: ${error}`);
+    return error;
+  }
+  throw new assert.AssertionError({ message: `expected a refusal for ${exhibit}` });
+}
+
+test("a CSV becomes a table whose rows and columns have identities", async () => {
+  const { presentation } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R\n  key: region\n  shows: [row-west]"),
+    {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      run: tableRunner(["region", "revenue"], SEGMENTS),
+    },
+  );
+
+  const body = presentation.slides[1]?.body;
+  const resource = body?.kind === "exhibit" ? body.resource : undefined;
+  assert.equal(resource?.kind, "table");
+  assert.ok(resource?.kind === "table");
+  assert.deepEqual(resource.table.rowIds, ["row-west", "row-east"]);
+  assert.deepEqual(resource.table.columnIds, ["column-region", "column-revenue"]);
+  assert.equal(resource.table.keyColumn, 0);
+});
+
+test("the identity of a row survives punctuation in the cell that names it", async () => {
+  const { presentation } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R\n  key: region\n  shows: [row-asia-pacific]"),
+    {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      run: tableRunner(
+        ["region", "revenue"],
+        [
+          ["Asia / Pacific", "10"],
+          ["Latin America", "20"],
+        ],
+      ),
+    },
+  );
+  const body = presentation.slides[1]?.body;
+  const resource = body?.kind === "exhibit" ? body.resource : undefined;
+  assert.deepEqual(resource?.kind === "table" ? resource.table.rowIds : undefined, [
+    "row-asia-pacific",
+    "row-latin-america",
+  ]);
+});
+
+test("a table with no key says so, and lists the columns it could have used", async () => {
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R",
+    tableRunner(["region", "revenue"], SEGMENTS),
+  );
+  assert.match(error.message, /does not say which column identifies a row/);
+  assert.match(error.message, /"region", "revenue"/);
+});
+
+test("a key naming no column is refused, not guessed around", async () => {
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: segment",
+    tableRunner(["region", "revenue"], SEGMENTS),
+  );
+  assert.match(error.message, /key is "segment" and chart\.R wrote no such column/);
+});
+
+test("two rows that address as one name are refused, naming both", async () => {
+  // The failure this prevents is the worst kind: the film renders, and the sentence about the
+  // second one lights the first.
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: region",
+    tableRunner(
+      ["region", "revenue"],
+      [
+        ["Asia Pacific", "10"],
+        ["asia-pacific", "20"],
+      ],
+    ),
+  );
+  assert.match(error.message, /rows 1 and 2 both address as "row-asia-pacific"/);
+});
+
+test("a key cell with nothing nameable in it is refused", async () => {
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: region",
+    tableRunner(["region", "revenue"], [["—", "10"]]),
+  );
+  assert.match(error.message, /nothing in it can be a name/);
+});
+
+test("a row the deck shows and the data does not generate is refused", async () => {
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: region\n  shows: [row-north]",
+    tableRunner(["region", "revenue"], SEGMENTS),
+  );
+  assert.match(error.message, /shows "row-north", which is not in the table/);
+  assert.match(error.message, /Rows address as "row-west", "row-east"/);
+});
+
+test("a row the deck does not show is not a mismatch, because rows come from data", async () => {
+  // The asymmetry with a picture's regions, asserted directly: two rows exist, the deck talks
+  // about one, and that is a deck rather than a drift.
+  const { exhibits } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R\n  key: region\n  shows: [row-west]"),
+    {
+      workspace: join(await scratch(), "work"),
+      root: await repoWith({}),
+      run: tableRunner(["region", "revenue"], SEGMENTS),
+    },
+  );
+  assert.equal(exhibits.length, 1);
+});
+
+test("a table past the row ceiling is refused rather than drawn unreadably", async () => {
+  const many = Array.from({ length: 201 }, (_, index) => [`r${index}`, "1"] as const);
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: region",
+    tableRunner(["region", "revenue"], many),
+  );
+  assert.match(error.message, /wrote 201 rows and cuecraft draws at most 200/);
+});
+
+test("a table past the column ceiling is refused, with the reason", async () => {
+  const columns = Array.from({ length: 9 }, (_, index) => `c${index}`);
+  const error = await tableFailure(
+    "exhibit:\n  run: chart.R\n  key: c0",
+    tableRunner(columns, [columns.map((_, index) => String(index))]),
+  );
+  assert.match(error.message, /wrote 9 columns and cuecraft draws at most 8/);
+  assert.match(error.message, /too narrow to hold a value/);
+});
+
+test("an SVG becomes a drawing carrying its markup and every name in it", async () => {
+  const markup = '<svg viewBox="0 0 400 200"><path data-cuecraft="west"/></svg>';
+  const root = await repoWith({});
+  const { presentation } = await materializePresentation(
+    deck("exhibit:\n  run: chart.R\n  shows: [west]"),
+    {
+      workspace: join(await scratch(), "work"),
+      root,
+      run: async (request) => {
+        await mkdir(request.outputDir, { recursive: true });
+        await writeFile(join(request.outputDir, "chart.svg"), markup);
+        return {
+          outputs: [
+            {
+              name: "chart",
+              type: "svg" as const,
+              file: "chart.svg",
+              path: join(request.outputDir, "chart.svg"),
+              bytes: markup.length,
+              width: 400,
+              height: 200,
+              elements: ["west", "east"],
+            },
+          ],
+          regions: [],
+          notes: "",
+          stderr: "",
+          elapsedSeconds: 0.1,
+        };
+      },
+    },
+  );
+
+  const body = presentation.slides[1]?.body;
+  const resource = body?.kind === "exhibit" ? body.resource : undefined;
+  assert.equal(resource?.kind, "drawing");
+  assert.ok(resource?.kind === "drawing");
+  // What narration can reach is what the slide declared; what recedes around it is everything the
+  // program named. The two lists are different questions — see the resource's own note.
+  assert.deepEqual(resource.elements, ["west"]);
+  assert.deepEqual(resource.tagged, ["west", "east"]);
+  assert.equal(resource.markup, markup);
 });

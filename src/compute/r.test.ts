@@ -248,7 +248,7 @@ test("a filename with spaces survives the protocol", async () => {
     "chart.R",
   );
   assert.equal(output?.file, "quarterly revenue 2025.png");
-  assert.equal(output?.width, 100);
+  assert.equal(output?.type === "png" ? output.width : undefined, 100);
 });
 
 test("a malformed declaration is refused, and the shape is quoted back", async () => {
@@ -280,10 +280,10 @@ test("a line that is not a declaration at all names both shapes", async () => {
 });
 
 test("an output type cuecraft cannot take back is refused by name", async () => {
-  const dir = await outputDirWith({ "chart.svg": "<svg/>" });
-  const error = await refusal(["#cuecraft output svg chart chart.svg"], dir);
-  assert.match(error.message, /has type "svg"/);
-  assert.match(error.message, /can take back png/);
+  const dir = await outputDirWith({ "chart.tiff": "II*\u0000" });
+  const error = await refusal(["#cuecraft output tiff chart chart.tiff"], dir);
+  assert.match(error.message, /has type "tiff"/);
+  assert.match(error.message, /can take back png, svg, csv/);
 });
 
 test("a declared file outside the output directory is refused", async () => {
@@ -461,3 +461,88 @@ function regionRefusal(declared: readonly string[]): RError {
     message: `expected a refusal for ${declared.join(" | ")}`,
   });
 }
+
+/**
+ * The two formats sprint:28 added, at the boundary rather than in their readers.
+ *
+ * `./csv.test.ts` and `./svg.test.ts` say what a good file looks like. What is asserted here is
+ * narrower and is the thing decision:56 actually promised: that adding a format was "a line in a
+ * list plus a validator", and that **every refusal the first format had applies unchanged to the
+ * other two**. A containment check that only guarded PNGs would be a hole shaped exactly like the
+ * newest feature.
+ */
+
+const SVG = '<svg viewBox="0 0 400 200"><path data-cuecraft="west" d="M0 0"/></svg>';
+
+test("a declared CSV comes back parsed, with its columns and rows", async () => {
+  const dir = await outputDirWith({ "summary.csv": "region,q1\nWest,1200\nEast,980\n" });
+  const [output] = await resolveOutputs(
+    ["#cuecraft output csv summary summary.csv"],
+    dir,
+    "pivot.R",
+  );
+  assert.equal(output?.type, "csv");
+  assert.deepEqual(output?.type === "csv" ? output.table.columns : undefined, [
+    "region",
+    "q1",
+  ]);
+  assert.equal(output?.type === "csv" ? output.table.rows.length : undefined, 2);
+});
+
+test("a declared SVG comes back with its dimensions and the names inside it", async () => {
+  const dir = await outputDirWith({ "chart.svg": SVG });
+  const [output] = await resolveOutputs(
+    ["#cuecraft output svg chart chart.svg"],
+    dir,
+    "chart.R",
+  );
+  assert.equal(output?.type, "svg");
+  assert.equal(output?.type === "svg" ? output.width : undefined, 400);
+  assert.deepEqual(output?.type === "svg" ? output.elements : undefined, ["west"]);
+});
+
+test("a CSV that is not one is refused, naming the file and the reason", async () => {
+  const dir = await outputDirWith({ "summary.csv": "region,q1\n" });
+  const error = await refusal(["#cuecraft output csv summary summary.csv"], dir);
+  assert.match(error.message, /is not a CSV cuecraft can take/);
+  assert.match(error.message, /"summary\.csv"/);
+  assert.match(error.message, /no rows/);
+});
+
+test("an SVG that is not one is refused, naming the file and the reason", async () => {
+  const dir = await outputDirWith({ "chart.svg": "not markup" });
+  const error = await refusal(["#cuecraft output svg chart chart.svg"], dir);
+  assert.match(error.message, /is not an SVG cuecraft can take/);
+  assert.match(error.message, /no <svg> root/);
+});
+
+test("an empty CSV and an empty SVG are refused as empty, before being parsed", async () => {
+  for (const [type, file] of [
+    ["csv", "summary.csv"],
+    ["svg", "chart.svg"],
+  ] as const) {
+    const dir = await outputDirWith({ [file]: "" });
+    const error = await refusal([`#cuecraft output ${type} out ${file}`], dir);
+    assert.match(error.message, /is empty/, type);
+  }
+});
+
+test("a CSV and an SVG declared outside the output directory are refused", async () => {
+  for (const [type, file] of [
+    ["csv", "summary.csv"],
+    ["svg", "chart.svg"],
+  ] as const) {
+    const dir = await outputDirWith({ [file]: SVG });
+    await writeFile(join(dir, "..", file), SVG);
+    const error = await refusal([`#cuecraft output ${type} out ../${file}`], dir);
+    assert.match(error.message, /resolves outside CUECRAFT_OUTPUT_DIR/, type);
+  }
+});
+
+test("a CSV and an SVG that were declared and never written are refused", async () => {
+  for (const type of ["csv", "svg"] as const) {
+    const dir = await outputDirWith({});
+    const error = await refusal([`#cuecraft output ${type} out missing.${type}`], dir);
+    assert.match(error.message, /was declared but never written/, type);
+  }
+});

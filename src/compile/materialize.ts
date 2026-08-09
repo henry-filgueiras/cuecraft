@@ -1,12 +1,20 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 import type { ExhibitRegion, ExhibitResource } from "../presentation/exhibit.ts";
+import { columnId, rowId } from "../presentation/exhibit.ts";
 import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
 import { resolveRepositoryPath, SourceError } from "../presentation/source.ts";
 import { repositoryRoot } from "../repository.ts";
 import { COLORS, EXHIBIT } from "../render/theme.ts";
-import { RError, runR, type RFrame, type RRequest, type RResult } from "../compute/r.ts";
+import {
+  RError,
+  runR,
+  type RFrame,
+  type ROutput,
+  type RRequest,
+  type RResult,
+} from "../compute/r.ts";
 
 /**
  * Running every exhibit a deck declares, before anything is spoken.
@@ -187,40 +195,7 @@ export async function materializePresentation(
       );
     }
 
-    // The two halves of decision:57's bargain, checked against each other. The slide declares which
-    // identities its picture will have because anchors resolve before R runs; the program declares
-    // where they are. Either side saying something the other did not is a failure, and it has to be
-    // both directions — a region the deck never asked for is a program that has quietly renamed
-    // something, and a name the program never drew is a highlight over nothing.
-    const drawn = new Map(result.regions.map((region) => [region.name, region]));
-    const missing = body.shows.filter((name) => !drawn.has(name));
-    const unasked = result.regions
-      .map((region) => region.name)
-      .filter((name) => !body.shows.includes(name));
-
-    if (missing.length > 0 || unasked.length > 0) {
-      throw new MaterializeError(
-        slide.ordinal,
-        `${body.program} and this slide disagree about what the picture shows` +
-          (missing.length === 0
-            ? ""
-            : `; the slide shows ${missing.map(quote).join(", ")}, which the program did not draw`) +
-          (unasked.length === 0
-            ? ""
-            : `; the program drew ${unasked.map(quote).join(", ")}, which the slide does not show`),
-      );
-    }
-
-    const resource: ExhibitResource = {
-      src: `${EXHIBIT_DIR}/${slug}/${output.file}`,
-      name: output.name,
-      // In the slide's order, not the program's, because that is the order `bodyElements`
-      // published and therefore the order every anchor index already means.
-      regions: body.shows.map((name) => drawn.get(name) as ExhibitRegion),
-      width: output.width,
-      height: output.height,
-      bytes: output.bytes,
-    };
+    const resource = await resourceFor(slide.ordinal, body, output, result.regions, slug);
 
     const materialized: MaterializedExhibit = {
       ordinal: slide.ordinal,
@@ -235,6 +210,205 @@ export async function materializePresentation(
   }
 
   return { presentation: { ...presentation, slides }, exhibits };
+}
+
+/**
+ * How large a table cuecraft will draw, and why the numbers are what they are.
+ *
+ * `MAX_SERIES_TOTAL`'s reasoning with different nouns: the ceiling is where the promise breaks, not
+ * where the arithmetic does. A table's promise is that a viewer can *read* a row and that narration
+ * can walk to one, and both of those fail long before memory does.
+ *
+ * Two hundred rows is far past what a film can actually visit — the showcase's narration reaches
+ * four — and is set where it is so that "the row is offscreen and the exhibit goes and gets it" is
+ * demonstrably true rather than a special case of a short list.
+ *
+ * Eight columns is a measurement rather than a preference. The content box is about 1650px, so an
+ * eighth of it is 206px, and at the size a table is set for a room that is around twelve characters
+ * — which is where a column stops holding a value and starts holding the beginning of one.
+ */
+export const MAX_TABLE_ROWS = 200;
+export const MAX_TABLE_COLUMNS = 8;
+
+/**
+ * What the program handed back, turned into the thing a composition draws.
+ *
+ * The whole of the three-way branch lives here rather than at the call site, because what differs
+ * between the kinds is not how they are placed but **what cuecraft is allowed to claim it knows**,
+ * and that is one argument stated three times.
+ */
+async function resourceFor(
+  ordinal: number,
+  body: Extract<AuthoredSlide["body"], { kind: "exhibit" }>,
+  output: ROutput,
+  regions: readonly ExhibitRegion[],
+  slug: string,
+): Promise<ExhibitResource> {
+  const refuse = (message: string): never => {
+    throw new MaterializeError(ordinal, message);
+  };
+
+  if (output.type === "png") {
+    const drawn = new Map(regions.map((region) => [region.name, region]));
+    agree(ordinal, body, [...drawn.keys()], "the picture shows", { both: true });
+    return {
+      kind: "picture",
+      src: `${EXHIBIT_DIR}/${slug}/${output.file}`,
+      name: output.name,
+      // In the slide's order, not the program's, because that is the order `bodyElements`
+      // published and therefore the order every anchor index already means.
+      regions: body.shows.map((name) => drawn.get(name) as ExhibitRegion),
+      width: output.width,
+      height: output.height,
+      bytes: output.bytes,
+    };
+  }
+
+  if (output.type === "svg") {
+    agree(ordinal, body, output.elements, "the drawing names");
+    return {
+      kind: "drawing",
+      name: output.name,
+      markup: await readFile(output.path, "utf8"),
+      width: output.width,
+      height: output.height,
+      elements: [...body.shows],
+      tagged: output.elements,
+      bytes: output.bytes,
+    };
+  }
+
+  const { columns, rows } = output.table;
+  if (rows.length > MAX_TABLE_ROWS) {
+    return refuse(
+      `${body.program} wrote ${rows.length} rows and cuecraft draws at most ${MAX_TABLE_ROWS}; ` +
+        "beyond that a table stops being something narration could walk through, which is the " +
+        "whole of what a table exhibit is for",
+    );
+  }
+  if (columns.length > MAX_TABLE_COLUMNS) {
+    return refuse(
+      `${body.program} wrote ${columns.length} columns and cuecraft draws at most ` +
+        `${MAX_TABLE_COLUMNS}; past that a column is too narrow to hold a value at the size a ` +
+        "slide is set for",
+    );
+  }
+
+  if (body.key === undefined) {
+    return refuse(
+      `${body.program} handed back a table, and this slide does not say which column identifies ` +
+        `a row. Add \`key: <column>\` to the exhibit; the columns are ${columns.map(quote).join(", ")}`,
+    );
+  }
+  const keyColumn = columns.indexOf(body.key);
+  if (keyColumn < 0) {
+    return refuse(
+      `this slide's key is ${quote(body.key)} and ${body.program} wrote no such column; ` +
+        `the columns are ${columns.map(quote).join(", ")}`,
+    );
+  }
+
+  const rowIds: string[] = [];
+  const seen = new Map<string, number>();
+  for (const [index, row] of rows.entries()) {
+    const cell = row[keyColumn] ?? "";
+    const id = rowId(cell);
+    if (id === undefined) {
+      return refuse(
+        `row ${index + 1} has ${quote(cell)} in the key column ${quote(body.key)}, and nothing ` +
+          "in it can be a name; every row of a table exhibit has to be addressable",
+      );
+    }
+    const first = seen.get(id);
+    if (first !== undefined) {
+      return refuse(
+        `rows ${first + 1} and ${index + 1} both address as ${quote(id)}; a key column has to ` +
+          "identify a row, and two rows that answer to one name would light the wrong one",
+      );
+    }
+    seen.set(id, index);
+    rowIds.push(id);
+  }
+
+  const columnIds: string[] = [];
+  for (const header of columns) {
+    const id = columnId(header);
+    if (id === undefined) {
+      return refuse(
+        `the column named ${quote(header)} has nothing in it that can be a name; every column ` +
+          "of a table exhibit has to be addressable",
+      );
+    }
+    columnIds.push(id);
+  }
+
+  // One direction only, and the asymmetry is the point. A picture's regions and a drawing's names
+  // are things the *program chose to declare*, so one the deck never asked for is drift between two
+  // statements that are supposed to agree. A table's identities are **derived from the data**: a
+  // hundred rows produce a hundred names, the set changes when the CSV does, and a deck cannot be
+  // asked to enumerate them. So a name the deck shows must exist, and a name it does not show is
+  // simply a row nobody talks about.
+  const available = [...rowIds, ...columnIds];
+  const missing = body.shows.filter((name) => !available.includes(name));
+  if (missing.length > 0) {
+    return refuse(
+      `this slide shows ${missing.map(quote).join(", ")}, which is not in the table ` +
+        `${body.program} wrote. Rows address as ${rowIds.slice(0, 4).map(quote).join(", ")}` +
+        `${rowIds.length > 4 ? ` (and ${rowIds.length - 4} more)` : ""}; ` +
+        `columns address as ${columnIds.map(quote).join(", ")}`,
+    );
+  }
+
+  return {
+    kind: "table",
+    name: output.name,
+    bytes: output.bytes,
+    table: { columns, rows, keyColumn, rowIds, columnIds },
+  };
+}
+
+/**
+ * decision:57's bargain, checked against what the program actually produced.
+ *
+ * The slide declares which identities its artifact will have because anchors resolve before R runs;
+ * the program declares which it drew. One direction always holds: **a name the deck shows and the
+ * program did not produce is a highlight over nothing**, and that is the check that catches a typo,
+ * a rename, and a program whose output has quietly changed shape.
+ *
+ * The other direction — a name the program produced and the deck never mentions — holds only for a
+ * PNG's regions, and the showcase is what taught the difference. A `#cuecraft region` line is
+ * *hand-written per panel*: there are four of them because somebody decided a panel was worth being
+ * able to talk about, so a fifth appearing means the two statements have drifted. A drawing's tags
+ * and a table's rows are **generated per object**: sixteen bars produce sixteen names and
+ * twenty-four rows produce twenty-four, and a deck that talks about four of them is a deck, not a
+ * mismatch. Requiring it to enumerate the rest would make `shows:` a transcription of the data.
+ *
+ * So the rule is: *scarce and authored* is checked both ways, *generated from content* is checked
+ * one way. That distinction is a real one and it is the shape of decision:57 rather than a
+ * weakening of it — the half that stops a highlight landing on nothing is untouched.
+ */
+function agree(
+  ordinal: number,
+  body: Extract<AuthoredSlide["body"], { kind: "exhibit" }>,
+  declared: readonly string[],
+  what: string,
+  options: { readonly both?: boolean } = {},
+): void {
+  const missing = body.shows.filter((name) => !declared.includes(name));
+  const unasked =
+    options.both === true ? declared.filter((name) => !body.shows.includes(name)) : [];
+  if (missing.length === 0 && unasked.length === 0) return;
+
+  throw new MaterializeError(
+    ordinal,
+    `${body.program} and this slide disagree about what ${what}` +
+      (missing.length === 0
+        ? ""
+        : `; the slide shows ${missing.map(quote).join(", ")}, which the program did not draw`) +
+      (unasked.length === 0
+        ? ""
+        : `; the program drew ${unasked.map(quote).join(", ")}, which the slide does not show`),
+  );
 }
 
 /** Quoting a name in a diagnostic, so a message reads as a list rather than as prose. */

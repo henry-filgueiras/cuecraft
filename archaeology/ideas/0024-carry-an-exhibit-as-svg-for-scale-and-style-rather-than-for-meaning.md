@@ -2,7 +2,7 @@
 id: ide_01KZKRZZT39Z64WEJ5AVMY4A6N
 sequence: 24
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-09
 ---
 
@@ -44,6 +44,27 @@ element, a selector or a style.
 Also unresolved: inlining an arbitrary SVG puts foreign markup in the render DOM. It comes from a
 program the deck already runs, so it is not a new trust boundary — but ids inside it can collide with
 the composition's own, and that wants scoping before it ships.
+
+## Outcome
+
+**Adopted in sprint:28 (decision:59), and its own boundary note turned out to be wrong.**
+
+The sketch shipped almost exactly as written: a second output type validated by parsing the root
+element, inlined into the DOM rather than put through `staticFile()` — though by carrying the markup
+in the timeline rather than reading it behind `delayRender`, since a specimen already carries a
+whole quoted file that way and it keeps every still synchronous. The id-collision worry was real and
+the answer was to not use ids at all: `data-cuecraft="..."` collides with neither cairo's `<defs>`
+nor the composition's own DOM, and may appear on several elements at once, which one semantic object
+frequently is.
+
+**"It does not replace regions. This idea buys scale and style, not meaning."** That was written on
+decision:57's evidence and it is false. The evidence was about the *device* — cairo emits no ids —
+and the thing that was missing was a technique on the *program's* side: draw in a sentinel colour,
+find it in your own output, write a name onto it. A program knows which object it just drew, and
+nothing about the device prevents it from saying so afterwards.
+
+What the idea got right is that it would be worth building "when a deck's exhibit is visibly
+letterboxed in a room it did not expect" — which is also what happened, and is recorded on dragon:31.
 
 ## Evidence
 

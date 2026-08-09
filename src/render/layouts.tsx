@@ -11,7 +11,7 @@ import {
 } from "remotion";
 
 import { deriveChange } from "../presentation/change.ts";
-import type { ExhibitRegion } from "../presentation/exhibit.ts";
+import type { ExhibitRegion, ExhibitResource } from "../presentation/exhibit.ts";
 import {
   interiorRange,
   type AuthoredEntity,
@@ -80,7 +80,17 @@ import {
 } from "./machine.ts";
 import type { AuthoredMachine } from "../presentation/machine.ts";
 import { electLayout } from "./audition.ts";
-import { focusAt, focusSpans } from "./exhibit.ts";
+import { SVG_TAG_ATTRIBUTE } from "../compute/svg.ts";
+import { drawingEmphasis } from "./drawing.ts";
+import {
+  cellBudget,
+  fitRegister,
+  registerAttention,
+  registerScroll,
+  rowClaims,
+  type RegisterLayout,
+} from "./register.ts";
+import { focusAt } from "./exhibit.ts";
 import {
   LEDGER_GUTTER,
   LEDGER_PAD_RIGHT,
@@ -102,6 +112,7 @@ import {
   CODE_COLORS,
   COLORS,
   EXHIBIT,
+  REGISTER,
   FIELD,
   FORMULA,
   FONT_STACK,
@@ -4200,6 +4211,18 @@ function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
           >
             {body?.program ?? "no exhibit"}
           </div>
+        ) : resource.kind === "drawing" ? (
+          <Drawing scene={scene} absoluteFrame={absoluteFrame} resource={resource} />
+        ) : resource.kind === "table" ? (
+          // Unreachable from `cuecraft render`: a table resource selects the `register`
+          // archetype (`./layout.ts`), so this component is never asked to draw one. It is here
+          // because the union has three arms and a composition that silently drew nothing for
+          // one of them would be a defect nobody could see.
+          <div
+            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: MONO_STACK }}
+          >
+            {resource.name}
+          </div>
         ) : (
           // The wrapper carries the picture's own aspect ratio with both maxima, which makes it
           // *become* the box `object-fit: contain` would have produced. That is the whole reason
@@ -4275,7 +4298,7 @@ function Regions({
   // One veil, driven by occupancy rather than by heat (`./exhibit.ts`). One opening at a time, held
   // for as long as the sentence that opened it, travelling to the next rather than releasing
   // between two consecutive sentences.
-  const focus = focusAt(focusSpans(scene, regions), absoluteFrame, EXHIBIT.focus);
+  const focus = focusAt(scene, regions, absoluteFrame, EXHIBIT.focus);
 
   return (
     <>
@@ -4301,6 +4324,319 @@ function Regions({
         />
       ))}
     </>
+  );
+}
+
+/**
+ * **drawing** — a picture that can be reached element by element, because it said which is which.
+ *
+ * The same slide as a `picture`, with the emphasis turned inside out. A raster can only be dimmed
+ * *around* the subject; a drawing can have its subject lifted and its rivals recede, and the axes,
+ * the gridlines and the labels — which the program never named — simply carry on. Nothing here
+ * frames a rectangle, because there is no rectangle: the thing being talked about is whatever
+ * geometry the program tagged, so the emphasis lands on the shape rather than on a box around it,
+ * which is the residue sprint:26 recorded and could not fix for a PNG.
+ *
+ * **The markup is inlined and never modified.** `staticFile()` and `<Img>` would put it in secure
+ * static mode, where no stylesheet reaches inside (idea:24). Inlining puts foreign markup in the
+ * render DOM — from a program the deck already runs, so not a new trust boundary — and the
+ * stylesheet below is scoped to this wrapper so that the identities in it cannot reach the
+ * composition's own DOM, or another exhibit's.
+ *
+ * The `svg` rule is the one thing here that overrides the program: cairo writes `width="576pt"` and
+ * a picture has to fill the room it was given (decision:42). That is placement, which has always
+ * been cuecraft's, and it is a rule on the element rather than an edit to the file.
+ */
+function Drawing({
+  scene,
+  absoluteFrame,
+  resource,
+}: {
+  scene: Scene;
+  absoluteFrame: number;
+  resource: Extract<ExhibitResource, { kind: "drawing" }>;
+}) {
+  const emphasis = drawingEmphasis(
+    scene,
+    resource.elements,
+    resource.tagged,
+    absoluteFrame,
+    EXHIBIT.focus,
+    EXHIBIT.drawing,
+  );
+
+  // No attention means no rule at all, rather than a rule that happens to be the identity. See
+  // `./drawing.ts`: the ground state is the absence of a stylesheet, not a stylesheet saying 1.
+  const rules =
+    emphasis === undefined
+      ? ""
+      : [...emphasis]
+          .map(
+            ([name, { opacity, brightness }]) =>
+              `.${DRAWING_SCOPE} [${SVG_TAG_ATTRIBUTE}="${name}"]{` +
+              `opacity:${opacity.toFixed(4)};filter:brightness(${brightness.toFixed(4)})}`,
+          )
+          .join("\n");
+
+  return (
+    <div
+      className={DRAWING_SCOPE}
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      dangerouslySetInnerHTML={{
+        __html: `<style>${sizing}\n${rules}</style>${resource.markup}`,
+      }}
+    />
+  );
+}
+
+/** The class every drawing rule is hung off, so an identity inside one picture stays inside it. */
+const DRAWING_SCOPE = "cuecraft-drawing";
+
+/**
+ * How an inlined drawing is fitted to the room, and why it is not the wrapper the raster uses.
+ *
+ * A `picture` is contained by giving a wrapper the image's aspect ratio and both maxima — the
+ * wrapper *becomes* the letterboxed box, which is what makes a region a percentage inside it. The
+ * first render tried the same thing here and the chart came out at about half width, because the
+ * content of that wrapper is an `<svg>` being sized at 100% *of the wrapper* — a width defined in
+ * terms of a width defined in terms of it.
+ *
+ * A vector does not need the help, as long as it is allowed to keep the size it has. cairo writes
+ * `width="2484pt" height="828pt"`, which is an intrinsic size like an image's; the two maxima then
+ * contain it exactly as `object-fit: contain` would, with no arithmetic and nothing measured.
+ *
+ * The second attempt overrode those to `auto` on the theory that the `viewBox` was enough. It is
+ * not: an `<svg>` with a ratio but no intrinsic size falls back to the replaced-element default,
+ * and the chart came out at three quarters of the room instead of filling it. **Take the size, do
+ * not replace it** — which is the same lesson the wrapper taught, one level down.
+ */
+const sizing = `.${DRAWING_SCOPE} svg{display:block;max-width:100%;max-height:100%}`;
+
+/**
+ * **register** — a table a foreign program computed, laid out by cuecraft and addressed by row.
+ *
+ * The composition that closes the loop the exhibit opened. Everything before it took *pixels* back
+ * across the process boundary and could only place them; this takes back **data**, so for the first
+ * time cuecraft is choosing the type size, the column widths, the alignment and the elision for
+ * content it did not compute — which is decision:10 doing its ordinary job on extraordinary
+ * content.
+ *
+ * Two things are worth watching for while reading it, because they are the whole experiment.
+ *
+ * **The viewport is the exhibit's, not the narration's.** A deck says `activates: row-services` and
+ * means *pay attention to Services*. Whether that row is currently on screen is not the author's
+ * problem and there is no key with which it could be made one; the table works out that it has to
+ * move, and by how much, and does it. `registerScroll` is a pure function of the claims, so the
+ * move is deterministic and a still is the same still however it was rendered.
+ *
+ * **Ground is the absence of a treatment.** A row that narration has left is drawn from exactly the
+ * same expressions as a row narration never reached, because both have no attention and every term
+ * below is multiplied by a strength that is exactly zero there. There is no residue to clear and no
+ * `degree` mark kept behind — deliberately, and unlike a chart region (decision:58): four regions
+ * marked permanently is an annotated chart, and forty rows marked permanently is a mess.
+ */
+function Register({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const band = useSubtitleBand();
+  const body = scene.body;
+  if (body.kind !== "exhibit" || body.resource?.kind !== "table") return null;
+
+  const table = body.resource.table;
+  const box = bodyBox(scene.title, band);
+  const layout = fitRegister(table, box, REGISTER);
+
+  const attention = registerAttention(
+    scene,
+    body.shows,
+    table,
+    absoluteFrame,
+    EXHIBIT.focus,
+  );
+  const top = registerScroll(
+    rowClaims(scene, body.shows, table),
+    table.rows.length,
+    layout,
+    absoluteFrame,
+    EXHIBIT.focus,
+  );
+
+  // How much of the attention a row or column holds, 0 at ground. One expression for both tracks,
+  // and the `travel` share is what stops a handover flashing through nothing in between.
+  const shareOf = (who: (typeof attention)["row"], index: number): number => {
+    if (who === undefined) return 0;
+    const share =
+      index === who.index ? who.travel : index === who.from ? 1 - who.travel : 0;
+    return who.strength * share;
+  };
+  const rowStrength = attention.row?.strength ?? 0;
+
+  const viewportHeight = layout.rowHeight * layout.visibleRows;
+
+  return (
+    <>
+      <Heading scene={scene} frame={frame} />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          marginTop: SPACE.xl,
+          display: "flex",
+          flexDirection: "column",
+          ...reveal(frame, MOTION.contentDelay),
+        }}
+      >
+        <RegisterRow
+          cells={table.columns}
+          layout={layout}
+          heading
+          shareOf={(index) => shareOf(attention.column, index)}
+        />
+        <div style={{ height: REGISTER.headerGap }} />
+
+        {/* The viewport. A fixed height with the rows translated inside it, rather than a scroll
+            position — there is no scroller here, and `overflow: hidden` is what makes the bound a
+            bound rather than a hope (dragon:26). */}
+        <div style={{ height: viewportHeight, overflow: "hidden", position: "relative" }}>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              transform: `translateY(${-top * layout.rowHeight}px)`,
+            }}
+          >
+            {table.rows.map((row, index) => (
+              <RegisterRow
+                key={table.rowIds[index]}
+                cells={row}
+                layout={layout}
+                share={shareOf(attention.row, index)}
+                recede={rowStrength}
+                shareOf={(column) => shareOf(attention.column, column)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* What is not on screen, said rather than implied. A table that silently shows twelve of
+            forty rows is asserting that there are twelve, which is the failure `series` was added
+            to fix for counts and the same failure here. */}
+        {layout.overflows ? (
+          <div
+            style={{
+              marginTop: SPACE.sm,
+              fontSize: TYPE.ordinal,
+              color: COLORS.dormant,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {`rows ${Math.round(top) + 1}–${Math.round(top) + layout.visibleRows} of ${table.rows.length}`}
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * One row of a register: the header, or a row of data.
+ *
+ * The same component for both, because a header is a row whose cells happen to be the column names
+ * and whose attention comes from the column track. Two components would be two places to get the
+ * column widths right.
+ */
+function RegisterRow({
+  cells,
+  layout,
+  heading = false,
+  share = 0,
+  recede = 0,
+  shareOf,
+}: {
+  cells: readonly string[];
+  layout: RegisterLayout;
+  heading?: boolean;
+  /** How much of the row track's attention this row holds, 0 to 1. */
+  share?: number;
+  /** How strongly *some* row is being talked about, which is what makes the others give way. */
+  recede?: number;
+  shareOf: (column: number) => number;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        height: layout.rowHeight,
+        alignItems: "stretch",
+        position: "relative",
+        // The row in focus gains a wash; the rest give up contrast in proportion to how strongly
+        // something else is being talked about. Both terms vanish at ground.
+        backgroundColor: heading
+          ? "transparent"
+          : withAlpha(COLORS.accent, REGISTER.rowWash * share),
+        borderTop: heading ? "none" : `1px solid ${withAlpha(COLORS.hairline, 0.55)}`,
+        borderBottom: heading ? `2px solid ${withAlpha(COLORS.muted, 0.5)}` : "none",
+        opacity: heading ? 1 : 1 - REGISTER.recede * recede * (1 - share),
+      }}
+    >
+      {/* The rule down the left edge, which is what says *this one* on a paused frame. */}
+      {heading ? null : (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: REGISTER.markWidth,
+            backgroundColor: withAlpha(COLORS.accent, share),
+          }}
+        />
+      )}
+      {cells.map((cell, index) => {
+        const column = layout.columns[index];
+        if (column === undefined) return null;
+        const columnShare = shareOf(index);
+        const budget = cellBudget(column.width, layout.size, layout.lines, REGISTER);
+        return (
+          <div
+            key={index}
+            style={{
+              width: column.width,
+              flex: `0 0 ${column.width}px`,
+              padding: `${REGISTER.padY}px ${REGISTER.padX}px`,
+              fontSize: layout.size,
+              lineHeight: REGISTER.lineHeight,
+              textAlign: column.align,
+              fontVariantNumeric: column.align === "right" ? "tabular-nums" : "normal",
+              fontWeight: heading ? 600 : 400,
+              color: heading ? COLORS.muted : COLORS.paper,
+              backgroundColor: withAlpha(
+                COLORS.accent,
+                REGISTER.columnWash * columnShare,
+              ),
+              // The bound, stated on the element rather than trusted to the text. A cell is
+              // already elided to `budget` characters, so this only ever catches a wide glyph run
+              // — and catching it silently is the whole of dragon:26's lesson.
+              overflow: "hidden",
+              // Two lines maximum, and the second has to be earned. `-webkit-line-clamp` is what
+              // Chromium actually honours, and Chromium is the only renderer this ever runs in.
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: layout.lines,
+            }}
+          >
+            {cell.length > budget ? `${cell.slice(0, Math.max(1, budget - 1))}…` : cell}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -4406,6 +4742,8 @@ function Composition({
     </>
   ) : scene.layout === "exhibit" ? (
     <Exhibit scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "register" ? (
+    <Register scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "series" ? (
     <Series scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "formula" ? (
