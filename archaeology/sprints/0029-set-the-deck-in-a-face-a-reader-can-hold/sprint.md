@@ -2,8 +2,9 @@
 id: spr_01KZM5EXSYFDBB87YWSEQSC0V0
 sequence: 29
 kind: sprint
-status: active
+status: closed
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Set the deck in a face a reader can hold
@@ -89,3 +90,65 @@ environment, and the measurement has to be repeatable rather than a number someb
   which every fitter in `theme.ts` depends on).
 - **A render manifest or provenance subsystem.** The resolved profile goes wherever cuecraft already
   reports what it did, and nowhere new.
+
+## Outcome
+
+**Every success criterion met, and the round's central assumption was wrong.**
+`accessibility: dyslexia: true` selects a `hyperlegible` profile resolved in `buildTimeline` and
+carried on the `Timeline`; the default is unchanged, proven rather than asserted; decision:62
+records the shape and dragon:36 records what the round found on its way.
+
+### The face is narrower, not wider
+
+The sprint opened expecting all five advance-width estimates to grow, on the reasoning that a face
+which draws `I` unmistakably apart from `l` must be spending width to do it. Measured over 1353
+samples from all 28 decks in `examples/`, in Remotion's own Chrome, against the exact pinned WOFF2:
+
+    heading  0.490 -> 0.480      body   0.520 -> 0.510
+    plate    0.550 -> 0.530      event  0.530 -> 0.520
+    mono     0.602 -> 0.633
+
+Four of five *narrower*. Atkinson Hyperlegible Next buys its differentiation from glyph shape — a
+tailed `l`, a slashed zero, an angled `1`, terminals cut at distinct angles — rather than from
+advance. The **monospace** is the one that pays, and it pays there because a monospace face has one
+advance for every glyph: every distinction it wants has to fit a cell the widest letter sets.
+
+That is the whole justification for the calibration having been in scope. Copying the defaults
+across would have been optimistic by five percent on exactly the class where optimism runs a
+specimen off the right edge of the frame — in the profile a reader asked for because they were
+struggling. `scripts/calibrate-widths.ts` re-derives all five and `src/render/calibration.json`
+plus a unit test keep a font upgrade from moving them silently.
+
+### The `<code>` element had been overriding the deck's monospace stack since sprint:2
+
+The largest finding, and it is not about accessibility at all. `<code>` carries
+`font-family: monospace` in the browser's user-agent stylesheet, and a UA rule on an element beats
+an inherited value from its parent — so the mono stack `Specimen` and `Revision` set on the block
+around the code has never reached the code. Every specimen cuecraft has rendered was set in
+whatever Chrome's *generic* `monospace` resolves to, which on this machine is Menlo, which is the
+first entry of the stack it was ignoring. Two coincidences stacked, and they hid it for
+twenty-eight sprints.
+
+It became visible in one frame: the first hyperlegible render of `examples/cuecraft.yaml`, where
+the heading changed face and the code did not. Fixed with `font-family: inherit`, and the default
+stills stayed byte-identical — which is itself the proof that the two coincidences were real.
+
+### What "unchanged" means here
+
+The pre-sprint tree was extracted at `e8b75ab` and fed the *same* dumped `CompiledPresentation`, so
+specimen text and narration were held constant and only the renderer varied. 24 stills — three
+decks, eight frames each, across the whole film rather than the opening — byte-identical. The same
+24 under the hyperlegible profile all differ, with no clipping, no truncation, no overflowing
+plate, no shifted diagram geometry and no camera framing regression.
+
+One consequence is worth stating rather than hiding: a specimen line that fitted at the default
+mono advance can wrap under the wider one, and it wraps with decision:21's `↳` rather than
+clipping. That is the mechanism working.
+
+### What was refused
+
+No `font:`, no theme, no per-slide override, no second knob, and no closing of dragon:4 — the
+default profile is still a system stack and still host-dependent. What this round built is the
+mechanism dragon:4 will need, tested against a second genuinely different face rather than against
+itself. Whether the deck's *own* sans is worth bundling stays a separate decision about what
+cuecraft should look like, and it should not be made while wearing an accessibility hat.
