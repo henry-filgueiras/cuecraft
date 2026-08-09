@@ -2,8 +2,9 @@
 id: spr_01KZHY6QMS7W4P3442GSSA9X8D
 sequence: 15
 kind: sprint
-status: active
+status: closed
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Let the narration quote itself
@@ -87,3 +88,65 @@ at it. There is no timecode in the source format and this does not add one.
 - **Content-addressed narration caching.** decision:3's cache is still parked (idea:8). Reusing a
   clip within one compilation is not the cache and must not be mistaken for it.
 - **Static media, branding, watermark, outro.**
+
+## Outcome
+
+Every success criterion met, and the round's strongest evidence turned out to be an assertion nobody
+had planned to be able to make.
+
+`examples/retry.yaml` is 1:05 of two people disagreeing about a duplicate charge, settled when one of
+them plays the other's Saturday sentence back at her. Rendered at full size and watched. The film
+cuts from slide 3 to slide 1 at 00:49.3, replays 7.1s from 00:08.9, and cuts back to a subtitle-free
+900ms before Priya answers. Across that boundary: Dev's original words and Dev's label on the
+subtitle, the `settlement` bullet lighting up again at the moment it lit up the first time, and the
+progress rule retreating to a third and returning.
+
+### The claim as pixels, rather than as a description
+
+The intended acceptance was a human watching for whether the recalled slide "follows the same visual
+evolution". It turned out to be checkable exactly:
+
+    still at frame 255  (during the original sentence)
+    still at frame 1440 (during the replay of it)      byte-identical PNGs
+
+Two frames of one film, rendered independently through the real browser from different points in the
+composition. Anchor states, entrance motion, subtitle and progress rule all included. If the
+sequence-local frame, the absolute frame, or the offset undoing the original nesting were wrong by
+anything at all, they would differ. That is now `pipeline.render-test.ts`.
+
+Sample-exact audio comparison on the finished MP4 agrees: aligned to the compiled frames, the replay
+differs from the original by −41.6 dBFS against a −24.4 dBFS signal, at a 7-sample offset that is
+AAC framing. Four WAVs on disk for five utterances heard.
+
+### What the round did not have to build
+
+Nothing about the serial track needed changing. A recall walks the same cursor as speech, pauses,
+dwells and calls, and the "one serialized audible stream" property fell out rather than being
+defended — which was the round's actual question about whether the existing model had room for a
+fourth kind of occupant. It did.
+
+Nor was cycle detection built. Backwards-only, `activates`-only, root-only resolution leaves no edge
+that could close a loop, so the restriction *is* the safety argument.
+
+### The regression evidence, since a new field touches every scene
+
+All fourteen shipped decks compiled on `8eba029` and on this branch with a deterministic stand-in
+narrator, and the two timelines are identical field for field apart from an empty `recalls: []` on
+every scene. Run as a before/after over a git worktree rather than promised.
+
+### Two things that moved that were not on the list
+
+- **`buildTimeline` lays scenes out in an explicit loop now.** A recall needs the absolute frame of a
+  clip on an *earlier* scene, so scene order stopped being incidental. Better stated than left as a
+  `map` whose callback quietly depended on an array being filled in.
+- **`SubtitleCue.ordinal` stopped being one-to-one with `ClipFact`.** It numbers what is heard, and a
+  recalled sentence is heard twice. The old doc comment claimed the correspondence; it says otherwise
+  now, because the alternative was a count that disagreed with the film.
+
+### Where it stopped
+
+Exactly where it aimed. Cross-deck recall, external recordings, trimming, playback rate and every
+form of visual treatment were refused and remain refused. Handover timing was not touched: the round
+proved the film can put two people's audio next to each other with a hard boundary, and says nothing
+about whether they could overlap. dragon:24 records that, including the observation that the cheap
+lever — shortening the gap while keeping the track serial — has never been measured, let alone tried.

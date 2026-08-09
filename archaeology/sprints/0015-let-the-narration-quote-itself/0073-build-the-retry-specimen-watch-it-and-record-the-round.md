@@ -2,9 +2,10 @@
 id: tsk_01KZHY86W56HJX55TDEY20DA9N
 sequence: 73
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZHY6QMS7W4P3442GSSA9X8D
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Build the Retry specimen, watch it, and record the round
