@@ -1,0 +1,178 @@
+# An incident review in which one party keeps revising what happened, and the presentation
+# answers by playing that party's own earlier voice back.
+#
+#   npm run render -- examples/off-the-record.yaml -o out/off-the-record.mp4
+#
+# The joke is structural rather than written. Management revises; the film produces evidence.
+# Nothing in the narration explains how, and nothing needs to: a quotation card carrying the
+# earlier slide, the earlier words and the earlier speaker is an argument on its own.
+#
+# Two recalls, and they are doing different work. Slide 4 quotes slide 2 at close range, so the
+# contradiction is a matter of hearing the same voice say the opposite thing a few seconds ago.
+# Slide 6 quotes the very first sentence of the film, and its subject is the claim that no record
+# would exist — a claim the quotation disproves by being playable at all.
+#
+# Anchored twice, on purpose. `off-record` and `not-a-deploy` are the only two elements in the
+# deck that anything recalls, and each is activated by exactly one self-contained sentence,
+# because the window a recall replays is one measured clip and nothing beside it (dragon:25).
+
+title: "This Meeting Is Not Being Recorded"
+
+narrators:
+  management: { voice: bm_george, speed: 1.0 }
+  record: { voice: af_heart, speed: 1.02 }
+
+defaults:
+  narrator: management
+  subtitles: true
+  pre_say: 400ms
+  post_say: 800ms
+
+slides:
+  # 1 — THE GROUND RULES. Three short labels, so the field of terms is read at a glance and the
+  # third one can be quoted back at the end of the film without anyone having to re-read it.
+  #
+  # "No record kept" rather than "No permanent record", which is what this cell said until it was
+  # rendered: nineteen characters wrap in a matrix column, and the second line lands on top of the
+  # subtitle. See dragon:26 — the archetype admits up to twenty-four and cannot set them.
+  - slide:
+      title: "This meeting is not being recorded"
+      bullets:
+        - text: Candid
+        - text: Blameless
+        - id: off-record
+          text: No record kept
+
+    say:
+      - speech: >-
+          Before we begin, this is an informal conversation. Nothing said here will become part of
+          any permanent record.
+        activates: off-record
+
+      - speech: "Understood. The record will note that."
+        narrator: record
+
+  # 2 — THE FIRST REVISION. The bullets are the minutes as Management would like them kept, which
+  # is why they read as a numbered account rather than as points.
+  - slide:
+      title: "What did not go to production"
+      bullets:
+        - id: not-a-deploy
+          text: Not a deployment
+        - id: adjustment
+          text: Routine configuration adjustment
+        - text: "Friday, 16:58"
+
+    say:
+      - speech: >-
+          For clarity, we did not deploy on Friday. We made a routine configuration adjustment.
+        activates: not-a-deploy
+
+      - speech: "The adjustment contained application code."
+        narrator: record
+        activates: adjustment
+
+      - speech: "Configuration can be extremely ambitious."
+
+  # 3 — WHAT ACTUALLY HAPPENED. Stages of one transformation, not points: each of these consumed
+  # the one before it, which is the whole of what Management is disputing. Times are written on
+  # the slide and spoken in words, which is the deck's own idiom for a clock.
+  - slide:
+      title: "An unrelated sequence of events"
+      steps:
+        - id: arrives
+          text: "16:58 — adjustment arrives"
+        - id: zero
+          text: "16:59 — checkout traffic reaches zero"
+        - id: restored
+          text: "17:06 — reverting it restores service"
+
+    say:
+      - speech: "At two minutes to five, the adjustment arrives."
+        narrator: record
+        activates: arrives
+
+      - speech: "One minute later, checkout traffic reaches zero."
+        narrator: record
+        activates: zero
+
+      - speech: >-
+          At six minutes past five, someone reverts it, and service returns.
+        narrator: record
+        activates: restored
+
+      - speech: "Temporal adjacency is not causation."
+
+      - speech: "Correct. The rollback is the awkward part."
+        narrator: record
+
+  # 4 — THE FIRST CONTRADICTION. The slide is Management's position stated once, calmly, with
+  # nothing on it that argues back — so the only contradicting evidence on screen is the
+  # quotation, and it arrives in Management's own voice.
+  - slide:
+      title: "A consistent account"
+      bullets:
+        - text: Position unchanged throughout
+        - text: No claim has been withdrawn
+        - id: never-claimed
+          text: Nothing was ever ruled out
+
+    say:
+      - speech: "I have never claimed that nothing was deployed."
+        activates: never-claimed
+
+      - speech: "Let's consult an earlier version of you."
+        narrator: record
+
+      - recall: not-a-deploy
+
+      - pause: 900ms
+
+      - speech: >-
+          The earlier version of me lacked the context of my current explanation.
+
+      - speech: "It had the same incident and fewer adjectives."
+        narrator: record
+
+  # 5 — BREATHING ROOM. Three identical answers to three different questions, and the repetition
+  # is the whole content, so nothing here is anchored: lighting one Morgan would imply the other
+  # two were somebody else.
+  - slide:
+      title: "Cross-functional approval"
+      bullets:
+        - text: "Proposal: Morgan"
+        - text: "Approval: Morgan"
+        - text: "Execution: Morgan"
+
+    say:
+      - speech: "The decision was thoroughly cross-functional."
+
+      - speech: "Morgan crossed all three functions."
+        narrator: record
+
+      - speech: "Exactly."
+
+      - speech: "That was not praise."
+        narrator: record
+
+  # 6 — THE CLOSING CALLBACK. No body at all: the title is the assertion, at display size, and
+  # the thing that refutes it is the first sentence of the film played back underneath it.
+  - slide:
+      title: "No permanent record was created"
+
+    say:
+      - speech: >-
+          Good. Then the minutes should reflect that no permanent record was created.
+
+      - speech: "The minutes have encountered contrary evidence."
+        narrator: record
+
+      - recall: off-record
+
+      - pause: 900ms
+
+      - speech: >-
+          That was not a statement of fact. It was a feature request.
+
+      - speech: "Request denied."
+        narrator: record
