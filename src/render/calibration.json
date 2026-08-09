@@ -1,0 +1,80 @@
+{
+  "$comment": [
+    "Measured by scripts/calibrate-widths.ts. Do not hand-edit.",
+    "",
+    "src/render/typography.test.ts asserts that the shipped advance widths still cover what",
+    "was measured here, and that these are still the fonts fonts.lock.json pins. A font",
+    "upgrade therefore fails the ordinary suite — with no browser and no render — instead of",
+    "quietly moving every line break in every hyperlegible film.",
+    "",
+    "Re-derive with: node scripts/calibrate-widths.ts --write"
+  ],
+  "fonts": {
+    "@fontsource/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource/atkinson-hyperlegible-mono": "5.3.0"
+  },
+  "deckCount": 28,
+  "sampleCount": 1353,
+  "classes": {
+    "heading": {
+      "samples": 340,
+      "posture": 0.8382,
+      "default": {
+        "measuredAtPosture": 0.4894,
+        "max": 0.8634
+      },
+      "hyperlegible": {
+        "required": 0.48,
+        "max": 0.8176
+      }
+    },
+    "body": {
+      "samples": 500,
+      "posture": 0.99,
+      "default": {
+        "measuredAtPosture": 0.5228,
+        "max": 0.86
+      },
+      "hyperlegible": {
+        "required": 0.51,
+        "max": 0.813
+      }
+    },
+    "mono": {
+      "samples": 123,
+      "posture": 1,
+      "default": {
+        "measuredAtPosture": 0.6021,
+        "max": 0.6021
+      },
+      "hyperlegible": {
+        "required": 0.633,
+        "max": 0.6321
+      }
+    },
+    "plate": {
+      "samples": 240,
+      "posture": 0.925,
+      "default": {
+        "measuredAtPosture": 0.5493,
+        "max": 0.897
+      },
+      "hyperlegible": {
+        "required": 0.53,
+        "max": 0.838
+      }
+    },
+    "event": {
+      "samples": 150,
+      "posture": 0.9333,
+      "default": {
+        "measuredAtPosture": 0.5233,
+        "max": 0.889
+      },
+      "hyperlegible": {
+        "required": 0.52,
+        "max": 0.838
+      }
+    }
+  }
+}

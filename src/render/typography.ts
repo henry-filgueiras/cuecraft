@@ -145,20 +145,47 @@ export const DEFAULT_TYPOGRAPHY: Typography = {
  * The system stacks stay on the tail of both, unreached in a bootstrapped checkout and there for
  * dragon:4's fourth constraint: a missing face must render a different frame, never a blank one.
  *
- * The widths are measured, not adjusted by eye and not copied from above — see
- * `../../scripts/calibrate-widths.ts` and the corpus it runs against. Every one is wider than the
- * default's, which is the face doing what it is for.
+ * ## The widths, and the thing they turned out not to be
+ *
+ * Measured, over 1353 samples drawn from the 28 decks in `examples/`, in Remotion's own Chrome,
+ * against the exact WOFF2 `fonts.lock.json` pins — `../../scripts/calibrate-widths.ts`, which
+ * re-derives every number below and is the reason none of them is a hand-tuned mystery.
+ *
+ * The round opened expecting all five to be *wider*. The reasoning was straightforward and wrong:
+ * a face that draws `I` unmistakably apart from `l` must be spending width to do it. Four of the
+ * five came back **narrower**:
+ *
+ *     heading   0.490 -> 0.480      body   0.520 -> 0.510
+ *     plate     0.550 -> 0.530      event  0.530 -> 0.520
+ *     mono      0.602 -> 0.633
+ *
+ * Atkinson Hyperlegible Next buys its differentiation from *shape* — a tailed `l`, a slashed zero,
+ * an angled `1`, terminals cut at distinct angles — rather than from advance, and at these weights
+ * and this tracking it sets a hair tighter than Helvetica Neue. The **monospace** is the one that
+ * pays, by five percent, which is exactly where it should: a monospace face has one advance for
+ * every glyph, so every distinction it wants has to fit in a cell that the widest letter sets.
+ *
+ * Copying the defaults across would therefore not have been merely imprecise. On `mono` it would
+ * have been *optimistic* by five percent — a specimen sized to a line count that does not fit,
+ * running off the right edge of the frame, in the profile a reader asked for because they were
+ * struggling. That is the whole argument for measuring.
+ *
+ * Each value sits at the same **quantile of its own distribution** as the shipped default sits in
+ * the default face's: 84% for a heading, 99% for body text, 93% for plates and events. So the
+ * profile is neither more nor less cautious than cuecraft already is — the posture is inherited
+ * rather than chosen, which is what makes it re-derivable rather than a matter of taste. The
+ * monospace one is the exact measured advance rounded up, because a point mass has no quantiles.
  */
 export const HYPERLEGIBLE_TYPOGRAPHY: Typography = {
   id: "hyperlegible",
   prose: '"Atkinson Hyperlegible Next", "Helvetica Neue", Helvetica, Arial, sans-serif',
   mono: '"Atkinson Hyperlegible Mono", Menlo, "SF Mono", "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace',
   width: {
-    heading: 0.55,
-    body: 0.58,
-    mono: 0.6,
-    plate: 0.6,
-    event: 0.59,
+    heading: 0.48,
+    body: 0.51,
+    mono: 0.633,
+    plate: 0.53,
+    event: 0.52,
   },
   faces: [
     { family: "Atkinson Hyperlegible Next", weights: [400, 500, 600, 700] },

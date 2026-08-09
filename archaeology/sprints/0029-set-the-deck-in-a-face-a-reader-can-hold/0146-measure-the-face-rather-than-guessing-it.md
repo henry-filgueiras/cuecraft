@@ -2,9 +2,10 @@
 id: tsk_01KZM5GH3CKQNKX3ETEB6VK92S
 sequence: 146
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZM5EXSYFDBB87YWSEQSC0V0
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Measure the face rather than guessing it
