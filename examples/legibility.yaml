@@ -1,0 +1,112 @@
+# The readability A/B: one short deck, rendered once per typography profile.
+#
+#   cuecraft render examples/legibility.yaml -o out/ab/candidate-?.mp4
+#
+# sprint:29 needed a deck that could be watched twice — once in the default profile and once
+# under `accessibility: dyslexia: true` — where the only difference is glyph design. Nothing here
+# sets a size, a colour, a font or a position, and this file carries no `accessibility:` key: the
+# paired render is produced by copying it with the key added, so that both films come out of the
+# ordinary CLI path rather than out of a harness.
+#
+# It is a real deck about a real thing, and that is a requirement rather than a preference. An
+# eye chart of `Il1 O0 rn/m` proves that a face separates those pairs in isolation, which nobody
+# doubted; what is actually in question is whether a *sentence* is easier to hold, and a sentence
+# that exists only to carry ambiguous pairs is not a sentence. So the pairs arrive the way they
+# arrive in real work — a hostname, a run id, a status code, a timestamp, a flag somebody typed
+# — and they are all load-bearing:
+#
+#   Il1 / lI1     the run id `IlI1O0l` and the host `rn01l`
+#   O0 / 0O       the same id, and `0.0.0.0`
+#   rn / m        `rn01l` against `m01l`, and "modern" against "rnodern"
+#   cl / d        `cldr` against `cdr`, and "cloud" against "doud"
+#   punctuation   colons in timestamps, a comma splice, an em dash, quotes, parentheses
+#   digits        a timestamp to the millisecond, a duration, a percentage, a port
+#
+# The subjective test it exists for: reading the same slide in both films, how often does the eye
+# have to go back?
+
+title: "Reading an incident log at four in the morning"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1100ms
+  subtitles: true
+
+slides:
+  # A statement: the title becomes the slide, at display size. The largest type in the deck, and
+  # the first thing either candidate is judged on.
+  - slide:
+      title: "The log is fine. The reading of it is the problem."
+
+    say:
+      - "Nothing here is a bug in the logging."
+      - pause: 400ms
+      - "Every line you need is already on the screen, at four in the morning, in a
+        typeface somebody chose for something else."
+
+  # Three phrases at lead scale: ordinary prose, which is where most of the reading in any
+  # cuecraft film actually happens.
+  #
+  # Three rather than four, and the fourth is why dragon:36 exists. `lead` never consults the
+  # subtitle band, so a fourth bullet of this length is drawn underneath the narration — in both
+  # profiles identically, which is how it was identified as a defect this round found rather than
+  # one it caused. The deck is short by one bullet so that the A/B is about the glyphs.
+  - slide:
+      title: "What the pager said"
+      bullets:
+        - id: host
+          text: "Host rn01l stopped answering at 03:41:07.482"
+        - id: retry
+          text: "Its neighbour m01l took over, then gave the lease back"
+        - id: code
+          text: "Sixty-one percent returned 502, not 500 — run id IlI1O0l"
+
+    say:
+      - speech: "The host that stopped answering was the first one, and its neighbour is
+          one character away from it."
+        activates: host
+      - speech: "Its neighbour took the lease, and handed it straight back."
+        activates: retry
+      - speech: "Sixty-one percent of the failures were five-oh-twos, and the rest were
+          five hundreds — which is a different problem, under one run identifier."
+        activates: code
+
+  # A code specimen: the densest and most ambiguous text on any frame, and the place a monospace
+  # face has to earn its keep. Written here rather than quoted, because a quotation would tie this
+  # deck to a file that moves.
+  - slide:
+      title: "The line everybody misread"
+      code:
+        language: yaml
+        source: |
+          lease:
+            holder: rn01l          # not m01l
+            run:    IlI1O0l        # not IIl1OOl
+            since:  03:41:07.482Z
+            expires: 03:41:37.482Z # 30s, not 3.0s
+          upstream:
+            bind:   0.0.0.0:8080
+            origin: cldr.internal  # not cdr.internal
+            status: 502            # not 500
+
+    say:
+      - "Two hosts, one character apart."
+      - "Two origins, one character apart."
+      - pause: 300ms
+      - "The lease was thirty seconds, and the incident review said three."
+
+  # Prose at lead scale: longer sentences, the thing the profile is actually for.
+  - slide:
+      title: "What we changed afterwards"
+      bullets:
+        - "We stopped naming hosts so that two of them differ by a single ambiguous
+          letterform, which is a fix in the naming rather than in the reading"
+        - "We print durations with units — thirty seconds, not the number thirty — because
+          a decimal point is the smallest mark on the frame and the easiest to lose"
+        - "And we render the postmortem, rather than pasting the log into a slide"
+
+    say:
+      - "None of the three is a change to the logging."
+      - "They are all changes to what the reading costs."
+      - pause: 500ms
+      - "Which is the same argument this film is making about itself."

@@ -983,6 +983,80 @@ marked with `↳`; nothing is ever cut to fit.
 The full reference for all of this — and the reasoning behind every rule — is in
 [`archaeology/decisions/`](archaeology/decisions/).
 
+### Setting the deck for a reader who finds ordinary text hard
+
+One key, at the presentation root, and it is the only thing a source may say about typography:
+
+```yaml
+accessibility:
+  dyslexia: true
+```
+
+**What it changes.** Prose, headings, labels, plates and every other proportional face are set in
+**Atkinson Hyperlegible Next**; everywhere cuecraft already means monospace — code specimens,
+measured durations, timestamps, ordinals, table figures — is set in **Atkinson Hyperlegible Mono**.
+Both are bundled and pinned, and the layout arithmetic is re-measured against them
+([`decision:62`](archaeology/decisions/)), so a plate is sized for the face that is actually in it.
+
+**What it does not change.** Nothing else. Not type sizes, letter spacing, line height, weights,
+colours, timings, camera moves, layout selection, or which composition a slide gets. The round that
+built it deliberately isolated the effect of glyph design, so that a comparison of the two films is
+a comparison of one variable. **Mathematics is untouched**: a `formula` sets in KaTeX's own faces in
+both profiles, because there the glyphs _are_ the notation — an italic `x` is a variable and an
+upright one is not.
+
+**What it is not.** It is not a font picker, a theme, or the first of a family of typography knobs.
+There is no `font:`, no size, no per-slide override, and no way for a source to name a typeface —
+the profile it selects is internal and the set of them is closed. An author expresses a constraint
+about a _reader_; what that looks like stays cuecraft's decision, which is
+[`decision:10`](archaeology/decisions/)'s rule rather than an exception to it. Writing it anywhere
+but the root — on a slide, under `defaults:`, or in a child module — is an error rather than a
+silent no-op, because a film that changed face partway through would be worse for the reader than
+either face alone.
+
+Omitting the key, and writing `dyslexia: false`, are indistinguishable from each other and from
+every deck written before the key existed. Existing renders are byte-identical.
+
+**Getting the fonts.** They arrive with `npm ci` — two pinned Fontsource packages, verified by
+`package-lock.json` before they are unpacked — so an ordinary install is all most people need:
+
+```bash
+npm run bootstrap:fonts   # verifies the eight WOFF2 against fonts.lock.json; offline-safe
+```
+
+It is idempotent and cheap when they are already there. Nothing is fetched during a render, in
+either profile: the faces are bundled next to the composition by Remotion's own webpack, exactly as
+KaTeX's are. A deck that asks for the profile without them installed fails _before_ bundling, by
+name, with that command — rather than silently rendering in a system stack, which is the one thing
+the setting exists to prevent. Both families ship their OFL-1.1 licence inside their package
+(`node_modules/@fontsource/atkinson-hyperlegible-{next,mono}/LICENSE`).
+
+`cuecraft render` reports the resolved profile and the pinned font version, but only for a deck
+that asked for one.
+
+**Judging it, and re-deriving the numbers.** `examples/legibility.yaml` is a short deck built to be
+watched twice — real prose, a real code specimen, and the ambiguous pairs (`Il1`, `O0`, `rn/m`,
+`cl/d`) arriving as hostnames, run ids and timestamps rather than as an eye chart. To reproduce the
+paired renders:
+
+```bash
+cp examples/legibility.yaml /tmp/plain.yaml
+{ printf 'accessibility:\n  dyslexia: true\n\n'; cat examples/legibility.yaml; } > /tmp/hyper.yaml
+npm run render -- /tmp/plain.yaml -o out/plain.mp4
+npm run render -- /tmp/hyper.yaml -o out/hyper.mp4
+```
+
+The advance-width estimates every fitter works from are measured rather than chosen, over a corpus
+drawn from every deck in `examples/`, in Remotion's own browser, against the exact bundled WOFF2:
+
+```bash
+node scripts/calibrate-widths.ts           # the report, both profiles side by side
+node scripts/calibrate-widths.ts --write   # re-derive src/render/calibration.json
+```
+
+`npm test` fails if the shipped constants stop covering that measurement or if `fonts.lock.json`
+moves without it being re-run — so a font upgrade cannot quietly change a line break.
+
 ## Design principles
 
 - **Author relationships; derive mechanics.** The source says what things are and how they relate.
@@ -997,6 +1071,8 @@ The full reference for all of this — and the reasoning behind every rule — i
   frames, and the MP4 are projections: always safe to delete, never hand-edited, never committed.
 - **The artifact gets the final vote.** Every rule here was changed because a rendered minute
   looked wrong, and the measurements that changed it are in the archaeology.
+- **Accessibility is a constraint, not a preference.** The one thing a source may say about
+  typography names a _reader_, never a typeface — and it applies to the whole film or not at all.
 
 ## Status
 

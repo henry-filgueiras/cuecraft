@@ -1021,6 +1021,22 @@ function Line({
       style={{
         display: "block",
         whiteSpace: "pre",
+        // `font-family: inherit`, and it is load-bearing rather than tidy.
+        //
+        // A `<code>` element carries `font-family: monospace` in the browser's own user-agent
+        // stylesheet, and a UA rule on an element beats an inherited value from its parent — so
+        // the mono stack that `Specimen` and `Revision` set on the block around this has never
+        // reached the text inside it. Every specimen cuecraft has ever rendered was set in
+        // whatever Chrome's *generic* `monospace` resolves to, which on this machine happens to
+        // be Menlo, which happens to be the first entry in the stack it was ignoring. Two
+        // coincidences stacked, and they hid it for twenty-eight sprints.
+        //
+        // It stopped being invisible the moment a second profile named a different monospace
+        // face: the heading changed and the code did not, in a deck that had asked for both.
+        //
+        // Inheriting rather than restating the stack, so there is exactly one place a
+        // composition decides what its code is set in, and this is not one of them.
+        fontFamily: "inherit",
         ...(opacity === undefined ? {} : { opacity }),
       }}
     >

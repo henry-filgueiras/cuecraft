@@ -2,9 +2,10 @@
 id: tsk_01KZM5GH3J0HMKWB80SJAF829Q
 sequence: 147
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZM5EXSYFDBB87YWSEQSC0V0
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Render both, look at both, and hide which is which
