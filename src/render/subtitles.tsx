@@ -1,16 +1,19 @@
 import { createContext, useContext, useMemo } from "react";
 
 import type { SubtitleCue } from "./subtitle.ts";
-import { subtitleAt } from "./subtitle.ts";
+import { subtitleAt, subtitleFit } from "./subtitle.ts";
 import {
   COLORS,
   FONT_STACK,
   FRAME,
   HEADING_WIDTH,
   SUBTITLE,
-  fitSubtitle,
   subtitleBand,
 } from "./theme.ts";
+
+// Moved to `./subtitle.ts` when `./explain.ts` became its second caller, and re-exported here so
+// that every importer of it stayed where it was. See the note on its definition.
+export { subtitleFit };
 
 /**
  * The narration, set on the frame, outside everything that moves.
@@ -88,24 +91,6 @@ export const SubtitleBandContext = createContext<number>(0);
 
 export function useSubtitleBand(): number {
   return useContext(SubtitleBandContext);
-}
-
-/**
- * One size and one line count for the whole deck.
- *
- * Fitted across every sentence the film will show — `fitQuote`'s move (decision:28), and the
- * reason is stronger here: type that resized when the narration moved on would put a change of
- * size under every full stop.
- *
- * It used to also report whether the deck named anybody, because the band's height depended on it.
- * It no longer does (`subtitleBand`), so the fit is now purely a fact about the *sentences* — which
- * is the only thing it was ever measuring.
- */
-export function subtitleFit(cues: readonly SubtitleCue[]) {
-  return fitSubtitle(
-    cues.map((cue) => cue.text),
-    HEADING_WIDTH,
-  );
 }
 
 export function useSubtitleFit(cues: readonly SubtitleCue[]) {

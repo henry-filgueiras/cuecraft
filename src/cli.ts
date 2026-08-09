@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { narrativeStack, stackProblem, type Timeline } from "./compile/timeline.ts";
+import { compilePresentation } from "./compile/compile.ts";
+import {
+  buildTimeline,
+  narrativeStack,
+  stackProblem,
+  type Timeline,
+} from "./compile/timeline.ts";
 import { formatTimecode } from "./presentation/duration.ts";
-import { PresentationError } from "./presentation/parse.ts";
-import { renderPresentationFile, StageError } from "./pipeline.ts";
+import { parsePresentation, PresentationError } from "./presentation/parse.ts";
+import { renderPresentationFile, StageError, workspaceFor } from "./pipeline.ts";
+import { formatAudition } from "./render/audition.ts";
+import { auditionSheet } from "./render/auditionsheet.ts";
+import { explainMachines, formatExplanation } from "./render/explain.ts";
 import { protocolOf } from "./render/protocol.ts";
 import { allocateLanes } from "./render/tenancy.ts";
 import { SynthesisError, synthesize } from "./tts/kokoro.ts";
@@ -24,6 +34,7 @@ export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "render"; input: string; output: string; quiet: boolean }
+  | { kind: "explain"; input: string; audition: boolean; sheet?: string }
   | { kind: "speak"; text: string; output: string; voice?: string; speed?: number }
   | { kind: "voices" };
 
@@ -33,6 +44,7 @@ export const USAGE = `cuecraft — compile narrated slide presentations into vid
 
 Usage:
   cuecraft render <presentation.yaml> [-o <output.mp4>]
+  cuecraft explain <presentation.yaml> [--audition]
   cuecraft speak <text> [-o <output.wav>] [--voice <name>] [--speed <rate>]
   cuecraft voices
   cuecraft --help
@@ -43,6 +55,8 @@ Options:
       --voice <name>   Kokoro voice for speak (default: af_heart)
       --speed <rate>   Speaking rate for speak, 0.5–2.0 (default: 1)
       --quiet          Suppress progress; print only the completion summary
+      --audition       explain: also score every layout candidate that was considered
+      --sheet <path>   explain: write the layout audition as a labelled SVG contact sheet
 
 Status: experimental.
 
@@ -58,6 +72,8 @@ export function parseInvocation(argv: readonly string[]): Invocation {
       voice: { type: "string" },
       speed: { type: "string" },
       quiet: { type: "boolean", short: "q" },
+      audition: { type: "boolean" },
+      sheet: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "V" },
     },
@@ -84,6 +100,22 @@ export function parseInvocation(argv: readonly string[]): Invocation {
         input,
         output: values.output ?? "presentation.mp4",
         quiet: values.quiet ?? false,
+      };
+    }
+
+    case "explain": {
+      const input = rest[0];
+      if (input === undefined) {
+        throw new UsageError("explain requires a presentation file");
+      }
+      if (rest.length > 1) {
+        throw new UsageError(`explain takes one presentation file, got ${rest.length}`);
+      }
+      return {
+        kind: "explain",
+        input,
+        audition: values.audition ?? false,
+        ...(values.sheet === undefined ? {} : { sheet: values.sheet }),
       };
     }
 
@@ -185,6 +217,68 @@ async function runRender(
     }
     if (error instanceof StageError) {
       process.stderr.write(`cuecraft: ${error.stage} failed: ${error.message}\n`);
+      return 1;
+    }
+    throw error;
+  }
+}
+
+/**
+ * What the renderer decided, without rendering.
+ *
+ * A developer's instrument and deliberately not an authoring aid. Every policy `circuit` runs is a
+ * claim about perception — a shot holds, an arrival registers, a pull-back settles — and until this
+ * existed none of those claims could be checked except by watching a minute of video and trusting a
+ * memory of the last one. It prints the phase budget of every occurrence, the reason for every
+ * camera decision, and what the type comes out at in every shot.
+ *
+ * It still synthesizes, because it must: dragon:1's ordering means narration durations are the
+ * clock, and a timing report that guessed at them would be reporting on a film nobody will see.
+ * The cache makes the second run instant.
+ *
+ * Nothing it prints is reachable from the grammar, and nothing in the grammar changes it.
+ */
+async function runExplain(
+  invocation: Extract<Invocation, { kind: "explain" }>,
+): Promise<number> {
+  try {
+    const text = await readFile(invocation.input, "utf8");
+    const presentation = parsePresentation(text, invocation.input);
+    const compiled = await compilePresentation(presentation, {
+      workspace: workspaceFor(resolve(invocation.input)),
+      synthesize,
+    });
+    const timeline = buildTimeline(compiled);
+    const explanations = explainMachines(timeline);
+
+    if (explanations.length === 0) {
+      process.stderr.write(`cuecraft: ${invocation.input} contains no machine\n`);
+      return 1;
+    }
+
+    const blocks = explanations.flatMap((explanation) => [
+      formatExplanation(explanation),
+      ...(invocation.audition ? [formatAudition(explanation.audition)] : []),
+    ]);
+    process.stdout.write(`${blocks.join("\n\n")}\n`);
+
+    const first = explanations[0];
+    if (invocation.sheet !== undefined && first !== undefined) {
+      await writeFile(
+        invocation.sheet,
+        auditionSheet(first.audition, first.title),
+        "utf8",
+      );
+      process.stderr.write(`  audition sheet written to ${invocation.sheet}\n`);
+    }
+    return 0;
+  } catch (error) {
+    if (error instanceof PresentationError) {
+      process.stderr.write(`cuecraft: ${error.report()}\n`);
+      return 1;
+    }
+    if (error instanceof SynthesisError) {
+      process.stderr.write(`cuecraft: ${error.message}\n`);
       return 1;
     }
     throw error;
@@ -368,6 +462,9 @@ async function main(argv: readonly string[]): Promise<number> {
 
     case "render":
       return runRender(invocation);
+
+    case "explain":
+      return runExplain(invocation);
 
     case "voices":
       for (const voice of KOKORO_VOICES) {

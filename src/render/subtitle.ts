@@ -1,6 +1,6 @@
 import type { CompiledPresentation, SpeechClip } from "../compile/compile.ts";
 import type { Scene } from "../compile/timeline.ts";
-import { SPEAKER_COLORS } from "./theme.ts";
+import { HEADING_WIDTH, SPEAKER_COLORS, fitSubtitle } from "./theme.ts";
 
 /**
  * The narration, projected as text, on the clock it was already on.
@@ -243,4 +243,27 @@ export function subtitleAt(
     if (frame < cue.until) return cue;
   }
   return undefined;
+}
+
+/**
+ * How the whole deck's subtitles are set, and therefore how much room the band takes.
+ *
+ * One size and one line count fitted across every sentence the film will show (decision:28's
+ * rule, in `fitSubtitle`), so the band's height is a fact about the deck rather than about
+ * whichever cue happens to be up.
+ *
+ * It lives here rather than in `./subtitles.tsx` because a second caller demonstrated it was
+ * shared — `./explain.ts` has to know how much of the frame a `circuit`'s camera was given, and
+ * the answer runs through this, and a diagnostic that imported React to find out would be a
+ * diagnostic that could not run in a test. `./subtitles.tsx` re-exports it, so no importer moved.
+ * That is `./polyline.ts`'s rule for the second time (decision:36, decision:48).
+ */
+export function subtitleFit(cues: readonly SubtitleCue[]): {
+  readonly size: number;
+  readonly lines: number;
+} {
+  return fitSubtitle(
+    cues.map((cue) => cue.text),
+    HEADING_WIDTH,
+  );
 }
