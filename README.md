@@ -228,11 +228,12 @@ through its environment, which is [`decision:42`](archaeology/decisions/) reachi
 boundary. There is no key that could override one of them.
 
 And the narration can talk into it. The program says _where_ it drew each panel; cuecraft decides
-what being talked about looks like, in the vocabulary every other composition already uses — so when
-the sentence "Asia Pacific doubles across the year" is spoken, the rest of the chart dims for eight
-tenths of a second and that panel keeps a quiet mark afterwards. The deck writes
-`activates: asia-pacific`, and no coordinate, no colour and no duration
-([`decision:57`](archaeology/decisions/)).
+what being talked about looks like — so while the sentence "Asia Pacific doubles across the year" is
+being spoken, the rest of the chart recedes and that panel keeps a quiet mark afterwards. **How long
+it holds is how long the sentence lasts**, measured, not set; the next sentence hands the focus over
+rather than releasing it. The deck writes `activates: asia-pacific`, and no coordinate, no colour and
+no duration ([`decision:57`](archaeology/decisions/),
+[`decision:58`](archaeology/decisions/)).
 
 Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
 
@@ -265,7 +266,7 @@ narration cues                which composition each slide gets
 which cue is about what       type size, position, colour
 whether to show subtitles     which sentence is on screen, and when
 a program, and its inputs     the box and palette that program is handed
-what a picture can be asked   where a computed picture dims, what it marks, and when
+what a picture can be asked   where a computed picture recedes, and for how long
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
@@ -610,11 +611,14 @@ say:
     activates: asia-pacific
 ```
 
-Cuecraft then draws its **existing** activation treatment there — the rest of the picture dims for
-the moment the sentence lands, and the region keeps a quiet mark once it has been spoken about,
-which is [`decision:23`](archaeology/decisions/) applied to a raster. There is no key for a colour,
-a border, a duration or a coordinate, and emphasis is subtractive because an image cannot show part
-of itself at a different opacity.
+Cuecraft then draws the emphasis there: the rest of the picture recedes for as long as the sentence
+lasts, and the region keeps a quiet mark once it has been spoken about. **The hold is derived** — an
+anchor knows which clip activated it and every clip was measured, so rewording the narration changes
+how long the chart stays lit and there is no constant to set
+([`decision:58`](archaeology/decisions/)). Consecutive sentences hand the focus over rather than
+releasing between them; sentences far apart do release, because the narration left. Emphasis is
+subtractive because an image cannot show part of itself at a different opacity, and there is no key
+for a colour, a border, a duration or a coordinate.
 
 `shows:` is the identities the picture will have, and it exists because of an ordering: `activates:`
 resolves at parse time and R runs afterwards. It is not a second copy of something cuecraft could

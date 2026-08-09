@@ -339,11 +339,19 @@ export const EXHIBIT = {
    *
    * Emphasis on a raster has to be **subtractive**: an image cannot show part of itself at a
    * different opacity, so the only way to lift one region is to put a veil over everything else.
-   * Driven by `heat` rather than by `degree`, which is decision:23 — spend the contrast on the
-   * moment, and let established be normal. A veil that persisted would end the slide having
-   * declared three quarters of the chart irrelevant.
+   * Driven by **occupancy** rather than by `heat` — see `./exhibit.ts`. It rises when a sentence
+   * reaches a region, holds for as long as that sentence lasts, hands over to the next, and
+   * releases when the narration moves on. On `heat` it was an eight-tenths-of-a-second in-and-out,
+   * which is right for a bullet changing colour and reads as a *blink* when it is two thirds of
+   * the frame changing luminance.
+   *
+   * Shallower than it was, because it now persists: what is bearable for a flash is oppressive for
+   * three seconds, and the dimmed bars still have to be legible (`anchor.ts`: recessive, never
+   * hidden).
    */
-  veil: 0.66,
+  veil: 0.55,
+  /** How the veil moves. Frames at 30fps; the *hold* between them is derived, never set here. */
+  focus: { rise: 12, fall: 26, move: 12 },
   /** The mark a reached region keeps afterwards. Quiet on purpose; the moment already happened. */
   markAlpha: 0.5,
   markWidth: 3,

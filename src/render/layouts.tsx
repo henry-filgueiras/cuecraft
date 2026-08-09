@@ -80,6 +80,7 @@ import {
 } from "./machine.ts";
 import type { AuthoredMachine } from "../presentation/machine.ts";
 import { electLayout } from "./audition.ts";
+import { focusAt, focusSpans } from "./exhibit.ts";
 import {
   LEDGER_GUTTER,
   LEDGER_PAD_RIGHT,
@@ -4271,24 +4272,21 @@ function Regions({
     .map((region, index) => ({ region, index, state: stateOf(index) }))
     .filter((mark) => anchored.has(mark.index));
 
-  // One veil, at whichever region is hottest. Two overlapping shadows would darken the picture
-  // twice where they overlap, and the second-hottest region is by construction on its way out.
-  const hottest = marks.reduce<(typeof marks)[number] | undefined>(
-    (best, mark) =>
-      best === undefined || mark.state.heat > best.state.heat ? mark : best,
-    undefined,
-  );
+  // One veil, driven by occupancy rather than by heat (`./exhibit.ts`). One opening at a time, held
+  // for as long as the sentence that opened it, travelling to the next rather than releasing
+  // between two consecutive sentences.
+  const focus = focusAt(focusSpans(scene, regions), absoluteFrame, EXHIBIT.focus);
 
   return (
     <>
-      {hottest !== undefined && hottest.state.heat > 0 ? (
+      {focus === undefined ? null : (
         <div
           style={{
-            ...box(hottest.region),
-            boxShadow: `0 0 0 9999px ${withAlpha(COLORS.ink, hottest.state.heat * EXHIBIT.veil)}`,
+            ...box(focus.region),
+            boxShadow: `0 0 0 9999px ${withAlpha(COLORS.ink, focus.veil * EXHIBIT.veil)}`,
           }}
         />
-      ) : null}
+      )}
       {marks.map((mark) => (
         <div
           key={mark.region.name}
