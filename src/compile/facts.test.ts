@@ -65,6 +65,7 @@ function deck(
       calls: [],
       dwells: [],
       recalls: [],
+      playbacks: [],
       durationSeconds: offset,
       voice: "af_heart",
       speed: 1,

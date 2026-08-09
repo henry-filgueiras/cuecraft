@@ -7,6 +7,8 @@ import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
 import { resolveRepositoryPath, SourceError } from "../presentation/source.ts";
 import { repositoryRoot } from "../repository.ts";
 import { COLORS, EXHIBIT } from "../render/theme.ts";
+import { DEFAULT_FPS } from "./timeline.ts";
+import { lowerFootage } from "./footage.ts";
 import {
   RError,
   runR,
@@ -89,6 +91,7 @@ export function exhibitFrame(): RFrame {
     width: EXHIBIT.width * EXHIBIT.scale,
     height: EXHIBIT.height * EXHIBIT.scale,
     pointSize: EXHIBIT.pointSize * EXHIBIT.scale,
+    fps: DEFAULT_FPS,
     background: COLORS.ink,
     foreground: COLORS.paper,
     muted: COLORS.muted,
@@ -206,7 +209,18 @@ export async function materializePresentation(
     exhibits.push(materialized);
     options.onExhibit?.(materialized);
 
-    slides.push({ ...slide, body: { ...body, resource } });
+    // The one place a *narration* is rewritten by something a program computed, and the reason it
+    // is here rather than in the parser is that the numbers it needs are measurements
+    // (`./footage.ts`). A slide whose exhibit is still comes back unchanged.
+    const completed: AuthoredSlide = { ...slide, body: { ...body, resource } };
+    const lowered = lowerFootage(completed);
+    if (lowered.cues === undefined) {
+      throw new MaterializeError(
+        slide.ordinal,
+        lowered.problem ?? "the film could not be placed",
+      );
+    }
+    slides.push({ ...completed, say: lowered.cues });
   }
 
   return { presentation: { ...presentation, slides }, exhibits };
@@ -229,6 +243,18 @@ export async function materializePresentation(
  */
 export const MAX_TABLE_ROWS = 200;
 export const MAX_TABLE_COLUMNS = 8;
+
+/**
+ * How much film cuecraft will play, and why there is a number at all.
+ *
+ * The same argument as the two above with a clock in it. A temporal exhibit is the first thing a
+ * program can hand back that **spends the presentation's own time**, and a viewer's patience for
+ * uninterrupted motion under a heading runs out long before any resource does. Two and a half
+ * minutes is far past the k-means demonstration's nine seconds and is set where it is so that
+ * "cuecraft holds up evidence" stays true of the shape of the film: past this, the narration is an
+ * accompaniment to a video rather than a presentation showing one.
+ */
+export const MAX_FOOTAGE_SECONDS = 150;
 
 /**
  * What the program handed back, turned into the thing a composition draws.
@@ -260,6 +286,50 @@ async function resourceFor(
       regions: body.shows.map((name) => drawn.get(name) as ExhibitRegion),
       width: output.width,
       height: output.height,
+      bytes: output.bytes,
+    };
+  }
+
+  if (output.type === "video") {
+    // Two refusals a still never needed, and both are decision:64.
+    //
+    // A sound track is refused rather than muted. `<OffthreadVideo muted>` would have made this
+    // invisible, which is exactly the objection: a program that wrote audio believed the sound
+    // mattered, and discarding it silently is cuecraft deciding it did not.
+    if (output.hasAudio) {
+      return refuse(
+        `${body.program} handed back a film with a sound track, and cuecraft has one producer ` +
+          "of sound. Encode it silent — ffmpeg's `-an` — and let the narration speak over it",
+      );
+    }
+    // A ceiling for `MAX_TABLE_ROWS`' reason: where the promise breaks, not where the arithmetic
+    // does. A medium is evidence a presentation *holds up*, and past a couple of minutes of
+    // uninterrupted playback the film is a video with a slide around it.
+    if (output.durationSeconds > MAX_FOOTAGE_SECONDS) {
+      return refuse(
+        `${body.program} handed back ${output.durationSeconds.toFixed(1)}s of film, and cuecraft ` +
+          `plays at most ${MAX_FOOTAGE_SECONDS}s. Past that the narration is an accompaniment to ` +
+          "a video rather than a presentation holding one up",
+      );
+    }
+    if (body.shows.length > 0) {
+      return refuse(
+        `this slide shows ${body.shows.map(quote).join(", ")}, and ${body.program} handed back a ` +
+          "film; a film declares no parts narration can point at",
+      );
+    }
+    if (body.key !== undefined) {
+      return refuse(
+        `this slide names a key column and ${body.program} handed back a film, not a table`,
+      );
+    }
+    return {
+      kind: "footage",
+      src: `${EXHIBIT_DIR}/${slug}/${output.file}`,
+      name: output.name,
+      width: output.width,
+      height: output.height,
+      durationSeconds: output.durationSeconds,
       bytes: output.bytes,
     };
   }

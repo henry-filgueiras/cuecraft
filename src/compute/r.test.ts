@@ -88,6 +88,7 @@ test("the environment names the output directory, every input, and the box", () 
         width: 3312,
         height: 1328,
         pointSize: 60,
+        fps: 30,
         background: "#0A0D12",
         foreground: "#F5F7FB",
         muted: "#C2CBD9",
@@ -106,6 +107,7 @@ test("the environment names the output directory, every input, and the box", () 
   assert.equal(env["CUECRAFT_INPUT_PRIOR_YEAR"], "/repo/examples/revenue/2024.csv");
   assert.equal(env["CUECRAFT_WIDTH"], "3312");
   assert.equal(env["CUECRAFT_POINTSIZE"], "60");
+  assert.equal(env["CUECRAFT_FPS"], "30");
   assert.equal(env["CUECRAFT_ACCENT"], "#D9A05B");
 });
 

@@ -70,6 +70,7 @@ export function bindNarration(
 
   const reached = new Set<string>();
   const entered = new Set<string>();
+  const played = new Set<string>();
 
   cues.forEach((cue, index) => {
     if (cue.kind === "enter") {
@@ -124,6 +125,36 @@ export function bindNarration(
           `recalls ${JSON.stringify(cue.target)}, and a recall belongs to a slide's own ` +
           "narration; a module is written without knowing what came before it",
       });
+      return;
+    }
+
+    // What a `play:` names — an output of a program that has not run yet — cannot be checked here,
+    // for decision:57's reason: an exhibit's identities do not exist until a subprocess has
+    // finished, and materialization refuses a mismatch in both directions. What *can* be checked
+    // here is the only thing that is a fact about the source: whether this slide has a program at
+    // all. A `play:` over a list of bullets is a sentence about nothing, and finding that out after
+    // a minute of Kokoro would be finding it out in the wrong order.
+    if (cue.kind === "play") {
+      if (body.kind !== "exhibit") {
+        issues.push({
+          path: [index],
+          message:
+            `plays ${JSON.stringify(cue.source)}, and this ${scope === ROOT_SCOPE ? "slide" : "module"} ` +
+            "has no exhibit; a film is something a program computed, and only an exhibit runs one",
+        });
+        return;
+      }
+      if (played.has(cue.source)) {
+        issues.push({
+          path: [index],
+          message:
+            `plays ${JSON.stringify(cue.source)}, which an earlier cue already plays; a film runs ` +
+            "once, and a second run would be a second clock over one medium",
+        });
+        return;
+      }
+      played.add(cue.source);
+      bound.push(cue);
       return;
     }
 

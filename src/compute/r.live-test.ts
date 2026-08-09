@@ -52,6 +52,7 @@ const FRAME = {
   width: 800,
   height: 400,
   pointSize: 20,
+  fps: 30,
   background: "#0A0D12",
   foreground: "#F5F7FB",
   muted: "#C2CBD9",

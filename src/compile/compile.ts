@@ -1,6 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { ExhibitResource } from "../presentation/exhibit.ts";
 import type {
   AuthoredSlide,
   Narrator,
@@ -121,6 +122,46 @@ export interface NarrationRecall {
 }
 
 /**
+ * One slice of a film, placed on the narration track.
+ *
+ * The fifth kind of occupant, and the second whose duration is **borrowed** rather than authored,
+ * fixed, derived or measured here (decision:64). The film was measured out of its own container at
+ * materialization; `../compile/footage.ts` cut it into slices; this places them. Nothing in this
+ * file knows how long a film is, and nothing in it may decide.
+ *
+ * `fromSeconds` and `toSeconds` are **local media time** and travel unconverted all the way to the
+ * timeline, which is the whole of the local/global separation decision:63 found already present in
+ * cuecraft. `offsetSeconds` is presentation time and is the only thing here on the deck's clock.
+ *
+ * `rate` is how much media time one second of presentation time consumes. It is 1 for ordinary
+ * playback, and the field exists because a slice's two clocks are already two clocks — giving the
+ * mapping a slope costs a multiplication and buys the freeze and the replay for nothing.
+ */
+export interface NarrationPlayback {
+  /** The output the program declared, as the author wrote it. Carried for diagnostics. */
+  readonly source: string;
+  /** The same `src` the materialized resource carries: public-directory relative. */
+  readonly src: string;
+  readonly scope: Scope;
+  readonly offsetSeconds: number;
+  /** Presentation seconds: `(to - from) / rate`. What the cursor advances by. */
+  readonly durationSeconds: number;
+  /** Local media seconds. Absolute within the film, and never on the deck's clock. */
+  readonly fromSeconds: number;
+  readonly toSeconds: number;
+  readonly rate: number;
+  /**
+   * The whole film's measured length, carried so the timeline can work out its last frame.
+   *
+   * Not redundant with `toSeconds`, and the difference is a real hazard rather than pedantry. An
+   * MP4 states its duration in its own timescale, so a 244-frame film at 30fps reports 8.134s
+   * where the frames account for 8.1333s — and `framesFor` rounding *up* would then ask the film
+   * for a frame it does not have. See `Playback.sourceLast`.
+   */
+  readonly mediaSeconds: number;
+}
+
+/**
  * A silence a protocol step owns, positioned on the same track as everything else.
  *
  * Beside the clips and the calls rather than folded into either, for the reason `NarrationCall`
@@ -152,6 +193,8 @@ export interface Narration {
   readonly dwells: readonly NarrationDwell[];
   /** Every earlier clip said again, in order. Empty on every deck that never recalls. */
   readonly recalls: readonly NarrationRecall[];
+  /** Every slice of film played, in order. Empty on every deck without a temporal exhibit. */
+  readonly playbacks: readonly NarrationPlayback[];
   /** Speech plus authored pauses, end to end. */
   readonly durationSeconds: number;
   /**
@@ -281,6 +324,28 @@ function recalled(
   return { ordinal: sourceOrdinal, clipIndex, clip };
 }
 
+/**
+ * The film a `play:` names, on a slide that has already been materialized.
+ *
+ * Every failure below is a caller that built a `Presentation` by hand, or a compiler bug:
+ * `bindNarration` refuses a `play:` on a slide with no exhibit, and `../compile/footage.ts` refuses
+ * a name the program did not declare and a film nobody plays. Saying so beats silently placing a
+ * few seconds of nothing where an animation was supposed to be.
+ */
+function footage(
+  slide: AuthoredSlide,
+  source: string,
+): Extract<ExhibitResource, { kind: "footage" }> {
+  const resource = slide.body.kind === "exhibit" ? slide.body.resource : undefined;
+  if (resource?.kind !== "footage") {
+    throw new Error(
+      `slide ${slide.ordinal}: narration plays ${JSON.stringify(source)}, and this slide has no ` +
+        "materialized film",
+    );
+  }
+  return resource;
+}
+
 /** `max(minimum slide duration, pre_say + narration + post_say)` — decision:1. */
 export function deriveSceneMs(input: {
   minSlideMs: number;
@@ -320,6 +385,7 @@ export async function compilePresentation(
     const calls: NarrationCall[] = [];
     const dwells: NarrationDwell[] = [];
     const recalls: NarrationRecall[] = [];
+    const playbacks: NarrationPlayback[] = [];
     let offsetSeconds = 0;
 
     for (const cue of slide.say) {
@@ -344,6 +410,28 @@ export async function compilePresentation(
           durationSeconds: source.clip.durationSeconds,
         });
         offsetSeconds += source.clip.durationSeconds;
+        continue;
+      }
+
+      // The other occupant that costs nothing to produce, and the one this round added. Everything
+      // about it was settled before a syllable was synthesized: `../compile/footage.ts` measured
+      // the film and cut it, and what is left here is arithmetic on two numbers it wrote down.
+      if (cue.kind === "play") {
+        const source = footage(slide, cue.source);
+        const rate = cue.rate ?? 1;
+        const durationSeconds = ((cue.toSeconds ?? 0) - (cue.fromSeconds ?? 0)) / rate;
+        playbacks.push({
+          source: cue.source,
+          src: source.src,
+          scope: cue.scope,
+          offsetSeconds,
+          durationSeconds,
+          fromSeconds: cue.fromSeconds ?? 0,
+          toSeconds: cue.toSeconds ?? 0,
+          rate,
+          mediaSeconds: source.durationSeconds,
+        });
+        offsetSeconds += durationSeconds;
         continue;
       }
 
@@ -422,6 +510,7 @@ export async function compilePresentation(
       calls,
       dwells,
       recalls,
+      playbacks,
       durationSeconds: offsetSeconds,
       voice: clips[0]?.voice ?? presentation.voice ?? "",
       speed: clips[0]?.speed ?? presentation.speed,

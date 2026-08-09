@@ -122,7 +122,9 @@ function transcript(cues: readonly NarrationCue[]): string[] {
           ? `dwell ${cue.scope} -> ${cue.address}`
           : cue.kind === "recall"
             ? `recall ${cue.scope} -> ${cue.target}`
-            : `${cue.kind} ${cue.scope} ${cue.into}`,
+            : cue.kind === "play"
+              ? `play ${cue.scope} -> ${cue.source}`
+              : `${cue.kind} ${cue.scope} ${cue.into}`,
   );
 }
 

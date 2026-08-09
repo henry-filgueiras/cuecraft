@@ -5,7 +5,12 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { compilePresentation } from "./compile/compile.ts";
-import type { MaterializedExhibit } from "./compile/materialize.ts";
+import {
+  hasExhibits,
+  materializePresentation,
+  MaterializeError,
+  type MaterializedExhibit,
+} from "./compile/materialize.ts";
 import {
   buildTimeline,
   narrativeStack,
@@ -251,6 +256,13 @@ async function runRender(
  * clock, and a timing report that guessed at them would be reporting on a film nobody will see.
  * The cache makes the second run instant.
  *
+ * And it materializes, for the same reason one step further out. Two things a deck's exhibits
+ * decide are things this report is about: which composition a slide gets — a program that hands
+ * back a table selects `register` and one that hands back a picture selects `exhibit` — and, since
+ * decision:64, how long the slide *is*, because a `play:` borrows a length measured out of a file
+ * that only exists once the program has run. Reporting either without running R would be reporting
+ * on a different film. Skipped on every deck with no exhibit in it, which is all of them but three.
+ *
  * Nothing it prints is reachable from the grammar, and nothing in the grammar changes it.
  */
 async function runExplain(
@@ -258,9 +270,13 @@ async function runExplain(
 ): Promise<number> {
   try {
     const text = await readFile(invocation.input, "utf8");
-    const presentation = parsePresentation(text, invocation.input);
+    const parsed = parsePresentation(text, invocation.input);
+    const workspace = workspaceFor(resolve(invocation.input));
+    const presentation = hasExhibits(parsed)
+      ? (await materializePresentation(parsed, { workspace })).presentation
+      : parsed;
     const compiled = await compilePresentation(presentation, {
-      workspace: workspaceFor(resolve(invocation.input)),
+      workspace,
       synthesize,
     });
     const timeline = buildTimeline(compiled);
@@ -289,6 +305,10 @@ async function runExplain(
     return 0;
   } catch (error) {
     if (error instanceof PresentationError) {
+      process.stderr.write(`cuecraft: ${error.report()}\n`);
+      return 1;
+    }
+    if (error instanceof MaterializeError) {
       process.stderr.write(`cuecraft: ${error.report()}\n`);
       return 1;
     }
@@ -344,6 +364,11 @@ function describeResource(resource: ExhibitResource): string {
       return `${resource.width}x${resource.height} svg, ${resource.elements.length} named`;
     case "table":
       return `csv, ${resource.table.rows.length} rows x ${resource.table.columns.length} columns`;
+    case "footage":
+      return (
+        `${resource.width}x${resource.height} mp4, ` +
+        `${resource.durationSeconds.toFixed(1)}s of film`
+      );
   }
 }
 
@@ -362,6 +387,11 @@ function addressable(resource: ExhibitResource): readonly string[] {
       return resource.elements;
     case "table":
       return [...resource.table.rowIds, ...resource.table.columnIds];
+    // Nothing, and for the picture's reason rather than the table's: cuecraft has never looked
+    // inside a film either. What a temporal exhibit publishes is a clock, and a clock is not an
+    // address.
+    case "footage":
+      return [];
   }
 }
 

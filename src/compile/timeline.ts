@@ -190,6 +190,59 @@ function sourceFrameOf(
   return clip.from;
 }
 
+/**
+ * A slide's slices, with every frame between and around them filled in by a hold.
+ *
+ * Three kinds of gap, and the interesting one is the middle:
+ *
+ * - **Before the first slice.** The medium is already on the table, showing the frame the first
+ *   slice will start from, while the narration says what is about to happen.
+ * - **Between two slices.** The narration is speaking over a state the film reached. It holds the
+ *   frame the *next* slice resumes at, so the film stops on the moment being discussed and then
+ *   carries on from it — the sequence of frames of film is `… N-1, N held, N, N+1 …`, which is
+ *   what "froze there and resumed" means when written out.
+ * - **After the last slice.** The last frame, kept, while ordinary narration continues. A medium
+ *   that vanished when it finished would take its own evidence off the table.
+ *
+ * Exported for the tests, which is the honest reason: the boundary arithmetic here is the thing
+ * most likely to be off by one and least visible when it is.
+ */
+export function held(
+  slices: readonly Playback[],
+  sceneFrom: number,
+  sceneFrames: number,
+): readonly Playback[] {
+  const out: Playback[] = [];
+  const hold = (from: number, until: number, sourceFrom: number): void => {
+    if (until > from) {
+      out.push({
+        src: slices[0]?.src ?? "",
+        from,
+        durationInFrames: until - from,
+        sourceFrom,
+        sourceLast: slices[0]?.sourceLast ?? sourceFrom,
+        rate: 0,
+        kind: "hold",
+      });
+    }
+  };
+
+  let at = sceneFrom;
+  for (const slice of slices) {
+    hold(at, slice.from, slice.sourceFrom);
+    out.push(slice);
+    at = slice.from + slice.durationInFrames;
+  }
+  const last = slices.at(-1);
+  if (last !== undefined) {
+    // The final frame the film actually showed, which is one before where the mapping would have
+    // gone next. Holding `sourceFrom + duration` would ask for a frame past the end of the file.
+    const ended = mediaFrameAt(last, last.from + last.durationInFrames - 1);
+    hold(at, sceneFrom + sceneFrames, ended);
+  }
+  return out;
+}
+
 /** The one rounding rule. Nothing else in cuecraft may convert seconds to frames. */
 export function framesFor(seconds: number, fps: number): number {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -334,6 +387,81 @@ export interface Recall {
 }
 
 /**
+ * A film on screen over an interval of the deck's clock, and where in the film to look.
+ *
+ * The compiled form of a slice (`./footage.ts`), and the whole of what the renderer is told about a
+ * temporal medium. One expression reads it, and that expression is `Recall`'s with a coefficient:
+ *
+ *     mediaFrame = sourceFrom + floor((frame - from) * rate)
+ *
+ * `rate` is media frames per presentation frame. **One** is ordinary playback. **Zero** is a hold —
+ * the same mapping with a slope of zero, which decision:63 predicted would be all a freeze needs
+ * and which turned out to be exactly true. Anything between is a replay at a different speed.
+ *
+ * ## Two kinds of record, and only one of them is a producer
+ *
+ * A **slice** comes from a cue: it is an occupant of the one serial track, its length was borrowed
+ * from a measurement, and it is what makes the scene longer. A **hold** is derived here, from the
+ * frames the slices left over, and it makes nothing longer — it is a consumer in decision:63's
+ * sense, filling a window that narration created rather than asking for one. That distinction is
+ * why an aside can freeze a film without anything being able to negotiate for time: the aside's own
+ * sentences extend the film, exactly as sentences always have, and the freeze is what happens to be
+ * on screen while they do.
+ *
+ * Holds also cover the parts of the slide **before the first slice and after the last**, so the
+ * medium is on the table for the whole scene rather than appearing and vanishing around its own
+ * playback. That makes the renderer's question total: on any frame of the slide there is exactly
+ * one playback covering it, and no branch for "what is on screen when nothing is playing".
+ */
+export interface Playback {
+  /** The same file the materialized resource carries: public-directory relative. */
+  readonly src: string;
+  /** Absolute frame the interval begins. */
+  readonly from: number;
+  readonly durationInFrames: number;
+  /** The frame **of the film** this interval starts at, at the composition's own rate. */
+  readonly sourceFrom: number;
+  /** Media frames per presentation frame. Zero is a hold. */
+  readonly rate: number;
+  /**
+   * The highest frame this film has, and the reason it is here rather than assumed.
+   *
+   * An MP4 states its length in its own timescale, and ffmpeg writes 8.134s for a 244-frame film
+   * at 30fps whose frames account for 8.1333s. `framesFor` rounds up, correctly, because a
+   * duration must occupy every frame it touches — so the last frame of the last slice would
+   * otherwise ask the film for frame 244, which is past its end and draws as nothing.
+   *
+   * So the mapping is clamped, and the clamp states something true rather than papering over
+   * something false: **a film has a last frame, and cuecraft never asks past it.**
+   */
+  readonly sourceLast: number;
+  /** Whether this interval came from a cue, or was derived from the room the cues left. */
+  readonly kind: "slice" | "hold";
+}
+
+/**
+ * Which frame of the film is on screen, or nothing when no medium is playing.
+ *
+ * Derived rather than stored, for `recallAt`'s reason: a `Playback` already carries an interval and
+ * an origin, and whether a frame is inside one is arithmetic. `Math.floor` rather than a round,
+ * because a frame of film is on screen from the moment its time is reached — which is `framesFor`'s
+ * rule read in the other direction.
+ */
+export function mediaFrameAt(playback: Playback, frame: number): number {
+  return Math.min(
+    playback.sourceLast,
+    playback.sourceFrom + Math.floor((frame - playback.from) * playback.rate),
+  );
+}
+
+export function playbackAt(scene: Scene, frame: number): Playback | undefined {
+  return scene.playbacks.find(
+    (playback) =>
+      frame >= playback.from && frame < playback.from + playback.durationInFrames,
+  );
+}
+
+/**
  * A resolved link between a moment in the narration and an element on the slide.
  *
  * Deliberately a record of the *relationship* rather than a field on the element saying when
@@ -383,6 +511,12 @@ export interface Scene {
   readonly beats: readonly Beat[];
   /** Every earlier utterance said again, in frame order. Empty on every deck that never recalls. */
   readonly recalls: readonly Recall[];
+  /**
+   * What the slide's film is doing on every frame of the slide, in frame order.
+   *
+   * Empty unless the slide's exhibit handed back one, and covering the whole scene when it did.
+   */
+  readonly playbacks: readonly Playback[];
   /** Absolute frame at which the slide appears. */
   readonly from: number;
   readonly durationInFrames: number;
@@ -508,12 +642,23 @@ export function buildTimeline(
         seconds: recall.durationSeconds,
         recall,
       })),
+      // A slice of film walks the same cursor as everything else, which is the claim decision:64
+      // makes in one line: a temporal medium is a leaf occupant of the one serialized track with a
+      // known length, and not a second producer running beside it. Its seconds were measured out
+      // of a container at materialization, and the one rounding rule turns them into frames here
+      // exactly as it does for a clip.
+      ...slide.narration.playbacks.map((playback) => ({
+        at: playback.offsetSeconds,
+        seconds: playback.durationSeconds,
+        playback,
+      })),
     ].sort((a, b) => a.at - b.at);
 
     let cursor = 0;
     const clips: Clip[] = [];
     const calls: Call[] = [];
     const recalls: Recall[] = [];
+    const slices: Playback[] = [];
     const placedDwells = new Map<Scope, number>();
     for (const entry of track) {
       cursor = Math.max(cursor, framesFor(entry.at, fps));
@@ -538,6 +683,24 @@ export function buildTimeline(
           // these are the same seconds. That is what keeps the mapping inside the clip it replays.
           durationInFrames,
           sourceFrom: sourceFrameOf(scenes, entry.recall, slide.ordinal),
+        });
+      } else if ("playback" in entry) {
+        // Both ends of the media interval through `framesFor`, rather than its length through
+        // `framesFor` once. That is not a second rounding rule; it is the same rule applied where
+        // the correctness argument needs it. Two adjacent slices share an endpoint in seconds by
+        // construction (`./footage.ts`), so converting endpoints makes them share it in *frames*
+        // too — which is what stops a split producing a repeated or a skipped frame of film. A
+        // length would leave the two ends free to round apart.
+        slices.push({
+          src: entry.playback.src,
+          from: narrationFrom + cursor,
+          durationInFrames,
+          sourceFrom: framesFor(entry.playback.fromSeconds, fps),
+          // Rounded rather than floored or ceiled, so a container that states its length a
+          // thousandth either side of the truth lands on the same last frame both ways.
+          sourceLast: Math.max(0, Math.round(entry.playback.mediaSeconds * fps) - 1),
+          rate: entry.playback.rate,
+          kind: "slice",
         });
       } else {
         calls.push({
@@ -665,6 +828,15 @@ export function buildTimeline(
       preSayFrames + narrationDurationInFrames + postSayFrames,
     );
 
+    // What the film is doing on every frame of the slide it is not playing on: holding.
+    //
+    // Derived here, from frames that are already settled, and that placement is the whole of why a
+    // freeze needs no scheduler. A hold cannot lengthen anything — it is computed from the room the
+    // slices left over, which is room the *narration* created by being narration. So an aside
+    // between two slices extends the film in exactly the way a sentence always has, and the
+    // medium holding still through it is a consequence rather than a request.
+    const playbacks = slices.length === 0 ? [] : held(slices, from, durationInFrames);
+
     const scene: Scene = {
       ordinal: slide.ordinal,
       title: slide.title,
@@ -675,6 +847,7 @@ export function buildTimeline(
       spans,
       beats,
       recalls,
+      playbacks,
       from,
       durationInFrames,
       narrationFrom,

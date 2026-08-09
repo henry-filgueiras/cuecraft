@@ -6,6 +6,7 @@ import type {
   CompiledSlide,
   NarrationCall,
   NarrationDwell,
+  NarrationPlayback,
   NarrationRecall,
   SpeechClip,
 } from "./compile.ts";
@@ -18,7 +19,14 @@ import type {
   SlideBody,
 } from "../presentation/parse.ts";
 import { childScope, ROOT_SCOPE } from "../presentation/scope.ts";
-import { buildTimeline, DEFAULT_FPS, framesFor, recallAt } from "./timeline.ts";
+import {
+  buildTimeline,
+  DEFAULT_FPS,
+  framesFor,
+  mediaFrameAt,
+  playbackAt,
+  recallAt,
+} from "./timeline.ts";
 
 function bodyOf(overrides: SlideOverrides): SlideBody {
   if (overrides.protocol !== undefined) {
@@ -64,6 +72,8 @@ type SlideOverrides = Omit<Partial<CompiledSlide>, "narration" | "body"> & {
   dwells?: readonly NarrationDwell[];
   /** Earlier clips said again, already resolved, for the recall tests. */
   recalls?: readonly NarrationRecall[];
+  /** Slices of film, already measured and cut, for the temporal-exhibit tests. */
+  playbacks?: readonly NarrationPlayback[];
   /** A protocol body, when the test is about one; wins over `bullets` and `steps`. */
   protocol?: { actors: readonly AuthoredActor[]; steps: readonly AuthoredStep[] };
   /** A machine body, the other one that carries its own occurrences. */
@@ -120,6 +130,7 @@ function slide(overrides: SlideOverrides): CompiledSlide {
       calls: overrides.calls ?? [],
       dwells: overrides.dwells ?? [],
       recalls: overrides.recalls ?? [],
+      playbacks: overrides.playbacks ?? [],
       durationSeconds: overrides.narrationSeconds ?? running,
       voice: "af_heart",
       speed: 1,
@@ -869,4 +880,158 @@ test("a deck that never quotes itself is never quoting itself", () => {
   for (let frame = 0; frame < timeline.totalFrames; frame += 1) {
     assert.equal(recallAt(timeline.scenes, frame), undefined, `frame ${frame}`);
   }
+});
+
+/* --------------------------------------------------------------- footage */
+
+function playback(overrides: {
+  at: number;
+  from: number;
+  to: number;
+  rate?: number;
+  mediaSeconds?: number;
+}): NarrationPlayback {
+  const rate = overrides.rate ?? 1;
+  return {
+    source: "run",
+    src: "exhibits/slide-01-run/run.mp4",
+    scope: ROOT_SCOPE,
+    offsetSeconds: overrides.at,
+    durationSeconds: (overrides.to - overrides.from) / rate,
+    fromSeconds: overrides.from,
+    toSeconds: overrides.to,
+    rate,
+    mediaSeconds: overrides.mediaSeconds ?? overrides.to,
+  };
+}
+
+/** One slide: 2s of speech, then 8s of film, then 3s of speech. */
+function playing(): CompiledPresentation {
+  return presentation([
+    slide({
+      ordinal: 1,
+      speech: [2, 3],
+      offsets: [0, 10],
+      playbacks: [playback({ at: 2, from: 0, to: 8 })],
+      narrationSeconds: 13,
+      preSayMs: 750,
+      postSayMs: 1200,
+    }),
+  ]);
+}
+
+test("a film is placed on the same cursor as the speech around it", () => {
+  const [scene] = buildTimeline(playing()).scenes;
+  assert.ok(scene !== undefined);
+  const slice = scene.playbacks.find((entry) => entry.kind === "slice");
+  assert.ok(slice !== undefined);
+
+  // 750ms of pre_say is 23 frames; 2s of speech is 60; 8s of film is 240; 3s of speech is 90.
+  assert.equal(scene.narrationFrom, 23);
+  assert.equal(slice.from - scene.narrationFrom, 60);
+  assert.equal(slice.durationInFrames, 240);
+  assert.equal(slice.sourceFrom, 0);
+  assert.equal(slice.rate, 1);
+  assert.deepEqual(
+    scene.clips.map((clip) => clip.from - scene.narrationFrom),
+    [0, 300],
+  );
+});
+
+test("a film contributes exactly its own length to the scene", () => {
+  const withFilm = buildTimeline(playing()).scenes[0];
+  const without = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        speech: [2, 3],
+        offsets: [0, 2],
+        narrationSeconds: 5,
+        preSayMs: 750,
+        postSayMs: 1200,
+      }),
+    ]),
+  ).scenes[0];
+  assert.ok(withFilm !== undefined && without !== undefined);
+
+  assert.equal(withFilm.durationInFrames - without.durationInFrames, 240);
+});
+
+test("the film is on screen for the whole slide, holding at each end", () => {
+  const [scene] = buildTimeline(playing()).scenes;
+  assert.ok(scene !== undefined);
+
+  assert.deepEqual(
+    scene.playbacks.map((entry) => [entry.kind, entry.from, entry.durationInFrames]),
+    [
+      ["hold", 0, 83],
+      ["slice", 83, 240],
+      ["hold", 323, scene.durationInFrames - 323],
+    ],
+  );
+  // Every frame of the slide is covered, exactly once.
+  for (let frame = 0; frame < scene.durationInFrames; frame += 1) {
+    assert.ok(playbackAt(scene, frame) !== undefined, `frame ${frame}`);
+  }
+});
+
+test("the leading hold shows the frame the film is about to start from", () => {
+  const [scene] = buildTimeline(playing()).scenes;
+  assert.ok(scene !== undefined);
+  const lead = scene.playbacks[0];
+  assert.ok(lead !== undefined);
+
+  assert.equal(mediaFrameAt(lead, 0), 0);
+  assert.equal(mediaFrameAt(lead, 82), 0, "a hold does not advance");
+});
+
+test("the trailing hold keeps the last frame the film actually showed", () => {
+  const [scene] = buildTimeline(playing()).scenes;
+  assert.ok(scene !== undefined);
+  const tail = scene.playbacks.at(-1);
+  assert.ok(tail !== undefined);
+
+  assert.equal(mediaFrameAt(tail, tail.from), 239);
+  assert.equal(mediaFrameAt(tail, scene.durationInFrames - 1), 239);
+});
+
+test("playback advances one frame of film per frame of presentation", () => {
+  const [scene] = buildTimeline(playing()).scenes;
+  assert.ok(scene !== undefined);
+  const slice = scene.playbacks.find((entry) => entry.kind === "slice");
+  assert.ok(slice !== undefined);
+
+  assert.equal(mediaFrameAt(slice, slice.from), 0);
+  assert.equal(mediaFrameAt(slice, slice.from + 1), 1);
+  assert.equal(mediaFrameAt(slice, slice.from + slice.durationInFrames - 1), 239);
+});
+
+test("a container that rounds its own length up is never asked for a frame it lacks", () => {
+  // 244 frames at 30fps account for 8.1333s; ffmpeg writes 8.134 into the header. `framesFor`
+  // rounds up to 245 presentation frames, so without the clamp the last one asks for frame 244.
+  const [scene] = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        speech: [2],
+        offsets: [0],
+        playbacks: [playback({ at: 2, from: 0, to: 8.134, mediaSeconds: 8.134 })],
+        narrationSeconds: 10.134,
+      }),
+    ]),
+  ).scenes;
+  assert.ok(scene !== undefined);
+  const slice = scene.playbacks.find((entry) => entry.kind === "slice");
+  assert.ok(slice !== undefined);
+
+  assert.equal(slice.durationInFrames, 245);
+  assert.equal(slice.sourceLast, 243);
+  assert.equal(mediaFrameAt(slice, slice.from + 244), 243);
+});
+
+test("a deck with no film has no playbacks anywhere", () => {
+  const timeline = buildTimeline(
+    presentation([slide({ ordinal: 1, narrationSeconds: 4 })]),
+  );
+  for (const scene of timeline.scenes) assert.deepEqual(scene.playbacks, []);
 });

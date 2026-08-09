@@ -69,12 +69,20 @@ interface ExhibitResourceCommon {
  * chosen from the shape of the content, and here the content's shape is not known until a
  * subprocess has finished.
  *
- * The three differ in exactly one respect that matters — **how much of the artifact cuecraft can
- * see** — and they are ordered by it:
+ * The first three differ in exactly one respect that matters — **how much of the artifact cuecraft
+ * can see** — and they are ordered by it:
  *
  *     picture   nothing. A rectangle, plus rectangles the program said things were in.
  *     drawing   the names the program wrote into it, and no geometry.
  *     table     all of it. The first exhibit cuecraft lays out itself.
+ *
+ * The fourth is off that axis entirely, and decision:64 is about why. cuecraft can see almost
+ * nothing of a `footage` — a rectangle, again — but it can see the one thing none of the others
+ * has: **a length**. The other three are drawn into a room and occupy no presentation time at all,
+ * because the narration decides how long the slide is and they are simply there for it. A film is
+ * placed into the *narration*, and its measured length is what the cursor advances by.
+ *
+ *     footage   nothing about the picture, and everything about the clock.
  */
 export type ExhibitResource =
   | (ExhibitResourceCommon & {
@@ -119,6 +127,21 @@ export type ExhibitResource =
   | (ExhibitResourceCommon & {
       readonly kind: "table";
       readonly table: ExhibitTable;
+    })
+  | (ExhibitResourceCommon & {
+      readonly kind: "footage";
+      /** Relative to the render workspace's public directory, for `staticFile()`. */
+      readonly src: string;
+      readonly width: number;
+      readonly height: number;
+      /**
+       * Measured out of the container at materialization (`../compute/mp4.ts`), never declared.
+       *
+       * The one number in this union that anything upstream of the renderer reads. A `play:` cue
+       * borrows it exactly as a `recall:` borrows a clip's measured length, and nothing between
+       * here and `framesFor` may invent a different one.
+       */
+      readonly durationSeconds: number;
     });
 
 /**

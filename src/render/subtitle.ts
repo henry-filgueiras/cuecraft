@@ -35,8 +35,8 @@ import type { Typography } from "./typography.ts";
  *
  * ## Where a subtitle stops
  *
- * At the next utterance of the same scene, and otherwise at the end of that scene's narration.
- * Two consequences, both deliberate:
+ * At the next utterance of the same scene, at the film it introduces, or otherwise at the end of
+ * that scene's narration. Three consequences, all deliberate:
  *
  * - **An authored `pause:` is bridged.** A subtitle that blinked out for the 600ms between two
  *   sentences would draw attention to the gap rather than to either sentence.
@@ -171,13 +171,21 @@ export function subtitleTrack(
     // Everything audible on this scene's track, in the order it is heard. Merged rather than walked
     // as two lists because "where does this subtitle stop" is a question about the *next* audible
     // thing, whichever kind it turns out to be — and because `subtitleAt` scans in order.
+    // A slice of film joins them, and it is the one entry that is *not* audible. It carries no
+    // words and emits no cue; it is here because a caption has to stop when the film starts.
+    // Without it the sentence before an eight-second animation stays on screen for the whole of
+    // it, asserting that somebody is still speaking over a silent medium (decision:64).
     const heard = [
       ...scene.clips.map((placed, clipIndex) => ({ from: placed.from, clipIndex })),
       ...scene.recalls.map((recall) => ({ from: recall.from, recall })),
+      ...scene.playbacks
+        .filter((playback) => playback.kind === "slice")
+        .map((playback) => ({ from: playback.from, silent: true as const })),
     ].sort((a, b) => a.from - b.from);
 
     heard.forEach((entry, position) => {
       const next = heard[position + 1]?.from ?? narrationUntil;
+      if ("silent" in entry) return;
       const source =
         "recall" in entry
           ? recalledClip(

@@ -4,6 +4,7 @@ import { open } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { readCsv, type CsvTable } from "./csv.ts";
+import { readMp4 } from "./mp4.ts";
 import { readSvg } from "./svg.ts";
 
 /**
@@ -38,6 +39,7 @@ import { readSvg } from "./svg.ts";
  *     CUECRAFT_INPUT_<NAME>    the absolute path of one declared input
  *     CUECRAFT_WIDTH  / _HEIGHT / _POINTSIZE / _BACKGROUND / _FOREGROUND / _MUTED / _ACCENT
  *                              the box the result has to fill, when the caller supplies one
+ *     CUECRAFT_FPS             the rate the film runs at, for a program producing a temporal one
  *
  * The last group is decision:42 reaching across a process boundary. A cuecraft composition is laid
  * out inside the box it was given; an exhibit is a composition drawn by something else, so it is
@@ -74,16 +76,22 @@ export const RSCRIPT_ARGS = ["--vanilla", "-"] as const;
  * Two rounds later that turned out to be exactly true, and the two that arrived are not variations
  * of the first:
  *
- *     png   pixels. cuecraft places them and can say nothing about what is in them.
- *     svg   geometry that can carry its own names, so cuecraft can address a *part* of it.
- *     csv   not a picture at all. Structured data cuecraft lays out itself.
+ *     png     pixels. cuecraft places them and can say nothing about what is in them.
+ *     svg     geometry that can carry its own names, so cuecraft can address a *part* of it.
+ *     csv     not a picture at all. Structured data cuecraft lays out itself.
+ *     video   pixels with a time axis. The first output that costs the film any of its length.
  *
- * The third is the interesting one. Everything decision:55 refuses is about pixels — a stale image,
- * a checked-in asset, a composition cuecraft cannot read — and none of those objections survive the
- * artifact being data. So an exhibit's evidence no longer has to be something cuecraft cannot
- * understand; it has to be something cuecraft did not *compute*.
+ * The third was the interesting one until the fourth arrived. Everything decision:55 refuses is
+ * about pixels — a stale image, a checked-in asset, a composition cuecraft cannot read — and none
+ * of those objections survive the artifact being data. So an exhibit's evidence no longer has to be
+ * something cuecraft cannot understand; it has to be something cuecraft did not *compute*.
+ *
+ * `video` is the first one that is different in kind rather than in carrier (decision:64). The other
+ * three are drawn into a room and occupy no time at all; a film is placed into the *narration*, and
+ * its measured length is what the cursor advances by. That is why the measurement below is taken
+ * from the file rather than declared on the line: see `./mp4.ts`.
  */
-export const R_OUTPUT_TYPES = ["png", "svg", "csv"] as const;
+export const R_OUTPUT_TYPES = ["png", "svg", "csv", "video"] as const;
 export type ROutputType = (typeof R_OUTPUT_TYPES)[number];
 
 /** Why a run did not produce a result. Distinct kinds because the fixes are distinct. */
@@ -147,6 +155,16 @@ export interface RFrame {
   readonly height: number;
   /** Base type size, in points, for whatever the program sets its labels with. */
   readonly pointSize: number;
+  /**
+   * The rate the finished film runs at.
+   *
+   * Part of the box rather than beside it, for decision:42's reason: a *moving* picture's box has
+   * a third dimension, and a program that chose its own frame rate would be choosing something the
+   * composition decides — exactly as one that chose its own width would be. It is advice a still
+   * ignores and a film needs; a medium encoded at some other rate still plays correctly, because
+   * the mapping in `../compile/timeline.ts` is in seconds, and it judders.
+   */
+  readonly fps: number;
   readonly background: string;
   readonly foreground: string;
   readonly muted: string;
@@ -200,6 +218,14 @@ export type ROutput =
   | (ROutputCommon & {
       readonly type: "csv";
       readonly table: CsvTable;
+    })
+  | (ROutputCommon & {
+      readonly type: "video";
+      /** Measured out of the container, never declared. See `./mp4.ts` for why that asymmetry. */
+      readonly durationSeconds: number;
+      readonly width: number;
+      readonly height: number;
+      readonly hasAudio: boolean;
     });
 
 /**
@@ -506,6 +532,7 @@ export function environmentFor(
     env["CUECRAFT_WIDTH"] = String(frame.width);
     env["CUECRAFT_HEIGHT"] = String(frame.height);
     env["CUECRAFT_POINTSIZE"] = String(frame.pointSize);
+    env["CUECRAFT_FPS"] = String(frame.fps);
     env["CUECRAFT_BACKGROUND"] = frame.background;
     env["CUECRAFT_FOREGROUND"] = frame.foreground;
     env["CUECRAFT_MUTED"] = frame.muted;
@@ -616,6 +643,20 @@ async function resolveDeclaration(
       );
     }
     return { ...common, type: "png", ...size };
+  }
+
+  if (type === "video") {
+    // Beside the PNG branch and above the text one, because it is read the same way both are not:
+    // a header walk over a file that is never loaded. A film is the one output whose payload could
+    // plausibly be hundreds of megabytes, and none of those bytes is read here.
+    const { artifact, problem } = await readMp4(path);
+    if (artifact === undefined) {
+      return refuse(
+        `declared output ${JSON.stringify(name)} is not a film cuecraft can take: ` +
+          `${JSON.stringify(file)} — ${problem}`,
+      );
+    }
+    return { ...common, type: "video", ...artifact };
   }
 
   // Text from here down. Both remaining formats are read whole, which is the ceiling on what an

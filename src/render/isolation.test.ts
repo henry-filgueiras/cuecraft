@@ -48,6 +48,7 @@ function deck(accessibility: string): CompiledPresentation {
         calls: [],
         dwells: [],
         recalls: [],
+        playbacks: [],
         durationSeconds: 1,
         voice: "af_heart",
         speed: 1,

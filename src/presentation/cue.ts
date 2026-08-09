@@ -163,6 +163,46 @@ export type NarrationCue =
        * Absent until `./recall.ts` has run, which is the only thing that may fill it in.
        */
       readonly sourceOrdinal?: number;
+    }
+  | {
+      /**
+       * Play the film this slide's program computed, from here.
+       *
+       * Authored as `play: <output>`, where the output is the one the exhibit's program declares
+       * (decision:64). The third verb in this language, after `enter:` and `recall:`, and the
+       * second whose duration is **borrowed**: the medium was measured at materialization, and
+       * everything about the playback — how long it lasts, what is on screen — is that measurement
+       * read again.
+       *
+       * **Not a scheduler, and not a second clock.** By the time this reaches the compiler it is a
+       * leaf occupant of the one serial track with a known length, exactly like a pause. The
+       * fields below are what `../compile/footage.ts` filled in, and they are what makes a *slice*
+       * of a medium expressible without anything downstream learning the word: a slice is a local
+       * media interval, a rate at which it is consumed, and nothing else (decision:63).
+       */
+      readonly kind: "play";
+      readonly scope: Scope;
+      /** The output the program declares, as the author wrote it. */
+      readonly source: string;
+      /**
+       * Local media seconds this slice begins at, and the seconds it runs to.
+       *
+       * Both absent until `../compile/footage.ts` has run, for `recall`'s `sourceOrdinal` reason:
+       * one is what the source says and the other is what it resolved to, and the resolution is a
+       * measurement that does not exist at parse time.
+       *
+       * Endpoints rather than a length, because two adjacent slices have to agree about the frame
+       * between them to the frame. `to` of one slice is `from` of the next, by construction.
+       */
+      readonly fromSeconds?: number;
+      readonly toSeconds?: number;
+      /**
+       * Local media seconds consumed per presentation second.
+       *
+       * One for ordinary playback. Anything else is a time mapping with a different slope, which is
+       * `RecalledCanvas`'s expression with a coefficient on it — see decision:63.
+       */
+      readonly rate?: number;
     };
 
 /**

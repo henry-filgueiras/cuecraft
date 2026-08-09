@@ -3,8 +3,10 @@ import { useMemo } from "react";
 import {
   AbsoluteFill,
   Easing,
+  Freeze,
   Img,
   interpolate,
+  OffthreadVideo,
   Sequence,
   staticFile,
   useCurrentFrame,
@@ -25,6 +27,7 @@ import { MATH_RESET, useMathFonts } from "./mathfonts.tsx";
 import { childScope, ROOT_SCOPE, type Scope } from "../presentation/scope.ts";
 import { resolveMarkSpans, specimenLines } from "../presentation/specimen.ts";
 import type { Scene } from "../compile/timeline.ts";
+import { mediaFrameAt, playbackAt } from "../compile/timeline.ts";
 import {
   anchorState,
   type AnchorState,
@@ -4249,6 +4252,8 @@ function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
           </div>
         ) : resource.kind === "drawing" ? (
           <Drawing scene={scene} absoluteFrame={absoluteFrame} resource={resource} />
+        ) : resource.kind === "footage" ? (
+          <Footage absoluteFrame={absoluteFrame} resource={resource} scene={scene} />
         ) : resource.kind === "table" ? (
           // Unreachable from `cuecraft render`: a table resource selects the `register`
           // archetype (`./layout.ts`), so this component is never asked to draw one. It is here
@@ -4292,6 +4297,67 @@ function Exhibit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * A film something else computed, on the frames the timeline gave it.
+ *
+ * **The shortest thing in this file that does the most, and that is the result rather than an
+ * accident.** Everything about when the medium runs, where in itself it is, and whether it is
+ * moving at all was settled before a frame existed (decision:64, decision:63). What is left here is
+ * one lookup and one subtraction:
+ *
+ *     mediaFrame = sourceFrom + floor((absoluteFrame - from) * rate)
+ *
+ * `<Freeze>` is doing the whole job, and it is worth saying why it is the right primitive rather
+ * than a clever one. Freeze does not mean "pause": it means *render the children at this frame*,
+ * which is exactly the operation a time mapping is. So playing at rate 1, holding at rate 0 and
+ * replaying at rate 0.4 are not three code paths — they are one expression with three coefficients,
+ * and this component cannot tell them apart. There is no `paused` prop, no `startFrom`, no seek and
+ * no branch on what kind of interval this is.
+ *
+ * The wrapper is the picture branch's, unchanged: the medium's own aspect ratio with both maxima,
+ * so the letterboxing is the browser's problem and nothing here measures the DOM.
+ *
+ * The undefined branch is unreachable from `cuecraft render` — `held()` covers every frame of a
+ * scene that has any playback at all — and exists because a body can be inspected without being
+ * laid out, and a component that threw would make every future inspection tool carry a special case.
+ */
+function Footage({
+  scene,
+  absoluteFrame,
+  resource,
+}: {
+  scene: Scene;
+  absoluteFrame: number;
+  resource: Extract<ExhibitResource, { kind: "footage" }>;
+}) {
+  const playback = playbackAt(scene, absoluteFrame);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        aspectRatio: `${resource.width} / ${resource.height}`,
+        maxWidth: "100%",
+        maxHeight: "100%",
+        margin: "auto",
+        overflow: "hidden",
+      }}
+    >
+      {playback === undefined ? null : (
+        <Freeze frame={mediaFrameAt(playback, absoluteFrame)}>
+          <OffthreadVideo
+            src={staticFile(resource.src)}
+            // Refused at materialization rather than muted (decision:64); this says so at the one
+            // place a reader would wonder, and costs nothing if a future medium ever has sound.
+            muted
+            style={{ display: "block", width: "100%", height: "100%" }}
+          />
+        </Freeze>
+      )}
+    </div>
   );
 }
 

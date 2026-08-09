@@ -1369,7 +1369,8 @@ function bodyOf(
 
 export const CUE_HINT =
   'narration text, { speech: "..." }, a pause such as { pause: "400ms" }, ' +
-  "{ enter: <entity> } to go inside one, or { recall: <id> } to say an earlier one again";
+  "{ enter: <entity> } to go inside one, { recall: <id> } to say an earlier one again, " +
+  "or { play: <output> } to run the film this slide's program computed";
 
 /**
  * Why this is one `unknown` with a hand-written check rather than a `z.union`.
@@ -1434,6 +1435,24 @@ function checkCue(value: unknown): string | undefined {
     const target = record["recall"];
     if (typeof target !== "string" || !ANCHOR_ID.test(target)) {
       return `recall must name an anchor an earlier cue activates, and an identity is ${ANCHOR_ID_HINT}`;
+    }
+    return undefined;
+  }
+
+  // The third word for something the narration *does*, and the first that is about a thing with a
+  // length of its own (decision:64). It takes no other key for `recall:`'s reason with one addition:
+  // there is no rate, no start, no end and no loop, because every one of those would be a timecode
+  // in a format that has never had one.
+  if (keys.includes("play")) {
+    if (keys.length !== 1) {
+      return (
+        "a play cue takes no other keys; how long the film lasts was settled by the program " +
+        "that made it"
+      );
+    }
+    const source = record["play"];
+    if (typeof source !== "string" || !ANCHOR_ID.test(source)) {
+      return `play must name the output this slide's program declares, and a name is ${ANCHOR_ID_HINT}`;
     }
     return undefined;
   }
@@ -1537,9 +1556,19 @@ function cueListProblems(
   // write, and refusing it would be refusing delegation.
   //
   // So does a recall, and for the narrower reason that it is *audible*: a slide whose whole
-  // narration is one earlier sentence played again has a clock, has sound, and has a subtitle. A
-  // pause-only `say` is still refused, because that slide has none of the three.
-  if (spoken === 0 && !value.some(isEnterCue) && !value.some(isRecallCue)) {
+  // narration is one earlier sentence played again has a clock, has sound, and has a subtitle.
+  //
+  // So does a `play:`, and it is the first of the three that is neither speech nor a route to some.
+  // What a slide's narration has to supply is a *clock* — the thing a pause-only `say` has none of
+  // is not sound, it is duration that came from anywhere but the minimum. A film has one, measured,
+  // and something visibly happens for the whole of it. A film with no sentence over it is an
+  // unusual slide and a legitimate one.
+  if (
+    spoken === 0 &&
+    !value.some(isEnterCue) &&
+    !value.some(isRecallCue) &&
+    !value.some(isPlayCue)
+  ) {
     problems.push({
       path: [],
       message: "must contain something to say, not only pauses",
@@ -1583,6 +1612,10 @@ function isEnterCue(cue: unknown): cue is { enter: string } {
 
 function isRecallCue(cue: unknown): cue is { recall: string } {
   return typeof cue === "object" && cue !== null && "recall" in cue;
+}
+
+function isPlayCue(cue: unknown): cue is { play: string } {
+  return typeof cue === "object" && cue !== null && "play" in cue;
 }
 
 /**
@@ -2071,6 +2104,12 @@ function toCues(
       // sees the whole deck — and therefore the only thing that can tell one earlier anchor from
       // two, or from none.
       return { kind: "recall", scope, target: record["recall"] };
+    }
+    if (typeof record["play"] === "string") {
+      // Where in the medium this slice starts and stops is filled in by `../compile/footage.ts`,
+      // which is the only thing that has measured the film — and therefore the only thing that
+      // could know what "the whole of it" means in seconds.
+      return { kind: "play", scope, source: record["play"] };
     }
 
     const pronounce = record["pronounce"] as Record<string, string> | undefined;
