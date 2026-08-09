@@ -584,6 +584,58 @@ here the step and the sentence about it are one thing said twice, and the coupli
 `examples/tap.yaml` is the friendly one and `examples/deploy.yaml` is the hostile one; the second
 exists to break the automatic policies, and the archaeology records where it did.
 
+**A state machine, and one run of it.** A body can be what something _can_ do, plus one ordered
+walk through that:
+
+```yaml
+machine:
+  states:
+    closed: Closed
+    opening: Opening
+    open: Open
+  transitions:
+    call-accepted: { from: closed, to: opening, on: call accepted }
+    opened: { from: opening, to: open, on: open limit reached }
+  scenario:
+    - take: call-accepted
+      say: A call releases the door from its closed state.
+    - take: opened
+```
+
+The two halves are the point. Every other body is a structure narration tours _or_ a sequence that
+carries its own narration; this is both, and keeping them apart is what makes it a state machine
+explainer rather than an animated event log
+([`decision:46`](archaeology/decisions/)).
+
+- **A transition is timeless; an occurrence happens at a time.** `on:` is required and describes the
+  edge forever. `say:` lives on the _occurrence_, so the same transition can happen four times and
+  be narrated differently — or not at all — on each of them, which is not something a `say:` on the
+  transition could express.
+- **Declared-but-untaken topology is the whole argument.** The branch the run does not take is the
+  reason the branch it does take means anything, so it is drawn at full legibility from the first
+  frame and never fades. There is no trace-only shorthand and there will not be one.
+- **Nothing is initial, final or accepting.** The run's start is the first occurrence's `from` and
+  its stop is the last one's `to`, both inferred, and the film makes no claim that where the
+  explanation stopped is where the machine was going.
+- **Continuity is checked.** Every occurrence must leave the state the last one arrived at, and a
+  run that teleports is a compile error naming where the machine actually was.
+- **Occupancy is persistent, exclusive and released.** Exactly one state is current, it is the only
+  warm thing on the frame, and it flows to the next state as the traveller crosses. The three-state
+  activation envelope every other archetype uses cannot say that — `heat` is a transient and
+  `degree` never comes back down — so this is the first composition with a fourth quantity
+  ([`decision:47`](archaeology/decisions/)).
+- **The layout never sees the run.** States are placed from the topology alone, once, so permuting
+  the scenario moves nothing and the machine stays a place rather than becoming a highway. Cycles,
+  backward edges, parallel transitions and required edge labels are dagre's; self-loops are drawn
+  by hand into room reserved through it ([`decision:48`](archaeology/decisions/)).
+- **Nothing is authored about the picture.** No rank, no side, no route, no colour, no dwell, no
+  camera instruction — and no composite states, no regions, no pseudostates, no guards as separate
+  concepts, and no second scenario.
+
+`examples/elevator.yaml` is the friendly one and `examples/leases.yaml` is the hostile one: a
+nine-state leased job runner with a self-loop on a six-exit hub, two transitions between one pair, a
+sixty-five character label, two backward reclamation cycles, and four branches the run never takes.
+
 **Mathematics.** A body can be a definition, spelled in TeX and set by KaTeX:
 
 ```yaml

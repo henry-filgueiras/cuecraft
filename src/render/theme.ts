@@ -622,8 +622,8 @@ export const MACHINE = {
   /** A transition the run has taken, at its freshest. */
   taken: "#C7D6E8",
 
-  edgeStroke: 3.6,
-  takenStroke: 5,
+  edgeStroke: 3.2,
+  takenStroke: 6.4,
   arrowHead: 24,
   /** The accent that runs along a transition immediately behind the traveller. */
   pulse: 180,
@@ -652,6 +652,29 @@ export const MACHINE = {
    * readable at 1080p, so the widest legible shot is `1920 * label / 19`. A machine wider than
    * that cannot be shown whole, and the closing overview would be a promise the frame cannot keep.
    */
+  /**
+   * The strip along the top of the frame the machine is never drawn into.
+   *
+   * The first render of `examples/elevator.yaml` printed the deck title across the label of the
+   * first transition, and the two are both text, so neither won. decision:26 already diagnosed
+   * this in general — a caption fixed to the frame while a world moves underneath it collides
+   * with whatever happens to be behind it, and no *position* avoids that — and the atlas's answer
+   * was to fade the title by how much of the world is on screen. That answer does not transfer:
+   * this composition's chrome is at its most necessary exactly when the whole machine is on
+   * screen, because that is the establishing shot.
+   *
+   * So the camera is handed a viewport that stops short of the chrome, which is the same trick
+   * `useSubtitleBand` plays at the bottom of the frame and is the reason it costs nothing to
+   * describe. It is a real cost in height: a tall machine's shots come out about a third wider,
+   * and a wide one's are untouched, because a wide machine's shots were never height-bound.
+   * What it buys is an invariant rather than a piece of luck — no machine, however it lays out,
+   * can put a state under the title or under the readout.
+   *
+   * Sized to what it has to clear: the frame margin, plus the route line and the state name the
+   * readout sets under it.
+   */
+  chrome: 216,
+
   shotPad: 0.16,
   widest: 5050,
   /**

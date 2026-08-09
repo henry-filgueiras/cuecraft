@@ -40,7 +40,12 @@ title: "Why the doors changed their mind"
 
 defaults:
   pre_say: 900ms
-  post_say: 5200ms
+  # Long, and the length is doing something specific: the closing pull-back to the whole machine
+  # is a camera move of its own, and the first render spent almost all of this on *travelling*
+  # rather than on the settled overview it travels to. The author asks for that final shot by
+  # writing enough silence to hold it, which is a duration and not a camera instruction
+  # (decision:22's rule, and the number this round had to raise after watching one).
+  post_say: 9000ms
 
 slides:
   - slide:

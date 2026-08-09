@@ -3090,7 +3090,11 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
   // region the narration left rather than the whole frame, so a subtitle never lands on a state
   // plate. Zero without subtitles, which is why nothing else about the shot changes.
   const band = useSubtitleBand();
-  const viewport = { width: 1920, height: 1080 - band };
+  // The chrome takes a strip off the top of the frame and the subtitles take one off the bottom,
+  // and the camera is told about neither — it is simply given a smaller window and drawn inside
+  // it. That is what makes "the title can never be over a state" an invariant rather than a
+  // property of the two machines that happen to exist.
+  const viewport = { width: 1920, height: 1080 - band - MACHINE.chrome };
   const aspect = viewport.width / viewport.height;
 
   const plan = useMemo(
@@ -3196,7 +3200,7 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
       left: 0,
       top: 0,
       transformOrigin: "0 0",
-      transform: `translate(${put.x}px, ${put.y}px) scale(${put.scale})`,
+      transform: `translate(${put.x}px, ${put.y + MACHINE.chrome}px) scale(${put.scale})`,
     };
   };
 
@@ -3565,7 +3569,7 @@ function EventLabel({
     : wake > 0
       ? mix(MACHINE.possible, MACHINE.taken, wake)
       : MACHINE.possible;
-  const strength = (0.72 + 0.1 * (available ? 1 : 0) + 0.18 * wake) * dim;
+  const strength = (0.62 + 0.1 * (available ? 1 : 0) + 0.34 * wake) * dim;
 
   return (
     <div
@@ -3684,8 +3688,11 @@ function Readout({
 }) {
   if (occupied === undefined || presence <= 0.01) return null;
   const name = (id: string): string => layout.byId.get(id)?.label ?? id;
-  const shown = route.slice(-READOUT_STATES);
-  const elided = route.length > shown.length;
+  // The route *up to* here, since the state it arrived at is set underneath it at four times the
+  // size. Repeating it in both lines would spend the readout's one strong line on an echo.
+  const before = route.slice(0, -1);
+  const shown = before.slice(-READOUT_STATES);
+  const elided = before.length > shown.length;
 
   return (
     <div
@@ -3698,21 +3705,31 @@ function Readout({
         pointerEvents: "none",
       }}
     >
+      {/* History above, present below, and the trailing turnstile is what joins them — so the
+          block reads as one sentence rather than as a caption with a subtitle, and no eyebrow has
+          to say the word "now". */}
       <div
         style={{
-          fontSize: TYPE.ordinal * 0.62,
-          letterSpacing: "0.22em",
-          textTransform: "uppercase",
+          maxWidth: 700,
+          height: TYPE.ordinal * 0.72 * 1.5,
+          fontSize: TYPE.ordinal * 0.72,
+          lineHeight: 1.5,
+          letterSpacing: "0.03em",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
           color: COLORS.dim,
           textShadow: `0 2px 20px ${withAlpha("#05070B", 0.95)}`,
         }}
       >
-        Now
+        {shown.length === 0
+          ? ""
+          : `${elided ? "…  ›  " : ""}${shown.map(name).join("  ›  ")}  ›`}
       </div>
       <div
         style={{
           marginTop: SPACE.xs,
           fontSize: TYPE.row,
+          lineHeight: 1.08,
           fontWeight: 600,
           letterSpacing: "-0.015em",
           color: MACHINE.ignite,
@@ -3720,21 +3737,6 @@ function Readout({
         }}
       >
         {name(occupied)}
-      </div>
-      <div
-        style={{
-          marginTop: SPACE.md,
-          maxWidth: 620,
-          fontSize: TYPE.ordinal * 0.72,
-          lineHeight: 1.5,
-          letterSpacing: "0.03em",
-          color: COLORS.dim,
-          textShadow: `0 2px 20px ${withAlpha("#05070B", 0.95)}`,
-        }}
-      >
-        {(elided ? ["…", ...shown] : shown)
-          .map((id, index) => (id === "…" && index === 0 ? "…" : name(id)))
-          .join("  ›  ")}
       </div>
     </div>
   );

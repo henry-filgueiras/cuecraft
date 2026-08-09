@@ -2,9 +2,10 @@
 id: tsk_01KZJ8SKGSD9H0P76QW0D4MBZC
 sequence: 92
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ8R3RA1F5J5HEEJ40Z6GSP
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Render, look, and correct
