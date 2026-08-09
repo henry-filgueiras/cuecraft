@@ -1,6 +1,11 @@
 import type { FigureKind } from "./figure.ts";
 import type { AuthoredFormulaLine } from "./formula.ts";
-import type { AuthoredOccurrence, AuthoredState, AuthoredTransition } from "./machine.ts";
+import type {
+  AuthoredOccurrence,
+  AuthoredState,
+  AuthoredTransition,
+  MachineScope,
+} from "./machine.ts";
 import { takeId } from "./machine.ts";
 import type { AuthoredSeriesGroup } from "./series.ts";
 import type { CodeLanguage } from "./language.ts";
@@ -110,6 +115,8 @@ export type SlideBody =
       readonly states: readonly AuthoredState[];
       readonly transitions: readonly AuthoredTransition[];
       readonly scenario: readonly AuthoredOccurrence[];
+      /** Whether the slide is about the whole machine or about the run — decision:54. */
+      readonly scope: MachineScope;
     };
 
 /**

@@ -124,11 +124,120 @@ export interface MachineLayout {
   readonly leaving: ReadonlyMap<string, readonly MachineEdge[]>;
 }
 
-/** The machine of a slide body, or nothing if the slide is not one. */
+/**
+ * What a reduced slide left out, so the frame can say so.
+ *
+ * Counts rather than names, and that is the whole of the vocabulary. decision:54 makes the
+ * declaration a condition of the feature existing — a pruned `Running` shows three exits where the
+ * machine declares six, and a viewer who is not told believes something false about the *system*
+ * rather than something incomplete about the film. What it must not become is a second map: a list
+ * of the missing transitions is dragon:18's rail with sentences on it, which that dragon already
+ * refused.
+ */
+export interface MachineReduction {
+  readonly statesShown: number;
+  readonly statesDeclared: number;
+  readonly transitionsShown: number;
+  readonly transitionsDeclared: number;
+}
+
+/**
+ * The machine of a slide body, or nothing if the slide is not one.
+ *
+ * **The one place a reduction is applied** (decision:54), so that layout, camera, ledger, chrome
+ * and `cuecraft explain` can never disagree about which machine they are describing. Everything
+ * downstream takes its machine from here and none of it knows the difference.
+ *
+ * The criterion is *touched by the scenario*: the run chooses the **states** — the endpoints of the
+ * transitions it takes — and the machine then contributes every transition it declares between
+ * them. It is safe by construction: every taken transition has both endpoints in that set, so no
+ * occurrence can be stranded and no arrival can land somewhere undrawn. Three
+ * other criteria were measured and refused, and they are worth naming here because each looks
+ * reasonable until it is measured (`out/harness/subsets.ts`):
+ *
+ *     reachable from the start   buys nothing. Every state of both examples is reachable; an
+ *                                unreachable state is a bug in the machine, so the criterion is
+ *                                empty in any well-formed one.
+ *     on a circuit               drops `Cancelled` — the state the leased runner's film *ends in*
+ *                                — because a terminal state is on no cycle. It also keeps
+ *                                `Orphaned`, which is on one.
+ *     circuits plus terminals    the identity function, on both examples.
+ *
+ * The lesson underneath is the reason this is an authored key and could never have been a layout
+ * policy: **no graph-theoretic criterion shrinks the picture.** Only a narrative one does. There is
+ * no smaller universe in a well-formed machine; there is only a smaller story.
+ */
 export function machineOf(body: SlideBody): AuthoredMachine | undefined {
-  return body.kind === "machine"
-    ? { states: body.states, transitions: body.transitions, scenario: body.scenario }
-    : undefined;
+  if (body.kind !== "machine") return undefined;
+  const whole: AuthoredMachine = {
+    states: body.states,
+    transitions: body.transitions,
+    scenario: body.scenario,
+    scope: body.scope,
+  };
+  return body.scope === "narrated" ? reduceToRun(whole) : whole;
+}
+
+/**
+ * The machine as the run touched it. A pure function of the topology and the *set* of takes.
+ *
+ * Order-blind on purpose, and a test says so: permuting, reversing or rotating a scenario changes
+ * neither which states survive nor any coordinate, because a touched set is a set. That is the same
+ * invariant decision:52 stated for the layout, holding one level further out.
+ */
+function reduceToRun(machine: AuthoredMachine): AuthoredMachine {
+  const taken = new Set(machine.scenario.map((occurrence) => occurrence.take));
+  const touched = new Set(
+    machine.transitions
+      .filter((transition) => taken.has(transition.id))
+      .flatMap(({ from, to }) => [from, to]),
+  );
+  return {
+    states: machine.states.filter((state) => touched.has(state.id)),
+    // The **induced subgraph**, not merely the taken transitions, and the difference is not
+    // pedantic. Keeping only what the run took would drop `Cancelling -> Running` from the leased
+    // runner even though both its endpoints are drawn — which makes `Cancelling` look like a state
+    // with one exit when the machine says it has two, and quietly deletes the referent of the
+    // film's own closing sentence about "the road back out of cancelling". A reduction that
+    // understates a *shown* state's possibilities is telling a lie about a state it chose to keep,
+    // which is worse than the one it is already declaring.
+    //
+    // So: the run chooses the states, and the machine then says everything it knows about them.
+    // Out-degree is still understated for edges that leave to a pruned state, which is inherent to
+    // any reduction and is exactly what the counts on the frame exist to admit.
+    transitions: machine.transitions.filter(
+      (transition) => touched.has(transition.from) && touched.has(transition.to),
+    ),
+    scenario: machine.scenario,
+    scope: machine.scope,
+  };
+}
+
+/**
+ * What a slide's reduction removed, or nothing when it removed nothing.
+ *
+ * Absent for `scope: whole` rather than reported as zeroes, so an unreduced slide gains no band, no
+ * counts and no reserved space — and so that "is this slide reduced" is a question about presence
+ * rather than about comparing two numbers.
+ */
+export function reductionOf(body: SlideBody): MachineReduction | undefined {
+  if (body.kind !== "machine" || body.scope !== "narrated") return undefined;
+  const shown = machineOf(body);
+  if (shown === undefined) return undefined;
+  if (
+    shown.states.length === body.states.length &&
+    shown.transitions.length === body.transitions.length
+  ) {
+    // A run that touched everything. Nothing was left out, so there is nothing to declare, and a
+    // band saying "9 of 9" would be chrome reporting that chrome was not needed.
+    return undefined;
+  }
+  return {
+    statesShown: shown.states.length,
+    statesDeclared: body.states.length,
+    transitionsShown: shown.transitions.length,
+    transitionsDeclared: body.transitions.length,
+  };
 }
 
 /* ----------------------------------------------------------------- layout */

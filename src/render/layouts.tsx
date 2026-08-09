@@ -59,11 +59,13 @@ import {
 import {
   machineOf,
   machinePlan,
+  reductionOf,
   runProgress,
   startingState,
   type MachineEdge,
   type MachineLayout,
   type MachineNode,
+  type MachineReduction,
 } from "./machine.ts";
 import type { AuthoredMachine } from "../presentation/machine.ts";
 import { electLayout } from "./audition.ts";
@@ -3117,9 +3119,14 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
     () => (machine === undefined ? undefined : electLayout(machine, viewport)),
     [machine, viewport.width, viewport.height],
   );
+  // What this slide left out, or nothing when it left nothing out (decision:54). Computed from the
+  // *body* rather than from `machine`, because `machineOf` has already pruned by the time anything
+  // else sees it — the counts are the one thing that has to remember the whole declaration.
+  const reduction = useMemo(() => reductionOf(scene.body), [scene.body]);
   const fit = useMemo(
-    () => (machine === undefined ? undefined : fitLedger(machine)),
-    [machine],
+    () =>
+      machine === undefined ? undefined : fitLedger(machine, reduction !== undefined),
+    [machine, reduction],
   );
   const title = useMemo(() => fitTitle(scene.title), [scene.title]);
 
@@ -3363,8 +3370,10 @@ function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number
               <div key={`${line}-${index}`}>{line}</div>
             ))}
           </h1>
+          {reduction === undefined ? null : <ScopeNote reduction={reduction} />}
         </div>
         <LedgerRail
+          reduced={reduction !== undefined}
           machine={machine}
           fit={fit}
           current={current}
@@ -3768,18 +3777,68 @@ function Traveller({ edge, cross }: { edge: MachineEdge; cross: number }) {
  * occurrence when something is already moving, so a row arriving then costs the viewer nothing,
  * and the stable window after the arrival stays completely still.
  */
+
+/**
+ * What a reduced slide says about itself.
+ *
+ * decision:54 made this a condition of the reduction existing, and the reason is not politeness: a
+ * pruned `Running` shows three exits where the machine declares six, and a viewer who is not told
+ * believes something false about the *system*, not merely something incomplete about the film.
+ *
+ * Three things it deliberately is not. It is **not a list** — dragon:18 already refused a rail of
+ * sentences naming what a shot cut off, and this would be that rail with the same problem. It is
+ * **not an apology**: "showing the narrated run" states what the picture is, where "6 transitions
+ * hidden" would frame the whole slide as a lossy version of a better one. And it is **not in the
+ * accent**, for the reason nothing else in the gutter is — the one warm thing on the frame is
+ * occupancy.
+ *
+ * Counts on both axes, because states and transitions are pruned by different amounts and either
+ * alone would understate it. `+N earlier` in the rail below is the same rule: a number is a fact
+ * and an ellipsis is a shrug.
+ */
+function ScopeNote({ reduction }: { reduction: MachineReduction }) {
+  return (
+    <div
+      style={{
+        marginTop: SPACE.md,
+        fontFamily: FONT_STACK,
+        fontSize: MACHINE.railScope,
+        lineHeight: 1.35,
+        color: withAlpha(MACHINE.edge, 0.85),
+      }}
+    >
+      {/* One count per line, broken here rather than by the box. The first render wrapped
+          "6 of 9 states, 9 of 14 transitions" and orphaned the word `transitions` onto a line of
+          its own, which is sprint:20's defect exactly — and a note about honesty that reads as a
+          typographic accident is not doing its job. Two short lines cannot wrap at any size this
+          rail is ever set at, so the block's height stops depending on a string. */}
+      <div>showing the narrated run</div>
+      <div style={{ color: withAlpha(MACHINE.edge, 0.62) }}>
+        <div>
+          {reduction.statesShown} of {reduction.statesDeclared} states
+        </div>
+        <div>
+          {reduction.transitionsShown} of {reduction.transitionsDeclared} transitions
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LedgerRail({
   machine,
   fit,
   current,
   occupied,
   opening,
+  reduced,
 }: {
   machine: AuthoredMachine;
   fit: LedgerFit;
   current: number;
   occupied: string | undefined;
   opening: number;
+  reduced: boolean;
 }) {
   const rows = ledgerAt(machine, current, fit);
 
@@ -3788,9 +3847,9 @@ function LedgerRail({
       style={{
         position: "absolute",
         left: 0,
-        top: MACHINE.railTitleBlock,
+        top: MACHINE.railTitleBlock + (reduced ? MACHINE.railScopeBlock : 0),
         width: ledgerBand(),
-        height: ledgerHeight(),
+        height: ledgerHeight(reduced),
         opacity: opening,
         pointerEvents: "none",
         display: "flex",

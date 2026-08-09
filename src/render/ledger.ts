@@ -109,8 +109,10 @@ export function ledgerBand(): number {
 }
 
 /** The vertical room the rail has for rows, once the title at the head of it has taken its share. */
-export function ledgerHeight(): number {
-  return 1080 - MACHINE.railTitleBlock - FRAME.marginY;
+export function ledgerHeight(reduced: boolean = false): number {
+  return (
+    1080 - MACHINE.railTitleBlock - (reduced ? MACHINE.railScopeBlock : 0) - FRAME.marginY
+  );
 }
 
 /** The width a row's text column has, inside the rail. */
@@ -134,8 +136,8 @@ export const LEDGER_PAD_RIGHT = 28;
 const SIZES = [MACHINE.railEvent, 25, 23, 21, 20] as const;
 
 /** How the rail is set for a given machine. Deterministic, and a pure function of its scenario. */
-export function fitLedger(machine: Machine): LedgerFit {
-  const available = ledgerHeight();
+export function fitLedger(machine: Machine, reduced: boolean = false): LedgerFit {
+  const available = ledgerHeight(reduced);
   const width = ledgerTextWidth();
 
   for (let rows = MACHINE.railRows; rows >= MIN_ROWS; rows -= 1) {

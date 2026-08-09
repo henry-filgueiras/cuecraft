@@ -900,6 +900,22 @@ export const MACHINE = {
    */
   railTitle: 42,
   railTitleBlock: 280,
+  /**
+   * What a reduced slide says about itself, and the room that costs.
+   *
+   * decision:54 makes this a condition of the reduction existing rather than a courtesy. A pruned
+   * `Running` shows three exits where the machine declares six, and a viewer who is not told
+   * believes something false about the *system* — not merely something incomplete about the film.
+   * So it sits directly under the title, because it is a statement about what the picture *is*
+   * rather than a note about what happened, and the chronology is what happened.
+   *
+   * Reserved the way `railTitleBlock` is, and taken only when a slide is actually reduced: an
+   * unreduced film gains no band, no zero counts and no empty space, so this is the rare
+   * reservation that is conditional. It has to be, or "nothing changed for existing decks" would
+   * be false by three lines of gutter.
+   */
+  railScope: 25,
+  railScopeBlock: 104,
   /** An occurrence's ordinal in the rail: small, monospaced, and never the loudest thing. */
   railOrdinal: 26,
   /** What fired the transition. The row's subject. */

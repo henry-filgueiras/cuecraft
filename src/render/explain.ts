@@ -1,7 +1,7 @@
 import type { Scene, Timeline } from "../compile/timeline.ts";
 import { auditionLayouts, type Audition } from "./audition.ts";
 import { ledgerBand, fitLedger, type LedgerFit } from "./ledger.ts";
-import { machineOf, machinePlan, type MachineShot } from "./machine.ts";
+import { machineOf, reductionOf, machinePlan, type MachineShot } from "./machine.ts";
 import { viewRect, type Rect, type Viewport } from "./camera.ts";
 import { subtitleFit } from "./subtitle.ts";
 import { MACHINE, subtitleBand } from "./theme.ts";
@@ -229,6 +229,10 @@ function explainScene(
 ): MachineExplanation {
   const machine = machineOf(scene.body);
   if (machine === undefined) throw new Error("not a machine");
+  // The same reservation the composition takes, for the same reason the band arithmetic above is
+  // repeated rather than shared: this instrument exists to *check* the number, and reading it out
+  // of the thing it is checking would make a mistake in it invisible.
+  const reduction = reductionOf(scene.body);
   const viewport = {
     width: FRAME_WIDTH - ledgerBand(),
     height: 1080 - band,
@@ -236,7 +240,7 @@ function explainScene(
   const aspect = viewport.width / viewport.height;
   const audition = auditionLayouts(machine, viewport);
   const layout = audition.winner.layout;
-  const ledger = fitLedger(machine);
+  const ledger = fitLedger(machine, reduction !== undefined);
   const takes = machine.scenario.map((entry) => entry.take);
   const plan = machinePlan(
     layout,

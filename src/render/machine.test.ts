@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { SlideBody } from "../presentation/body.ts";
 import type {
   AuthoredOccurrence,
   AuthoredState,
@@ -13,8 +14,10 @@ import {
   essentialBounds,
   sameShot,
   layoutMachine,
+  machineOf,
   machinePlan,
   occurrenceBounds,
+  reductionOf,
   runProgress,
   startingState,
   wrapEventLabel,
@@ -463,6 +466,121 @@ test("every move lands before the occurrence it is about, never on it", () => {
       `the camera was still travelling at ${shot.frame} when the traveller set off`,
     );
   }
+});
+
+/** A machine slide body, at either scope. The reduction is applied by `machineOf` and only there. */
+function bodyOf(
+  machine: typeof ELEVATOR | typeof HARD,
+  scope: "whole" | "narrated",
+): SlideBody {
+  return { kind: "machine", ...machine, scope };
+}
+
+test("a whole-scope machine is exactly what was declared", () => {
+  // decision:54's first promise: every deck written before it renders byte-identically. Asserted
+  // on both specimens rather than reasoned about, because "nothing changed" is the claim that is
+  // easiest to believe and cheapest to check.
+  for (const specimen of [ELEVATOR, HARD]) {
+    const shown = machineOf(bodyOf(specimen, "whole"));
+    assert.deepEqual(shown?.states, specimen.states);
+    assert.deepEqual(shown?.transitions, specimen.transitions);
+    assert.equal(reductionOf(bodyOf(specimen, "whole")), undefined);
+  }
+});
+
+test("a narrated scope keeps exactly what the run touched, and cannot strand an occurrence", () => {
+  for (const specimen of [ELEVATOR, HARD]) {
+    const body = bodyOf(specimen, "narrated");
+    const shown = machineOf(body) as NonNullable<ReturnType<typeof machineOf>>;
+    const taken = new Set(specimen.scenario.map((occurrence) => occurrence.take));
+
+    // Every transition the run takes survives, which is what makes the reduction safe: no
+    // occurrence can be stranded and no arrival can land on a state that was not drawn.
+    for (const id of taken) {
+      assert.ok(
+        shown.transitions.some((transition) => transition.id === id),
+        `the run takes ${id} and the reduction dropped it`,
+      );
+    }
+    const kept = new Set(shown.states.map((state) => state.id));
+    for (const transition of shown.transitions) {
+      assert.ok(kept.has(transition.from) && kept.has(transition.to));
+    }
+    // ...and nothing survives whose endpoints the run never occupied. An untaken transition
+    // *between* two surviving states is kept on purpose: dropping it would understate a shown
+    // state's exits, which is a lie about a state the reduction chose to keep.
+    for (const transition of shown.transitions) {
+      assert.ok(kept.has(transition.from) && kept.has(transition.to));
+    }
+    for (const state of shown.states) {
+      assert.ok(
+        specimen.transitions.some(
+          (transition) =>
+            taken.has(transition.id) &&
+            (transition.from === state.id || transition.to === state.id),
+        ),
+        `${state.id} survived without the run ever touching it`,
+      );
+    }
+  }
+});
+
+test("a run that touches everything reduces to the machine unchanged", () => {
+  // The degenerate case, and the one that says the criterion is "touched" rather than "fewer".
+  const everything = {
+    ...ELEVATOR,
+    scenario: ELEVATOR.transitions.map((transition) => ({ take: transition.id })),
+  };
+  const shown = machineOf(bodyOf(everything, "narrated"));
+  assert.deepEqual(shown?.states, everything.states);
+  assert.deepEqual(shown?.transitions, everything.transitions);
+  // And nothing is declared, because nothing was left out. A band reading "6 of 6" would be chrome
+  // reporting that chrome was not needed.
+  assert.equal(reductionOf(bodyOf(everything, "narrated")), undefined);
+});
+
+test("permuting the scenario changes neither the reduction nor a coordinate", () => {
+  // decision:52's invariant, holding one level further out: a touched set is a set, so the order
+  // the run happens in cannot reach the picture through the reduction any more than through dagre.
+  const places = (machine: NonNullable<ReturnType<typeof machineOf>>) =>
+    electLayout(machine, { width: 1540, height: 1080 })
+      .nodes.map(
+        (node) => `${node.id}@${Math.round(node.rect.x)},${Math.round(node.rect.y)}`,
+      )
+      .join(" ");
+
+  const straight = bodyOf(HARD, "narrated");
+  const reversed = bodyOf(
+    { ...HARD, scenario: [...HARD.scenario].reverse() },
+    "narrated",
+  );
+  const rotated = bodyOf(
+    { ...HARD, scenario: [...HARD.scenario.slice(3), ...HARD.scenario.slice(0, 3)] },
+    "narrated",
+  );
+
+  const base = machineOf(straight) as NonNullable<ReturnType<typeof machineOf>>;
+  for (const [name, body] of [
+    ["reversing", reversed],
+    ["rotating", rotated],
+  ] as const) {
+    const other = machineOf(body) as NonNullable<ReturnType<typeof machineOf>>;
+    assert.deepEqual(
+      other.states.map((state) => state.id),
+      base.states.map((state) => state.id),
+      `${name} the run changed which states survived`,
+    );
+    assert.equal(places(other), places(base), `${name} the run moved a state`);
+  }
+});
+
+test("a reduction reports what it left out, in counts", () => {
+  const reduction = reductionOf(bodyOf(HARD, "narrated"));
+  assert.ok(reduction !== undefined, "the hard specimen leaves something out");
+  assert.equal(reduction.statesDeclared, HARD.states.length);
+  assert.equal(reduction.transitionsDeclared, HARD.transitions.length);
+  assert.ok(reduction.statesShown < reduction.statesDeclared);
+  assert.ok(reduction.transitionsShown < reduction.transitionsDeclared);
 });
 
 test("a hold says whether the move was refused or was impossible", () => {

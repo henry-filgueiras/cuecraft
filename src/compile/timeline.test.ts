@@ -25,7 +25,7 @@ function bodyOf(overrides: SlideOverrides): SlideBody {
     return { kind: "protocol", ...overrides.protocol };
   }
   if (overrides.machine !== undefined) {
-    return { kind: "machine", ...overrides.machine };
+    return { kind: "machine", scope: "whole", ...overrides.machine };
   }
   if (overrides.change !== undefined) {
     return {

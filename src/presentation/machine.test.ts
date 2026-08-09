@@ -309,7 +309,7 @@ test("an unknown key anywhere in a machine is refused with the allowed set", () 
     problems(
       DECK.replace("        scenario:", "        initial: closed\n        scenario:"),
     )[0] as string,
-    /unknown key "initial" \(allowed: states, transitions, scenario\)/,
+    /unknown key "initial" \(allowed: states, transitions, scenario, scope\)/,
   );
   assert.match(
     problems(

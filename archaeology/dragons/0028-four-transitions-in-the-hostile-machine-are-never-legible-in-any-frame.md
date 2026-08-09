@@ -117,3 +117,31 @@ it is a round of its own. What has changed is that there is now something defini
 
 The candidate direction above — a rail of cut-off sentences, borrowed from dragon:18 — remains
 unattempted and remains unattractive for the reason recorded there.
+
+## What sprint:22 changed, and why this is still open
+
+An author now has an answer, and it is not a fix for this dragon.
+
+`scope: narrated` (decision:54) lets a slide declare that it explains the run rather than the
+machine. `examples/leases-narrated.yaml` is this exact machine and this exact scenario under that
+key, and in it **there is no illegible transition**: 41.0px state names, 27.9px event labels, zero
+camera moves, and all thirteen occurrences read from one held overview.
+
+That does not close this dragon, and it is worth being precise about why. The resolution criteria
+above say to close as **fixable** only if a treatment "keeps untaken possibility readable in a wide
+overview". The reduction does not keep it readable — it removes it, and says so on the frame. It is
+an escape from the problem rather than a solution to it, and the two should not be confused.
+
+So what has changed is the dragon's **scope**, not its status:
+
+- It is now specifically about `scope: whole`, which is still the default and still what both
+  showcase examples use.
+- The pressure is lower, because an author who hits the wall has somewhere to go rather than only a
+  worse film.
+- The wall itself is exactly where sprint:21 left it: arrangement exhausted at 18.2px, seeding
+  undrawable in 4 x 144 configurations, and a silent trio whose union is 17.0px.
+
+Closing it as **inherent** still needs the ceiling written down next to the grammar, where an author
+can check it before writing a nine-state machine — and now that check has a second half worth
+stating in the same place: *if your machine is too wide to explain whole, you can explain the run
+instead, and here is what that costs.*

@@ -178,6 +178,7 @@ test("nothing an author writes can reach the clock", () => {
 
 function machine(...scenario: readonly AuthoredOccurrence[]): AuthoredMachine {
   return {
+    scope: "whole",
     states: [
       { id: "a", text: "A" },
       { id: "b", text: "B" },

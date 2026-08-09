@@ -1291,6 +1291,7 @@ function bodyOf(
       states: machine.states,
       transitions: machine.transitions,
       scenario: machine.scenario,
+      scope: machine.scope,
     };
   }
   if (slide.code !== undefined) {

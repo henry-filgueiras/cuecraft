@@ -59,6 +59,20 @@ import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
  *   that matters beyond the scenario's, and no dwell. Where anything sits is derived from the
  *   topology by `../render/machine.ts`; how long a silent occurrence lasts is derived from its
  *   label by `./beat.ts`. There is no key here that could become either.
+ *
+ * ## The one key that is none of those, and what it does not open
+ *
+ * `scope` says whether the slide is about the whole machine or about the run the scenario
+ * describes, and it is the only key here that changes what reaches the frame (decision:54). It
+ * qualifies the argument above rather than abandoning it: the topology is still declared in full
+ * and still validated in full, `whole` is still the default and still means exactly what it meant,
+ * and a reduced slide states its own counts on the frame so that a smaller picture is never a
+ * smaller machine asserted as the whole one.
+ *
+ * What it does not open, and cannot: there is no partial reduction, no per-state emphasis, no
+ * weighting, no threshold and no second criterion. A slide is about the machine or about the run.
+ * The value is a name rather than a boolean precisely so that "mostly reduced" has nowhere to be
+ * spelled.
  */
 
 /** One state: an identity, and the name it shows. A state *is* its identity, as an entity is. */
@@ -97,13 +111,27 @@ export interface AuthoredOccurrence {
   readonly pronounce?: ReadonlyMap<string, string>;
 }
 
+/**
+ * What the slide is about: the whole machine, or the run the scenario describes.
+ *
+ * The one authored thing in this grammar that is neither a state, a transition nor an occurrence,
+ * and the only key that changes which of the declared topology reaches the frame. It is a
+ * projection rather than a second notation — the machine is still declared in full, still
+ * validated in full, and `whole` still means what it has always meant (decision:54).
+ */
+export type MachineScope = "whole" | "narrated";
+
+export const MACHINE_SCOPES = ["whole", "narrated"] as const;
+
 export interface AuthoredMachine {
   readonly states: readonly AuthoredState[];
   readonly transitions: readonly AuthoredTransition[];
   readonly scenario: readonly AuthoredOccurrence[];
+  /** `whole` unless the author said otherwise. See `MachineScope`. */
+  readonly scope: MachineScope;
 }
 
-export const MACHINE_KEYS = ["states", "transitions", "scenario"] as const;
+export const MACHINE_KEYS = ["states", "transitions", "scenario", "scope"] as const;
 export const TRANSITION_KEYS = ["from", "to", "on"] as const;
 export const OCCURRENCE_KEYS = ["take", "say", "pronounce"] as const;
 
@@ -238,7 +266,34 @@ export function resolveMachine(value: unknown): ResolvedMachine {
   const scenario = readScenario(record["scenario"], transitions, issues);
   if (issues.length > 0) return { machine: undefined, issues };
 
-  return { machine: { states, transitions, scenario }, issues: [] };
+  const scope = readScope(record["scope"], issues);
+  if (issues.length > 0) return { machine: undefined, issues };
+
+  return { machine: { states, transitions, scenario, scope }, issues: [] };
+}
+
+/**
+ * Which of the declared machine this slide is about.
+ *
+ * Absent means `whole`, and `whole` is what every deck written before decision:54 gets, byte for
+ * byte. Spelled as two named values rather than as a boolean because the key states what the
+ * picture *is* rather than switching a behaviour on — and because the values are where the three
+ * criteria that were measured and refused (reachability, circuits, circuits plus terminals) are
+ * documented as not being options.
+ */
+function readScope(value: unknown, issues: MachineIssue[]): MachineScope {
+  if (value === undefined) return "whole";
+  if (
+    typeof value !== "string" ||
+    !(MACHINE_SCOPES as readonly string[]).includes(value)
+  ) {
+    issues.push({
+      path: ["scope"],
+      message: `must be ${MACHINE_SCOPES.join(" or ")}`,
+    });
+    return "whole";
+  }
+  return value as MachineScope;
 }
 
 function readStates(value: unknown, issues: MachineIssue[]): readonly AuthoredState[] {
