@@ -70,6 +70,20 @@ mechanism, which is a good sign the boundary is real.
 - **idea:24's own boundary note is falsified in the useful direction.** It says SVG "buys scale and
   style, not meaning", on decision:57's evidence. It buys meaning too, and the thing that was missing
   was not a feature of the device but a technique on the program's side.
+- **The overhead is measurable, and it was measured.** Both showcase programs were rewritten as the
+  standalone R somebody would write to get the same file onto disk, and diffed against the shipped
+  ones. The **table** program's entire delta is five lines: three that say where the input and output
+  are (a substitution for a hardcoded path, not an addition) and one `cat()` declaring the output.
+  All twenty-four lines of actual work — derive the quarter, derive the segment, `aggregate`,
+  `reshape`, order, format, `write.csv` — are byte-identical. The **chart** program's delta is twenty
+  lines, and seventeen of them are the tagging helper; the rest is receiving the palette instead of
+  hardcoding it, and one `col = "#e8833a"` becoming `col = tag(...)`. So: **taking data back costs
+  one line, and naming what you drew costs about twenty.** Nothing else about writing R changes.
+- **`svg()` takes inches where `png()` takes pixels**, so a vector program converts once — `/ 96` for
+  the box, `* 72 / 96` for the type size. The first version of the showcase used `/ 1.6` for the type,
+  fitted by eye, and set every label seventeen percent small; the diff against standalone R is what
+  made it obvious that one number was a conversion and the other was a guess. The supersampling
+  factor `EXHIBIT.scale` cancels, because the box and the type size carry it equally.
 - **The technique lives in the deck's R program**, not in cuecraft and not in a shared R library.
   Twelve lines that every deck wanting this would copy. That is deliberate — a cuecraft-supplied R
   helper is a plotting API with one function in it — and it is the first duplication this boundary

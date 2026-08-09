@@ -71,10 +71,12 @@ cat(sprintf("%d transactions, %d regions, %d quarters\n", nrow(tx), nrow(grid), 
 out_file <- "quarterly-regions.svg"
 svg(
   file.path(out_dir, out_file),
-  # svg() takes inches. The pixel box is what cuecraft measured the room at, and 96 is what a
-  # CSS pixel is; the viewBox that comes out is what actually decides the aspect, and cuecraft
-  # fits that into whatever room it turns out to have.
-  width = width / 96, height = height / 96, pointsize = point_size / 1.6,
+  # cuecraft speaks pixels and svg() speaks inches, so everything crosses through one constant:
+  # 96 is what a CSS pixel is, and 72 points is an inch. Both the box and the type size go through
+  # it, which is the only way a label ends up the size cuecraft asked for rather than a size that
+  # looked about right. The viewBox that comes out is what decides the aspect, and cuecraft fits
+  # that into whatever room it turns out to have.
+  width = width / 96, height = height / 96, pointsize = point_size * 72 / 96,
   bg = ink
 )
 par(bg = ink, fg = muted, family = "sans", las = 1,
