@@ -1,0 +1,112 @@
+# The first deck whose picture cuecraft did not draw.
+#
+#   cuecraft render examples/revenue/revenue.yaml -o out/revenue.mp4
+#
+# Everything visible in the fourth slide is computed during that command, by
+# quarterly-revenue.R, from transactions.csv. There is no PNG in this directory
+# and there is no key in this file that could point at one — see
+# archaeology/sprints/0025-*/ for why that refusal is the whole feature.
+#
+# Edit transactions.csv and rerender: the chart changes and nothing else does.
+
+title: "A chart nobody drew"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1100ms
+  subtitles: true
+
+slides:
+  # Title and nothing else -> statement.
+  - slide:
+      title: "This presentation begins with raw transaction data"
+
+    say:
+      - "Four hundred and sixty-eight transactions."
+      - "A date, a region, a product, and an amount."
+      - pause: 400ms
+      - "There is no quarter in that file. No totals, and no chart."
+
+  # A bounded population, in groups -> series. The field fills while the sentence
+  # that describes it is being spoken; nothing here says how fast.
+  #
+  # These counts are checked against the CSV by src/examples.test.ts, because a
+  # deck that says "four hundred and sixty-eight" while the file holds another
+  # number renders beautifully and asserts something false.
+  - slide:
+      title: "One row per sale, for a year"
+      series:
+        - id: americas
+          count: 132
+          text: North America
+        - id: europe
+          count: 121
+          text: Europe
+        - id: apac
+          count: 118
+          text: Asia Pacific
+        - id: latam
+          count: 97
+          text: Latin America
+
+    say:
+      - speech: "Every row is one sale, in one region, on one day."
+        fills: americas
+      - speech: "Four regions."
+        fills: europe
+      - speech: "Nobody has grouped them, and nobody has added anything up."
+        fills: apac
+      - speech: "That work has not happened yet."
+        fills: latam
+
+  # The deck quoting itself -> specimen. `opens:` narrows to the construct, so the
+  # frame shows the exhibit and not the slide around it.
+  - slide:
+      title: "What this file says about the chart"
+      code:
+        file: examples/revenue/revenue.yaml
+        slide: "Revenue by quarter and region"
+        opens: "exhibit:"
+        marks:
+          - id: program
+            line: "run:"
+          - id: data
+            line: "transactions:"
+
+    say:
+      - "This is the whole of what the presentation says about the next slide."
+      - speech: "A program to run."
+        activates: program
+      - speech: "And the file to run it against."
+        activates: data
+      - pause: 350ms
+      - "No size, no colours, no output filename, and no image."
+
+  # An exhibit -> the picture a foreign process computed, during this render.
+  - slide:
+      title: "Revenue by quarter and region"
+      exhibit:
+        run: examples/revenue/quarterly-revenue.R
+        with:
+          transactions: examples/revenue/transactions.csv
+
+    say:
+      - "While cuecraft was building this video, it handed that file to R."
+      - "R read every transaction, worked out which quarter each one fell in,"
+      - "grouped them by quarter and by region, and added up the revenue."
+      - pause: 500ms
+      - "This is what came back."
+      - pause: 900ms
+      - "Asia Pacific doubles across the year. Latin America does not move."
+
+  # Title and nothing else -> statement.
+  - slide:
+      title: "That chart is not a presentation asset"
+
+    say:
+      - "It was not drawn by hand, and it is not checked in anywhere."
+      - "It did not exist until this video was compiled."
+      - pause: 450ms
+      - "Change one number in the spreadsheet and it is a different chart, with nothing else edited."
+      - pause: 350ms
+      - "Cuecraft can hand the arithmetic to something that is good at arithmetic, and take the evidence back."

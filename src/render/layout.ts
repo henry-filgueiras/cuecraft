@@ -41,7 +41,8 @@ export type LayoutArchetype =
   | "circuit"
   | "figure"
   | "formula"
-  | "series";
+  | "series"
+  | "exhibit";
 
 export interface SlideContent {
   readonly title: string;
@@ -113,6 +114,10 @@ export function analyzeContent(content: SlideContent): ContentShape {
  * - **series** — a bounded population. A derived field of members, filling in reading order over
  *   a measured narration interval. The only composition whose size comes from a number rather
  *   than from how much the author wrote.
+ * - **exhibit** — an image a foreign program computed during this compilation. The only archetype
+ *   whose content cuecraft has never looked inside: it places the picture and nothing else, because
+ *   everything a composition normally decides — what is emphasized, what is recessive, what wraps —
+ *   was decided on the far side of a process boundary by the program that drew it.
  * - **figure** — the compilation's own facts. One archetype rather than one per kind, because
  *   `timing` and `anchors` are two shapes of the same role — "show what the compiler worked out"
  *   — and the role picks the composition while the shape decides within it, which is the rule
@@ -130,6 +135,7 @@ export function analyzeContent(content: SlideContent): ContentShape {
  *   on the right.
  */
 export function chooseLayout(content: SlideContent): LayoutArchetype {
+  if (content.body.kind === "exhibit") return "exhibit";
   if (content.body.kind === "figure") return "figure";
   if (content.body.kind === "formula") return "formula";
   if (content.body.kind === "series") return "series";

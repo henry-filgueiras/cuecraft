@@ -262,7 +262,7 @@ slides:
     say: Hello.
 `),
     [
-      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world, protocol, machine, figure, formula, series)',
+      'slide 1, slide: unknown field "bulletz" (allowed: title, bullets, steps, code, change, world, protocol, machine, figure, formula, series, exhibit)',
     ],
   );
 

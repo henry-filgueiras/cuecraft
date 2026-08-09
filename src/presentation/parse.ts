@@ -4,6 +4,7 @@ import { z } from "zod";
 import { deriveChange } from "./change.ts";
 import { collapseWhitespace, ENTER_MS, wordPattern, type NarrationCue } from "./cue.ts";
 import { DURATION_HINT, isDurationLiteral, parseDurationMs } from "./duration.ts";
+import { resolveExhibit } from "./exhibit.ts";
 import { figureProblem, type FigureKind } from "./figure.ts";
 import { FORMULA_LINE_HINT, formulaLineOf, formulaLineProblem } from "./formula.ts";
 import { ANCHOR_ID, ANCHOR_ID_HINT } from "./identity.ts";
@@ -669,6 +670,7 @@ function buildSlideSchema(resolution: Resolution) {
       figure: z.unknown().optional(),
       formula: z.unknown().optional(),
       series: z.unknown().optional(),
+      exhibit: z.unknown().optional(),
     })
     .superRefine((slide, context) => {
       const present = BODY_KEYS.filter((key) => slide[key] !== undefined);
@@ -751,6 +753,15 @@ function buildSlideSchema(resolution: Resolution) {
           });
         }
       }
+      if (slide.exhibit !== undefined) {
+        for (const issue of resolveExhibit(slide.exhibit, read).issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["exhibit", ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
     });
 }
 
@@ -805,6 +816,7 @@ const BODY_KEYS = [
   "figure",
   "formula",
   "series",
+  "exhibit",
 ] as const;
 
 /**
@@ -828,6 +840,10 @@ const NO_INTERIOR: Partial<Record<(typeof BODY_KEYS)[number], string>> = {
     "a machine cannot be an interior; it is larger than the frame and moves a camera of its " +
     "own, and how two cameras compose is not a question this format has answered. A machine " +
     "belongs on a slide of its own",
+  exhibit:
+    "an exhibit cannot be an interior; the program is told the box it must fill exactly once, " +
+    "and an interior is drawn at concept scale rather than at frame scale — so the type in the " +
+    "picture would be sized for a room it is not in. An exhibit belongs on a slide of its own",
 };
 
 /**
@@ -1020,6 +1036,11 @@ function resolveInterior(
         issues.push({ path: ["change", ...issue.path], message: issue.message });
       }
     }
+    if (record["exhibit"] !== undefined) {
+      for (const issue of resolveExhibit(record["exhibit"], read).issues) {
+        issues.push({ path: ["exhibit", ...issue.path], message: issue.message });
+      }
+    }
     for (const key of ["bullets", "steps"] as const) {
       const items = record[key];
       if (items === undefined) continue;
@@ -1139,13 +1160,16 @@ function childResolver(resolution: Resolution): ChildResolver {
     // exactly what makes it safe (decision:31). A machine is refused in both spellings, because
     // what stops it is not the nesting — it is that the chamber would have to run a second camera
     // inside the one already looking at it.
-    if (shape.key === "machine") {
+    // An exhibit is refused in both spellings for the same shape of reason and a different cause:
+    // the box, not the camera. A file cannot change what size the picture was drawn for.
+    for (const key of ["machine", "exhibit"] as const) {
+      if (shape.key !== key) continue;
       return {
         ...nothing,
         issues: [
           {
             path: [],
-            message: `module ${JSON.stringify(path)}: ${NO_INTERIOR.machine as string}`,
+            message: `module ${JSON.stringify(path)}: ${NO_INTERIOR[key] as string}`,
           },
         ],
       };
@@ -1251,12 +1275,24 @@ function bodyOf(
     figure?: unknown;
     formula?: unknown;
     series?: unknown;
+    exhibit?: unknown;
   },
   resolution: Resolution,
 ): SlideBody {
   const read = resolution.read;
   if (slide.figure !== undefined) {
     return { kind: "figure", figure: slide.figure as FigureKind };
+  }
+  if (slide.exhibit !== undefined) {
+    const { exhibit } = resolveExhibit(slide.exhibit, read);
+    if (exhibit === undefined)
+      throw new Error("exhibit passed validation but did not resolve");
+    return {
+      kind: "exhibit",
+      program: exhibit.program,
+      source: exhibit.source,
+      inputs: exhibit.inputs,
+    };
   }
   if (slide.formula !== undefined) {
     return {

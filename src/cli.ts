@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { compilePresentation } from "./compile/compile.ts";
+import type { MaterializedExhibit } from "./compile/materialize.ts";
 import {
   buildTimeline,
   narrativeStack,
@@ -154,6 +155,7 @@ export function parseInvocation(argv: readonly string[]): Invocation {
 const STAGE_LABELS: Record<string, string> = {
   read: "reading source",
   parse: "validating presentation",
+  materialize: "running exhibits",
   synthesize: "synthesizing narration",
   time: "deriving timing",
   browser: "preparing headless browser",
@@ -176,6 +178,14 @@ async function runRender(
       },
       onWarning: (message) => {
         process.stderr.write(`cuecraft: warning: ${message}\n`);
+      },
+      onExhibit: (exhibit) => {
+        note(
+          `    slide ${exhibit.ordinal}: ${exhibit.program} -> ` +
+            `${exhibit.resource.width}x${exhibit.resource.height} png, ` +
+            `${(exhibit.resource.bytes / 1024).toFixed(0)} kB ` +
+            `in ${exhibit.elapsedSeconds.toFixed(1)}s`,
+        );
       },
       onNarration: (slide, narration) => {
         const clips = narration.clips.length;
@@ -204,6 +214,7 @@ async function runRender(
         `  narration ${summary.synthesisSeconds.toFixed(1)}s, ` +
         `render ${summary.renderSeconds.toFixed(1)}s\n` +
         `  narration kept in ${summary.workspace}\n` +
+        describeExhibits(summary.exhibits) +
         describeSubtitles(timeline) +
         describeLanes(timeline) +
         describeRecalls(timeline) +
@@ -295,6 +306,25 @@ async function runExplain(
 function describeVoices(narration: { clips: readonly { voice: string }[] }): string {
   const voices = [...new Set(narration.clips.map((clip) => clip.voice))];
   return voices.length === 0 ? "no speech" : voices.join(", ");
+}
+
+/**
+ * Every picture a foreign program computed for this render, and how long it took.
+ *
+ * Printed for the reason the layouts are: it is the only place an author can see that the thing on
+ * the slide was *made* rather than fetched. Two numbers say it — the program that ran, and the
+ * seconds it ran for — and neither exists for a checked-in image.
+ *
+ * Silent on every deck with no exhibit in it, which is all of them but one.
+ */
+function describeExhibits(exhibits: readonly MaterializedExhibit[]): string {
+  if (exhibits.length === 0) return "";
+  const lines = exhibits.map(
+    (exhibit) =>
+      `    slide ${exhibit.ordinal}: ${exhibit.program} computed ` +
+      `${exhibit.resource.name} in ${exhibit.elapsedSeconds.toFixed(1)}s`,
+  );
+  return `  exhibits\n${lines.join("\n")}\n`;
 }
 
 /**

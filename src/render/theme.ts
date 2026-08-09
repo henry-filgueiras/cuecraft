@@ -304,6 +304,39 @@ export const FORMULA = {
 } as const;
 
 /**
+ * The box a foreign program is given to draw in.
+ *
+ * The only geometry in this file that leaves the process. Everywhere else these constants describe
+ * where cuecraft puts something; here they describe what cuecraft *asks for*, because the drawing
+ * happens on the far side of a process boundary and the program cannot measure the frame.
+ *
+ * It is still the same rule as decision:42 — a composition is laid out inside the box it was given
+ * — and it is what keeps decision:10's line intact through the escape hatch. The author of an R
+ * program receives a width, a height, a base type size and four colours. They do not choose them,
+ * and there is no key that would let a deck override one.
+ *
+ * The numbers are `bodyBox` under a one-line heading **with a subtitle band reserved**, and the
+ * choice of the subtitled case is the interesting part. The room an exhibit actually gets is not
+ * knowable when the program runs: it depends on how tall the band is, which depends on the longest
+ * sentence in the deck, which is measured two stages later. So the program is given the *smaller*
+ * of the two rooms and the composition contains it in whatever room turns up — a subtitled deck
+ * fits exactly, an unsubtitled one gains about ninety pixels of air above and below, and a title
+ * that wraps shrinks the picture whole rather than cropping it.
+ *
+ * `scale` is drawn and thrown away: rendering at twice the size and letting the browser fit it back
+ * down turns cairo's own antialiasing into supersampling, which is the difference between a chart
+ * that reads as part of the film and one that reads as a screenshot. `pointSize` is in *frame*
+ * pixels and is multiplied by `scale` before it crosses — sized so a label is legible from a room
+ * at 1080p, which is a much larger number than a chart drawn for a page would use.
+ */
+export const EXHIBIT = {
+  width: 1920 - 2 * FRAME.marginX,
+  height: 552,
+  scale: 2,
+  pointSize: 30,
+} as const;
+
+/**
  * How a semantic world is set, in world units.
  *
  * A second coordinate system, and the only one in cuecraft: everything here is measured in the

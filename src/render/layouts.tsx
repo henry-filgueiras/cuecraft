@@ -1,6 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
-import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from "remotion";
+import {
+  AbsoluteFill,
+  Easing,
+  Img,
+  interpolate,
+  Sequence,
+  staticFile,
+  useCurrentFrame,
+} from "remotion";
 
 import { deriveChange } from "../presentation/change.ts";
 import {
@@ -4137,6 +4145,74 @@ function LedgerEntry({
   );
 }
 
+/**
+ * **exhibit** — a picture something else drew, under the heading that says what it is.
+ *
+ * The shortest composition in the file, and the shortness is the content of it. Every other
+ * archetype here is an argument about arrangement: what gets the scale, what recedes, what wraps,
+ * what moves when narration reaches it. None of those questions can be asked about an exhibit,
+ * because the answers were settled on the far side of a process boundary by a program cuecraft
+ * cannot see into. What is left is: put it in the room it was drawn for, centred, whole.
+ *
+ * `contain` inside whatever room is left, rather than the fixed size the program was given. The two
+ * are the same number on a subtitled deck with a one-line heading, which is what `EXHIBIT` in
+ * `./theme.ts` is measured against — and they are deliberately not the same everywhere else,
+ * because the room depends on the subtitle band and the band is not measured until two stages after
+ * the picture was drawn. So the picture shrinks or gains air, and stays whole either way.
+ *
+ * Remotion's `Img` rather than a bare `img`, because a still is captured the moment React settles
+ * and a browser has no obligation to have decoded a PNG by then. `Img` holds the frame open until
+ * the load completes, which is the difference between a chart and an intermittently empty rectangle.
+ *
+ * The missing-resource branch is unreachable from `cuecraft render`: materialization runs before
+ * anything is timed, and a program that produced nothing fails the build. It exists because a body
+ * can be inspected without being materialized, and a component that throws in that case would make
+ * every future inspection tool carry a special case.
+ */
+function Exhibit({ scene }: { scene: Scene }) {
+  const frame = useCurrentFrame();
+  const body = scene.body.kind === "exhibit" ? scene.body : undefined;
+  const resource = body?.resource;
+
+  return (
+    <>
+      <Heading scene={scene} frame={frame} />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          // The same gap every other composition leaves under a heading, and the same one
+          // `bodyBox` subtracts — so the room this actually gets is the room EXHIBIT was measured
+          // against rather than a second, nearly-equal number.
+          marginTop: SPACE.xl,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          ...reveal(frame, MOTION.contentDelay),
+        }}
+      >
+        {resource === undefined ? (
+          <div
+            style={{ fontSize: TYPE.item, color: COLORS.dormant, fontFamily: MONO_STACK }}
+          >
+            {body?.program ?? "no exhibit"}
+          </div>
+        ) : (
+          <Img
+            src={staticFile(resource.src)}
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+            }}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
 function Gate({ hue, degree }: { hue: string; degree: number }) {
   return (
     <div
@@ -4226,6 +4302,8 @@ function Composition({
         />
       </div>
     </>
+  ) : scene.layout === "exhibit" ? (
+    <Exhibit scene={scene} />
   ) : scene.layout === "series" ? (
     <Series scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "formula" ? (

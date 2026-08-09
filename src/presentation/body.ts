@@ -1,3 +1,4 @@
+import type { AuthoredExhibitInput, ExhibitResource } from "./exhibit.ts";
 import type { FigureKind } from "./figure.ts";
 import type { AuthoredFormulaLine } from "./formula.ts";
 import type {
@@ -117,6 +118,28 @@ export type SlideBody =
       readonly scenario: readonly AuthoredOccurrence[];
       /** Whether the slide is about the whole machine or about the run — decision:54. */
       readonly scope: MachineScope;
+    }
+  | {
+      /**
+       * An artifact a foreign program computed during this compilation — see `./exhibit.ts`. The
+       * first body cuecraft cannot read: it knows what produced the content and nothing about what
+       * the content is.
+       */
+      readonly kind: "exhibit";
+      /** Repository-relative path of the R program, for diagnostics and for the specimen. */
+      readonly program: string;
+      /** The program itself, read at parse time and handed to the runner over stdin. */
+      readonly source: string;
+      readonly inputs: readonly AuthoredExhibitInput[];
+      /**
+       * What the program produced, and where it landed.
+       *
+       * Absent on a freshly parsed presentation and present after materialization, which is the
+       * one place in the format where a body is completed rather than read. It is not authored and
+       * cannot be: an author who could write this could point a slide at a checked-in image, which
+       * is precisely what `./exhibit.ts` refuses to make expressible.
+       */
+      readonly resource?: ExhibitResource;
     };
 
 /**
@@ -159,6 +182,11 @@ export function bodyElements(body: SlideBody): readonly { readonly id?: string }
     case "figure":
       // Nothing. A figure's content is derived from the timing that would have to be derived
       // from it, so it declares no endpoint narration could reach and adds nothing to measure.
+      return [];
+    case "exhibit":
+      // Nothing, for a different reason. A figure has no elements because naming one would make
+      // the derivation circular; an exhibit has none because cuecraft cannot see inside the image
+      // it was handed. Reaching a part of a plot would mean an author writing a coordinate.
       return [];
     case "world":
       return [...body.entities, ...body.entities.flatMap(interiorElements)];
@@ -259,6 +287,7 @@ export function bodyAddresses(body: SlideBody, scope: Scope): readonly ElementAd
   switch (body.kind) {
     case "none":
     case "figure":
+    case "exhibit":
       return [];
     case "code":
       return body.marks.map((mark) => named(mark.id));

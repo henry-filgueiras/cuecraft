@@ -6,6 +6,12 @@ import {
   type CompiledPresentation,
   type Narration,
 } from "./compile/compile.ts";
+import {
+  hasExhibits,
+  materializePresentation,
+  MaterializeError,
+  type MaterializedExhibit,
+} from "./compile/materialize.ts";
 import { buildTimeline, type Timeline } from "./compile/timeline.ts";
 import type { AuthoredSlide } from "./presentation/parse.ts";
 import { parsePresentation, PresentationError } from "./presentation/parse.ts";
@@ -24,13 +30,20 @@ import { repositoryRoot } from "./tts/model.ts";
  * renders anything, and that duration comes from audio that does not exist yet (dragon:1).
  * So synthesis strictly precedes timing, and timing strictly precedes rendering.
  *
- *     read -> parse -> synthesize -> time -> render
+ *     read -> parse -> materialize -> synthesize -> time -> render
+ *
+ * `materialize` is the one stage whose position was *chosen* rather than forced. An exhibit's
+ * picture has no bearing on how long a sentence takes, so it could run anywhere before the render —
+ * and it runs first because a broken R program should be found in a second rather than after a
+ * minute of narration nobody will hear (`./compile/materialize.ts`). It is skipped entirely, and
+ * not even announced, on every deck that declares no exhibit, which is all of them but one.
  *
  * Naming the stage on every failure is the difference between "cuecraft crashed" and "your
  * fourth slide's narration is too long for one Kokoro window".
  */
 
-export type Stage = "read" | "parse" | "synthesize" | "time" | RenderStage;
+export type Stage =
+  "read" | "parse" | "materialize" | "synthesize" | "time" | RenderStage;
 
 export class StageError extends Error {
   readonly stage: Stage;
@@ -45,6 +58,7 @@ export interface RenderEvents {
   readonly onStage?: (stage: Stage) => void;
   readonly onWarning?: (message: string) => void;
   readonly onNarration?: (slide: AuthoredSlide, narration: Narration) => void;
+  readonly onExhibit?: (exhibit: MaterializedExhibit) => void;
   readonly onProgress?: (progress: number) => void;
 }
 
@@ -54,6 +68,8 @@ export interface RenderSummary {
   readonly timeline: Timeline;
   readonly report: RenderReport;
   readonly workspace: string;
+  /** Every exhibit a foreign program computed for this render. Empty on almost every deck. */
+  readonly exhibits: readonly MaterializedExhibit[];
   /** Wall-clock seconds, split by the two expensive stages. */
   readonly synthesisSeconds: number;
   readonly renderSeconds: number;
@@ -90,10 +106,33 @@ export async function renderPresentationFile(
   }
 
   events.onStage?.("parse");
-  const presentation = parsePresentation(text, input);
-  for (const warning of presentation.warnings) events.onWarning?.(warning);
+  const parsed = parsePresentation(text, input);
+  for (const warning of parsed.warnings) events.onWarning?.(warning);
 
   const workspace = workspaceFor(inputPath);
+
+  // Silent on a deck with nothing to compute, which is every deck but one. A stage that announces
+  // itself in order to do nothing teaches a reader that the stages are ceremony.
+  let presentation = parsed;
+  let exhibits: readonly MaterializedExhibit[] = [];
+  if (hasExhibits(parsed)) {
+    events.onStage?.("materialize");
+    try {
+      const materialized = await materializePresentation(parsed, {
+        workspace,
+        ...(events.onExhibit === undefined ? {} : { onExhibit: events.onExhibit }),
+      });
+      presentation = materialized.presentation;
+      exhibits = materialized.exhibits;
+    } catch (error) {
+      throw new StageError(
+        "materialize",
+        error instanceof MaterializeError
+          ? error.report()
+          : describe(error, "an exhibit failed"),
+      );
+    }
+  }
 
   events.onStage?.("synthesize");
   const synthesisStarted = performance.now();
@@ -135,6 +174,7 @@ export async function renderPresentationFile(
     timeline,
     report,
     workspace,
+    exhibits,
     synthesisSeconds,
     renderSeconds,
   };

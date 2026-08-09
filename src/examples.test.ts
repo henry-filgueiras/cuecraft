@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -277,4 +277,113 @@ test("the film makes no absolute claim about reversal", () => {
       `the narration says ${JSON.stringify(forbidden)}, which is stronger than the truth`,
     );
   }
+});
+
+/* --------------------------------------------------- examples/revenue/ */
+
+/**
+ * Whether the revenue deck's spoken and drawn claims match the CSV it ships beside.
+ *
+ * The same principle as everything above, applied to the one deck whose picture cuecraft does not
+ * draw. Nothing here renders anything or runs R — what is checked is that the numbers the deck
+ * *states* are the numbers in the file R will be handed. A deck that says "four hundred and
+ * sixty-eight transactions" over a chart built from four hundred and twelve rows renders
+ * beautifully and asserts something false, which is the failure decision:18 refuses for source and
+ * the exhibit body refuses for images.
+ *
+ * It also holds the line the exhibit body exists to hold: **no image may be committed here**. The
+ * moment one is, the claim the deck makes about itself stops being true.
+ */
+const REVENUE_DIR = join(repositoryRoot(), "examples", "revenue");
+
+interface Transaction {
+  readonly region: string;
+  readonly quarter: number;
+  readonly revenue: number;
+}
+
+function transactions(): readonly Transaction[] {
+  const text = readFileSync(join(REVENUE_DIR, "transactions.csv"), "utf8").trim();
+  const [header, ...rows] = text.split("\n");
+  assert.equal(header, "date,region,product,revenue");
+  return rows.map((row) => {
+    const [date = "", region = "", , revenue = ""] = row.split(",");
+    const month = Number(date.slice(5, 7));
+    return { region, quarter: Math.floor((month - 1) / 3) + 1, revenue: Number(revenue) };
+  });
+}
+
+test("the revenue deck's population is the population in the CSV", () => {
+  const path = join(REVENUE_DIR, "revenue.yaml");
+  const deck = parsePresentation(readFileSync(path, "utf8"), path);
+  const groups = deck.slides.flatMap((slide) =>
+    slide.body.kind === "series" ? slide.body.groups : [],
+  );
+  assert.ok(
+    groups.length > 0,
+    "the revenue deck no longer shows its rows as a population",
+  );
+
+  const rows = transactions();
+  const counted = new Map<string, number>();
+  for (const row of rows) counted.set(row.region, (counted.get(row.region) ?? 0) + 1);
+
+  // Group text is the region name, so the drawn field and the file are the same fact.
+  for (const group of groups) {
+    assert.equal(
+      group.count,
+      counted.get(group.text),
+      `the deck draws ${group.count} for ${group.text}, and the CSV has ${counted.get(group.text)}`,
+    );
+  }
+  assert.equal(
+    groups.reduce((sum, group) => sum + group.count, 0),
+    rows.length,
+  );
+
+  // And the narration says the same number out loud, spelled the way it is spoken.
+  const spoken = readFileSync(path, "utf8");
+  assert.ok(
+    spoken.includes("Four hundred and sixty-eight"),
+    "the narration states a total that is no longer the file's",
+  );
+  assert.equal(rows.length, 468);
+});
+
+test("the revenue deck's spoken reading of the chart is what the data does", () => {
+  const rows = transactions();
+  const totals = (region: string, quarter: number): number =>
+    rows
+      .filter((row) => row.region === region && row.quarter === quarter)
+      .reduce((sum, row) => sum + row.revenue, 0);
+
+  // "Asia Pacific doubles across the year."
+  assert.ok(
+    totals("Asia Pacific", 4) >= 2 * totals("Asia Pacific", 1),
+    "the narration claims Asia Pacific doubles, and it does not",
+  );
+  // "Latin America does not move."
+  const latam = [1, 2, 3, 4].map((quarter) => totals("Latin America", quarter));
+  const drift = (Math.max(...latam) - Math.min(...latam)) / Math.min(...latam);
+  assert.ok(
+    drift < 0.25,
+    `Latin America moves by ${(drift * 100).toFixed(0)}%, which is movement`,
+  );
+});
+
+test("no image is committed beside the deck that claims none is", () => {
+  const entries = readdirSync(REVENUE_DIR);
+  const images = entries.filter((entry) =>
+    /\.(png|jpe?g|gif|webp|svg|pdf)$/i.test(entry),
+  );
+  assert.deepEqual(
+    images,
+    [],
+    "an image in examples/revenue/ makes the deck's central claim false",
+  );
+  assert.deepEqual(entries.sort(), [
+    "quarterly-revenue.R",
+    "revenue.yaml",
+    "transactions.csv",
+  ]);
 });

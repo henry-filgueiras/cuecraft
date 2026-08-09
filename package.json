@@ -21,9 +21,11 @@
     "check": "npm run typecheck && npm run format:check && npm run test",
     "speak": "node src/cli.ts speak",
     "render": "node src/cli.ts render",
-    "test:tts": "node --test \"src/**/*.live-test.ts\"",
+    "test:tts": "node --test \"src/tts/**/*.live-test.ts\"",
+    "test:r": "node --test \"src/compute/**/*.live-test.ts\"",
     "test:render": "node --test \"src/**/*.render-test.ts\"",
     "bootstrap:tts": "./scripts/bootstrap-local-tts.sh",
+    "bootstrap:r": "./scripts/bootstrap-r.sh",
     "compress:upload": "./scripts/compress-for-upload.sh"
   },
   "devDependencies": {

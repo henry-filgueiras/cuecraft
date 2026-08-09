@@ -16,7 +16,7 @@ downstream is a consequence of that measurement.
 
 ## Showpieces
 
-Six videos, in the order that makes the argument. Each was compiled from the YAML file linked
+Seven videos, in the order that makes the argument. Each was compiled from the YAML file linked
 beside it, by `cuecraft render`, with nothing hand-placed and nothing edited afterwards.
 
 ### 1. What happens when you tap your card — a protocol, explained
@@ -188,7 +188,48 @@ narration talks about something else again, it closes.
 Nothing in the source asks for a zoom, a transition, a duration, or a camera move. The one thing
 the author says is that this concept has an inside.
 
-### 6. Self-demo — the practical core
+### 6. A chart nobody drew — a computation handed to R
+
+<!-- VIDEO: revenue -->
+
+<!-- Not yet attached. See runme/upload-revenue.md — drop out/upload/revenue.mp4 on the blank line
+     above this comment using GitHub's web editor, then delete this comment. -->
+
+**Source: [`examples/revenue/`](examples/revenue/)** — a 468-row CSV, a 60-line R program and a
+100-line deck, for 1:25 of video.
+
+The newest and the most experimental. Cuecraft understands every body it has — a list has a length,
+a world has a topology — and that understanding is what lets it choose the composition, the size and
+the colour with nobody naming any of them. A quarterly revenue chart is content it will never
+understand, so it delegates:
+
+```yaml
+exhibit:
+  run: examples/revenue/quarterly-revenue.R
+  with:
+    transactions: examples/revenue/transactions.csv
+```
+
+That is the whole of what the deck says about the fourth slide. During `cuecraft render`, R reads
+the transaction rows, derives the quarter from each date, groups by quarter and region, sums the
+revenue, and draws. Cuecraft takes back one PNG and puts it on the frame.
+
+**There is deliberately no `image:` key**, and that refusal is the feature rather than an omission.
+A deck that could point at a checked-in PNG could point at a _stale_ one — the failure
+[`decision:18`](archaeology/decisions/) already refuses for quoted source. The only way to get
+pixels onto a cuecraft frame is to say what computes them, so "this chart was generated from the
+source data while the video was being built" is structurally true instead of asserted. Delete the
+generated image and nothing changes; edit one number in the CSV and the film is different with
+nothing else touched. There is no PNG in `examples/revenue/`, and a test fails if one appears.
+
+The R program does not choose how the chart looks either. It is _handed_ the box it must fill and
+the deck's own palette — width, height, base type size, background, foreground, muted, accent —
+through its environment, which is [`decision:42`](archaeology/decisions/) reaching across a process
+boundary. There is no key that could override one of them.
+
+Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
+
+### 7. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 
@@ -216,6 +257,7 @@ actors, and who sends what    graph layout, and every edge route
 narration cues                which composition each slide gets
 which cue is about what       type size, position, colour
 whether to show subtitles     which sentence is on screen, and when
+a program, and its inputs     the box and palette that program is handed
                               camera framing, pacing, and when not to move
                               portal transitions
                               where a scope returns to, and what it restores
@@ -223,6 +265,7 @@ whether to show subtitles     which sentence is on screen, and when
                               lane order, row height, and how a message label wraps
                               which messages are replies, and who is waiting on what
                               how long a step nobody narrates should last
+                              where a computed picture sits, and how large
                               the video
 ```
 
@@ -320,6 +363,14 @@ npm install
 npm run bootstrap:tts    # once: ~321 MB of Kokoro weights, SHA-256 verified
 
 npm run render -- examples/observatory.yaml -o out/observatory.mp4
+```
+
+One deck needs a second bootstrap. `examples/revenue/` hands a computation to R, so it needs an R:
+
+```bash
+npm run bootstrap:r      # once: installs R through Homebrew if it is missing, then verifies
+
+npm run render -- examples/revenue/revenue.yaml -o out/revenue.mp4
 ```
 
 ```
@@ -459,23 +510,99 @@ minute of two people disagreeing about a duplicate charge, settled by playing on
 **What the content is.** A slide carries at most one body, and which one it is says what the
 content _means_. The body picks the composition; shape decides only within the list role.
 
-| body                                   | composition                                              |
-| -------------------------------------- | -------------------------------------------------------- |
-| `world` — entities and relations       | **atlas** — a laid-out graph, larger than the frame      |
-| `protocol` — actors and messages       | **transcript** — lanes across, time down, a camera       |
-| `figure` — `timing` or `anchors`       | **figure** — what this compilation derived               |
-| `code` — a specimen                    | **specimen** — the source full width, monospace, sized   |
-| `formula` — lines of mathematics       | **formula** — set by KaTeX, centred, sized to fit        |
-| `series` — a bounded population        | **series** — a derived field, filling in reading order   |
-| `change` — one source becoming another | **revision** — the changed lines swapping in place       |
-| `steps` — stages of a transformation   | **cascade** — descending and stepping right              |
-| no body                                | **statement** — the title is the slide, at display scale |
-| `bullets`, ≤6 items, ≤24 chars         | **matrix** — a field of terms under hairlines            |
-| `bullets`, ≤6 items, ≤38 chars         | **index** — numbered rows                                |
-| `bullets`, anything longer             | **lead** — heading in its own column, points beside it   |
+| body                                    | composition                                              |
+| --------------------------------------- | -------------------------------------------------------- |
+| `world` — entities and relations        | **atlas** — a laid-out graph, larger than the frame      |
+| `protocol` — actors and messages        | **transcript** — lanes across, time down, a camera       |
+| `figure` — `timing` or `anchors`        | **figure** — what this compilation derived               |
+| `code` — a specimen                     | **specimen** — the source full width, monospace, sized   |
+| `formula` — lines of mathematics        | **formula** — set by KaTeX, centred, sized to fit        |
+| `series` — a bounded population         | **series** — a derived field, filling in reading order   |
+| `exhibit` — an R program and its inputs | **exhibit** — a picture computed during this render      |
+| `change` — one source becoming another  | **revision** — the changed lines swapping in place       |
+| `steps` — stages of a transformation    | **cascade** — descending and stepping right              |
+| no body                                 | **statement** — the title is the slide, at display scale |
+| `bullets`, ≤6 items, ≤24 chars          | **matrix** — a field of terms under hairlines            |
+| `bullets`, ≤6 items, ≤38 chars          | **index** — numbered rows                                |
+| `bullets`, anything longer              | **lead** — heading in its own column, points beside it   |
 
 An entity inside a `world` can carry a `detail:`, which is a body like any of the above — so the
 inside of a concept is not a tenth archetype, it is one of these nine drawn at concept scale.
+
+### Computing an exhibit
+
+**Experimental, and needs R.** Every other body is content cuecraft can read. An `exhibit` is
+content it delegates: a program to run, and the files that program may read.
+
+```yaml
+slide:
+  title: "Revenue by quarter and region"
+  exhibit:
+    run: examples/revenue/quarterly-revenue.R
+    with:
+      transactions: examples/revenue/transactions.csv
+```
+
+The program runs during `cuecraft render`, in a stage of its own **before** any narration is
+synthesized — so a typo in an `aggregate()` call costs a second rather than a minute of Kokoro —
+and the picture it produces becomes the slide's whole visual.
+
+**There is no `image:` key.** A deck cannot name a PNG in the checkout and show it, by decision
+rather than by omission ([`decision:55`](archaeology/decisions/)): a slide that could display a
+checked-in image could display a stale one, and the whole claim an exhibit makes is that the
+picture was computed from the source data on this run. `run:` and `with:` are the only two keys,
+both paths must be inside the checkout, and there is nothing to write about size, position, colour,
+format or output filename.
+
+**What the program is told**, through its environment — it parses nothing:
+
+```
+CUECRAFT_OUTPUT_DIR       the directory to write into; also the process's working directory
+CUECRAFT_INPUT_NAMES      every declared input name, space separated
+CUECRAFT_INPUT_<NAME>     one declared input's absolute path (hyphens become underscores)
+CUECRAFT_WIDTH / _HEIGHT  the box the picture has to fill, in pixels
+CUECRAFT_POINTSIZE        base type size, sized for a slide rather than for a page
+CUECRAFT_BACKGROUND / _FOREGROUND / _MUTED / _ACCENT     the deck's own palette
+```
+
+The last two lines are the part that matters. The program is **handed** the box and the palette
+rather than choosing them, which is [`decision:42`](archaeology/decisions/) — a composition is laid
+out inside the box it was given — reaching across a process boundary. That is what keeps "an author
+cannot set a size or a colour" true through the escape hatch rather than only up to it.
+
+**What the program says back**, on stdout, one line per output:
+
+```
+#cuecraft output png quarterly-revenue quarterly-revenue.png
+```
+
+**stdout describes outputs; the filesystem carries them.** Nothing is discovered by scanning: an
+output that was not declared does not exist. The file is named relative to the output directory, so
+a declaration cannot reach outside it. Every other line of stdout is ordinary R diagnostics —
+`print()` and `message()` keep working, and what they said is quoted back if the run fails. A
+declared file is checked all the way to its bytes: it must exist, be a file, be non-empty, and
+begin with a PNG signature and header, whose width and height cuecraft reads back out.
+
+A slide shows one picture, so a program declares exactly one output. PNG is the only type; SVG can
+wait.
+
+**There is no cache.** The program runs on every render. Correct invalidation would have to cover
+the source, every input, R's version and whatever packages it has, and getting it wrong shows a
+stale picture that looks entirely right ([`idea:22`](archaeology/ideas/)).
+
+Failures name the slide and quote R:
+
+```
+cuecraft: materialize failed: slide 4: examples/revenue/quarterly-revenue.R exited 1
+
+  R stderr:
+    Error in aggregate.formula(...) : object 'revenu' not found
+    Execution halted
+```
+
+Compiling a deck with an exhibit **executes code from that deck**. Paths stay contained — the
+program and every input must be inside the checkout — but a `.R` file in the checkout is a program,
+and rendering somebody else's deck runs it.
 
 **Child modules — experimental.** An entity's inside can instead arrive in its own file, and then
 it brings its own narration. Going in becomes a _call_: the parent stops speaking, the module
@@ -729,6 +856,12 @@ Early, opinionated, and honest about it.
 - **The specimens in `examples/` shaped the implementation.** Every archetype and every camera rule
   exists because a real rendered minute looked wrong without it. That makes them well-tuned for the
   worlds they were tuned against, and untested against yours.
+- **`exhibit` is the newest experiment and the least settled.** It runs an R program during
+  compilation, which means a deck can execute code and is reproducible only up to whatever R is
+  installed — the Kokoro weights are pinned by a lock file and R is not
+  ([`dragon:33`](archaeology/dragons/)). Narration cannot reach inside a computed picture and no key
+  could let it ([`dragon:32`](archaeology/dragons/)), and the box the program is drawn for is
+  settled before the room it lands in is known ([`dragon:31`](archaeology/dragons/)).
 - **Child modules, `series` and `protocol` are experiments, not supported features.** A handful of
   artifacts and one pair of eyes. The compiler recurses; the demonstrated contract is a child and a
   grandchild, and no claim is made about anything deeper
@@ -756,8 +889,9 @@ npm run build     # emit dist/
 Tests with real prerequisites run separately, and need the bootstrap plus **ffprobe**:
 
 ```bash
-npm run test:tts       # *.live-test.ts   — real Kokoro synthesis
-npm run test:render    # *.render-test.ts — synthesis + headless Chromium + ffprobe
+npm run test:tts       # src/tts/**/*.live-test.ts     — real Kokoro synthesis
+npm run test:r         # src/compute/**/*.live-test.ts — real R, over stdin, drawing real PNGs
+npm run test:render    # *.render-test.ts              — synthesis + headless Chromium + ffprobe
 ```
 
 `test:render` compiles a fixture all the way to an MP4 and checks the container, codecs,
