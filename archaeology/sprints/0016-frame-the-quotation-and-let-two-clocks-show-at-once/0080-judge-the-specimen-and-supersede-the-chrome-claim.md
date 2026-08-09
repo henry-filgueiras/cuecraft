@@ -2,9 +2,10 @@
 id: tsk_01KZJ19X064HKEVPHP35W6RWP0
 sequence: 80
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZJ18K655EV1A9690KY555BE
 created: 2026-08-08
+closed: 2026-08-08
 ---
 
 # Judge the specimen, and supersede the chrome claim
