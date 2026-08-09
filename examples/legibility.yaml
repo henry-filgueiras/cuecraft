@@ -95,15 +95,20 @@ slides:
       - pause: 300ms
       - "The lease was thirty seconds, and the incident review said three."
 
-  # Prose at lead scale: longer sentences, the thing the profile is actually for.
+  # Prose at lead scale: full sentences rather than labels, which is the length most of a
+  # cuecraft film is actually read at.
+  #
+  # Kept to about sixty characters a bullet, and that ceiling is dragon:36 rather than taste.
+  # `lead` has no fitter at all — it sets every item at `TYPE.item` inside a `flex: 1` column and
+  # lets the column be whatever height that comes to — so three bullets of a hundred characters
+  # run off the bottom edge of the frame, with subtitles and without. That is pre-existing and
+  # identical in both profiles; this deck stays inside it so the A/B is about the glyphs.
   - slide:
       title: "What we changed afterwards"
       bullets:
-        - "We stopped naming hosts so that two of them differ by a single ambiguous
-          letterform, which is a fix in the naming rather than in the reading"
-        - "We print durations with units — thirty seconds, not the number thirty — because
-          a decimal point is the smallest mark on the frame and the easiest to lose"
-        - "And we render the postmortem, rather than pasting the log into a slide"
+        - "We renamed the hosts, so no two differ by one letterform"
+        - "We print durations with units — thirty seconds, not 30"
+        - "And we render the postmortem rather than pasting it in"
 
     say:
       - "None of the three is a change to the logging."
