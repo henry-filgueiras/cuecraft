@@ -1,0 +1,94 @@
+# The deck where cuecraft's evidence starts moving.
+#
+#   cuecraft render examples/kmeans/kmeans.yaml -o out/kmeans.mp4
+#
+# Every other exhibit in this repository is still: R draws a chart, a drawing or a table, and the
+# narration walks around it. This one hands back an MP4, and the slide plays it.
+#
+# What is worth noticing in the source is how little of it there is. `play: kmeans` is the whole
+# vocabulary. There is no duration, no start, no end, no rate and no frame number anywhere in this
+# file — the film's length was measured out of its own container while the deck was compiling, and
+# it became an occupant of the same narration track a sentence sits on (decision:64, decision:63).
+#
+# Needs ffmpeg on PATH: kmeans.R encodes with it. ./scripts/bootstrap-r.sh says so if it is absent.
+
+title: "A computation you can watch"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1200ms
+  subtitles: true
+
+slides:
+  - slide:
+      title: "Three clusters, and nobody knows where they are"
+      steps:
+        - id: guess
+          text: "Guess three centres"
+        - id: assign
+          text: "Give every point to its nearest one"
+        - id: move
+          text: "Move each centre to the middle of what it got"
+        - id: repeat
+          text: "Do it again until nothing changes"
+
+    say:
+      - "K-means is four lines long, and three of them are a loop."
+      - speech: "Start by guessing. Pick three points and call them the centres."
+        activates: guess
+      - speech: "Then every point in the cloud joins whichever centre is nearest to it."
+        activates: assign
+      - speech: "Then each centre moves to the middle of whatever just joined it."
+        activates: move
+      - speech: "And that is the whole algorithm. Do it again, until a pass changes nothing."
+        activates: repeat
+      - pause: 400ms
+      - "Written down, that is a description. What it does not tell you is what convergence looks like."
+
+  # The temporal exhibit. `run:` and `with:` are the same two keys every other exhibit has;
+  # what makes this one move is that the program declared a film rather than a picture.
+  - slide:
+      title: "Two hundred and six points"
+      exhibit:
+        run: examples/kmeans/kmeans.R
+        with:
+          points: examples/kmeans/points.csv
+
+    say:
+      - "While this was compiling, R ran that loop over two hundred and six points."
+      - "It drew every frame of the run rather than a chart, and handed back a film."
+      - play: kmeans
+      - "Six passes. The sixth moved nothing, which is how the loop knew to stop."
+
+  - slide:
+      title: "What the deck said about that"
+      code:
+        file: examples/kmeans/kmeans.yaml
+        slide: "Two hundred and six points"
+        marks:
+          - id: program
+            line: "run: examples/kmeans/kmeans.R"
+          - id: verb
+            line: "play: kmeans"
+
+    say:
+      - speech: "A program to run."
+        activates: program
+      - speech: "And one word, further down, saying that this is where it plays."
+        activates: verb
+      - pause: 400ms
+      - "There is no length in this file. No start, no end, no rate, and no frame number."
+      - "Cuecraft measured the film out of its own container before a syllable was synthesized,"
+      - "and then put it on the narration track beside the sentences, as one more thing with a known duration."
+
+  - slide:
+      title: "One clock, still"
+
+    say:
+      - "Nothing about that slide is a second timeline."
+      - pause: 350ms
+      - "The film did not ask for time and could not have. It was measured, it was placed, and everything after that is the arithmetic every other slide already used."
+      - pause: 400ms
+      - "Which is the interesting part. A presentation compiler can hold up something that moves without becoming a video editor."
+      - pause: 500ms
+      - "The evidence has a clock of its own. The film it lands in does not have to care."
