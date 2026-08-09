@@ -55,6 +55,37 @@ portal passes, anchor transients, attention handovers, spans, beats, subtitles, 
 A camera move's length is asked of `interpolateZoom` and then squeezed into the gap; it never
 lengthens a shot by a frame.
 
+The enumeration in full, since the conclusion above is only as good as it and a future round should
+not have to trace it again. **Extends** means "can make the film longer"; **known at** is the stage
+by which the duration is settled.
+
+| thing | duration is | known at | extends | ends when |
+| --- | --- | --- | --- | --- |
+| speech clip | measured (Kokoro samples) | compile | **yes** | its samples run out |
+| authored `pause` | authored | parse | **yes** | its milliseconds elapse |
+| `dwell` | derived from label length (`beat.ts`) | parse | **yes** | its milliseconds elapse |
+| `enter` / `exit` | constant (`ENTER_MS`/`EXIT_MS`) | parse | **yes** | the fixed window closes |
+| `recall` | borrowed from an earlier clip | compile | **yes** | the borrowed length elapses |
+| `pre_say`/`post_say`/`min_slide` | authored | parse | **yes** | `max(min, pre+narr+post)` |
+| scene extent | derived from the four above | compile (`sceneMs`) | — | the sum is reached |
+| camera key / travel | derived (`interpolateZoom`), clamped | render (in-browser) | no | clamped to the gap |
+| portal pass | derived from the call's window | render | no | `exitFrame + contraction` |
+| anchor transient | constant envelope (24 frames) | render | no | truncated by the next cue |
+| attention claim | the sentence's own interval | render | no | handed over or released |
+| `Span` | the clip's length less its onset | timeline | no | the clip ends |
+| `Beat` | to the next beat, or narration's end | timeline | no | its successor starts |
+| subtitle cue | read off the clips | timeline (last statement) | no | its clip ends |
+| facts / figures | read off finished scenes | timeline (freeze) | no | — |
+| scene fade | constant, capped by the padding it fits in | render | no | the padding runs out |
+| R materialization | wall-clock only; contributes no frames | materialize | no | the program exits |
+
+Nothing in the bottom two-thirds of that table could invalidate anything downstream if a duration
+were inserted, and the reason is structural rather than lucky: **insertion would happen before
+frames are assigned at all**, so every consumer is recomputed from the new absolute frames rather
+than patched. `tenancy.ts` is the clearest statement of the property — it allocates actors to
+columns the way a register allocator allocates over known live intervals, offline, once, because
+cuecraft knows every actor's complete future before it draws a frame.
+
 ### Nothing blocks, and BLOCKED is unreachable
 
 Modelled against READY / BLOCKED / DONE, every construct collapses to *run to completion*:
