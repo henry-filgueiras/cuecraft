@@ -6,8 +6,12 @@ import type {
   AuthoredState,
   AuthoredTransition,
 } from "../presentation/machine.ts";
-import { fitWidth, union, type Rect } from "./camera.ts";
+import { electLayout } from "./audition.ts";
+import { fitWidth, marginOf, union, viewRect, type Rect } from "./camera.ts";
 import {
+  canonicalOverview,
+  essentialBounds,
+  sameShot,
   layoutMachine,
   machinePlan,
   occurrenceBounds,
@@ -15,7 +19,7 @@ import {
   startingState,
   wrapEventLabel,
 } from "./machine.ts";
-import { MACHINE } from "./theme.ts";
+import { MACHINE, contextShot } from "./theme.ts";
 
 /**
  * Where a machine sits, and whether it stays there.
@@ -406,7 +410,7 @@ test("context is added only while the shot stays readable, and never trims the s
       const shot = fitWidth(occurrenceBounds(layout, edge.id), 16 / 9, MACHINE.shotPad);
       const floor = fitWidth(essential, 16 / 9, MACHINE.shotPad);
       assert.ok(
-        shot <= Math.max(floor, MACHINE.context) + 1,
+        shot <= Math.max(floor, contextShot(1920)) + 1,
         `${name}: taking ${edge.id} widened the shot to ${Math.round(shot)} for context alone`,
       );
       assert.ok(
@@ -498,4 +502,236 @@ test("the whole machine is legible in the shot that has to show all of it", () =
       `${name}: a state's name is ${pixels.toFixed(1)}px in the overview, below the legible floor`,
     );
   }
+});
+
+/* ------------------------------------- sprint:20: the whole-scenario planner ---------------- */
+
+/**
+ * The frame the camera plan is measured in.
+ *
+ * The real one: 1920 less the execution ledger's rail, by the full height, which is what the
+ * composition hands the planner. Using 16:9 here would test a camera nothing runs.
+ */
+const VIEW = { width: 1920 - MACHINE.rail, height: 1080 };
+const ASPECT = VIEW.width / VIEW.height;
+
+function planFor(
+  machine: typeof ELEVATOR,
+  options: {
+    readonly every?: number;
+    readonly until?: number;
+    readonly end?: number;
+  } = {},
+) {
+  const every = options.every ?? 90;
+  const layout = electLayout(machine, VIEW);
+  const beats = beatsFor(machine.scenario.length, every);
+  const until = options.until ?? every * machine.scenario.length + 60;
+  return {
+    layout,
+    beats,
+    plan: machinePlan(
+      layout,
+      beats,
+      machine.scenario.map((occurrence) => occurrence.take),
+      { from: 0, until, end: options.end ?? until + 150 },
+      ASPECT,
+      VIEW.width,
+    ),
+  };
+}
+
+test("the canonical overview is one composition, reused by identity", () => {
+  // Not "a shot that contains everything" — *the* shot. The film opens on it and closes on it, and
+  // both of those are checkable only because it is computed once and compared by value.
+  for (const machine of [ELEVATOR, HARD]) {
+    const layout = electLayout(machine, VIEW);
+    const once = canonicalOverview(layout, ASPECT);
+    assert.deepEqual(canonicalOverview(layout, ASPECT), once, "deterministic");
+
+    const { plan } = planFor(machine);
+    assert.deepEqual(plan.overview, once);
+    assert.deepEqual(plan.track[0]?.view, once, "the film opens on it");
+    assert.deepEqual(plan.track.at(-1)?.view, once, "and finishes on exactly it");
+    for (const shot of plan.shots) {
+      if (shot.shot !== "overview") continue;
+      assert.deepEqual(shot.view, once, "every overview shot is the same viewport");
+    }
+  }
+});
+
+test("a shot that is nearly the overview becomes the overview", () => {
+  // The elevator's baseline ended its run on a shot at ninety-four percent of the overview's width
+  // with the centre slightly off: neither a look at a transition nor a look at the machine, and two
+  // camera moves to visit. Folded, that shot is not a thing the planner can choose.
+  for (const machine of [ELEVATOR, HARD]) {
+    const { plan } = planFor(machine);
+    for (const candidate of plan.candidates) {
+      if (candidate.kind === "overview") continue;
+      assert.ok(
+        candidate.view.width < plan.overview.width * MACHINE.overviewSnap,
+        `a local candidate at ${Math.round(candidate.view.width)}u against an overview of ` +
+          `${Math.round(plan.overview.width)}u is a near-overview shot`,
+      );
+    }
+  }
+});
+
+test("the deadband makes perceptually identical framings one candidate", () => {
+  // Hysteresis expressed as identity rather than as a penalty somebody can tune away: two shots
+  // within the deadband are the same shot, so a move between them is unrepresentable. Asserted over
+  // the whole candidate set rather than over the chosen plan, because that is where it is enforced.
+  for (const machine of [ELEVATOR, HARD]) {
+    const { plan } = planFor(machine);
+    for (let i = 0; i < plan.candidates.length; i += 1) {
+      for (let j = i + 1; j < plan.candidates.length; j += 1) {
+        const a = plan.candidates[i];
+        const b = plan.candidates[j];
+        if (a === undefined || b === undefined) continue;
+        assert.ok(
+          !sameShot(a.view, b.view, ASPECT),
+          `two perceptually identical candidates survived: ` +
+            `${Math.round(a.view.width)}u and ${Math.round(b.view.width)}u`,
+        );
+      }
+    }
+  }
+});
+
+test("a numerically different but perceptually identical shot never causes a move", () => {
+  // The deadband, from the other side. Nudging a machine's geometry by a fraction of a percent must
+  // not change what the camera does; anything else is a camera that responds to noise.
+  const nudged = {
+    ...HARD,
+    states: HARD.states.map((state) => ({ ...state, text: state.text })),
+  };
+  const before = planFor(HARD).plan.shots.map((shot) => shot.shot);
+  const after = planFor(nudged).plan.shots.map((shot) => shot.shot);
+  assert.deepEqual(before, after);
+});
+
+test("the camera and the traveller never move at the same time", () => {
+  // The defect the baseline measurement convicted: six of nine silent occurrences across the two
+  // films had the next camera move already under way before the traveller had landed. Asserted from
+  // the plan's own phases rather than from the constants that produce them.
+  for (const machine of [ELEVATOR, HARD]) {
+    for (const every of [70, 90, 140]) {
+      const { plan, beats } = planFor(machine, { every });
+      const byIndex = new Map(plan.shots.map((shot) => [shot.index, shot] as const));
+      for (const beat of beats) {
+        const shot = byIndex.get(beat.index);
+        if (shot?.movesAt === undefined) continue;
+        const previous = beats.find((entry) => entry.index === beat.index - 1);
+        assert.ok(
+          shot.movesAt + (shot.travel ?? 0) <= beat.from - MACHINE.lead,
+          `the camera was still moving when occurrence ${beat.index} set off`,
+        );
+        if (previous === undefined) continue;
+        const arrival =
+          previous.from + Math.min(MACHINE.cross, beat.from - previous.from);
+        assert.ok(
+          shot.movesAt >= arrival,
+          `the camera left before occurrence ${previous.index} had landed`,
+        );
+        assert.ok(
+          shot.movesAt >= arrival + MACHINE.arrivalQuiet,
+          `the camera left while occurrence ${previous.index}'s arrival was still announcing itself`,
+        );
+      }
+    }
+  }
+});
+
+test("planning the whole scenario is deterministic", () => {
+  const first = planFor(HARD).plan;
+  const second = planFor(HARD).plan;
+  assert.deepEqual(
+    first.shots.map((shot) => [shot.index, shot.shot, shot.movesAt, shot.travel]),
+    second.shots.map((shot) => [shot.index, shot.shot, shot.movesAt, shot.travel]),
+  );
+  assert.deepEqual(first.track, second.track);
+});
+
+test("a move happens only when it buys more than it costs", () => {
+  // The hysteresis policy as a property. Every move in a plan must leave the occurrences it serves
+  // measurably more legible than the shot it replaced, by more than one move is worth.
+  const { plan } = planFor(HARD);
+  const moved = plan.shots.filter((shot) => shot.kind !== "hold");
+  for (const shot of moved) {
+    const before = plan.shots.find((entry) => entry.index === shot.index - 1);
+    if (before === undefined) continue;
+    const gain = shot.eventPx - before.eventPx;
+    assert.ok(
+      gain > 0 || shot.shot === "overview",
+      `the camera moved at occurrence ${shot.index} for no legibility at all`,
+    );
+  }
+});
+
+test("a shot covers the occurrences that cannot afford a move of their own", () => {
+  // The payoff of looking ahead. A silent run has no room between its occurrences for a camera
+  // move, so whichever shot opens the run has to contain all of it — and the only way to know that
+  // when the shot is chosen is to have read the rest of the scenario first.
+  const takes = ["claim", "start", "heartbeat", "timed", "backoff", "claim"];
+  const layout = electLayout(HARD, VIEW);
+  // Occurrences 40 frames apart: shorter than a move needs, so nothing after the first can move.
+  const beats = beatsFor(takes.length, 40);
+  const plan = machinePlan(
+    layout,
+    beats,
+    takes,
+    { from: 0, until: 400, end: 520 },
+    ASPECT,
+    VIEW.width,
+  );
+  const moves = plan.shots.filter((shot) => shot.kind !== "hold");
+  assert.ok(
+    moves.length <= 1,
+    `a run this tight should not be able to move: ${moves.length} did`,
+  );
+  for (const shot of plan.shots) {
+    const essential = essentialBounds(layout, shot.id);
+    assert.ok(
+      marginOf(essential, viewRect(shot.view, ASPECT)) >= 0,
+      `occurrence ${shot.index} was not contained by the shot it was given`,
+    );
+  }
+});
+
+test("every occurrence is contained by the shot it is given", () => {
+  for (const machine of [ELEVATOR, HARD]) {
+    const { plan, layout } = planFor(machine);
+    for (const shot of plan.shots) {
+      assert.ok(
+        marginOf(essentialBounds(layout, shot.id), viewRect(shot.view, ASPECT)) >= 0,
+        `${shot.id} at occurrence ${shot.index} was cropped by its own shot`,
+      );
+    }
+  }
+});
+
+test("the closing shot is budgeted, and the settle is what is left over", () => {
+  // The baseline pulled back the instant narration stopped and held whatever `post_say` left: nine
+  // seconds, of which four and a third were the camera travelling. Now the move is placed against
+  // the end of the film so a bounded settle follows it.
+  const end = 1200;
+  const { plan } = planFor(ELEVATOR, { until: 800, end });
+  const closing = plan.track.at(-1);
+  assert.ok(closing !== undefined);
+  assert.ok(closing.frame >= 800, "the pull-back never begins before the narration ends");
+  assert.equal(
+    end - (closing.frame + closing.travel),
+    MACHINE.closingHold,
+    "the settled overview is exactly the hold it was budgeted",
+  );
+});
+
+test("a generous post-roll is spent holding the last occurrence, not the overview", () => {
+  const tight = planFor(ELEVATOR, { until: 800, end: 1000 }).plan.track.at(-1);
+  const generous = planFor(ELEVATOR, { until: 800, end: 1600 }).plan.track.at(-1);
+  assert.ok(tight !== undefined && generous !== undefined);
+  assert.ok(
+    generous.frame > tight.frame,
+    "extra silence should delay the pull-back rather than extend the overview",
+  );
 });

@@ -204,7 +204,7 @@ export function fitHeading(length: number, base: number): number {
  * it must not become is *optimistic*: a heading that wraps where this says it does not takes room
  * the body was promised.
  */
-const HEADING_CHAR_WIDTH = 0.49;
+export const HEADING_CHAR_WIDTH = 0.49;
 
 /**
  * How many lines a heading of this length wraps to.
@@ -645,53 +645,59 @@ export const MACHINE = {
   /* ---- what the camera is told about the space ---- */
 
   /**
-   * Breathing room around a shot, and the widest one the camera will take.
+   * The frame the machine is never drawn into, and why it moved from the top to the side.
    *
-   * `widest` is derived from typography rather than picked, the way a transcript's is: a state's
-   * name is set at `label` world units, below about nineteen screen pixels a name stops being
-   * readable at 1080p, so the widest legible shot is `1920 * label / 19`. A machine wider than
-   * that cannot be shown whole, and the closing overview would be a promise the frame cannot keep.
+   * sprint:19 reserved a 216-pixel strip along the **top** of every `circuit` frame, because the
+   * first render printed the deck title across the first transition's label. It worked, and
+   * dragon:29 recorded what it cost: the strip is height, a wide machine's shots are width-bound
+   * and pay nothing, and a tall machine's are height-bound and pay about a third more width for
+   * every shot in the film. The composition was charging its most photogenic artifacts the most.
+   *
+   * dragon:29 named the alternative and called it "a bigger change than it sounds": stop putting
+   * chrome *over* the composition and give the machine a real gutter to be drawn beside. What made
+   * it affordable is that sprint:20 had to build a gutter anyway — the execution ledger is a rail
+   * down the left, screen-fixed, and once the frame has one of those the title has somewhere to
+   * live that is not on top of anything.
+   *
+   * So the reservation is now entirely horizontal (`rail`), and the arithmetic is worth keeping
+   * because it is exactly the reverse of what it replaced:
+   *
+   *     elevator   height-bound. Paid the band in full, pays the gutter nothing — a height-bound
+   *                overview's scale is `viewportHeight / machineHeight`, and the viewport's width
+   *                does not appear in it. State name 26.5px -> 37.5px.
+   *     leases     width-bound. Paid the band nothing, pays the gutter in full. 23.4px -> 22.4px.
+   *
+   * Which is not a free lunch and is not claimed as one. It is a *better* asymmetry: the band
+   * charged for a caption that is on screen for one second of an establishing shot, and the gutter
+   * charges for a chronology that is on screen for the whole film. dragon:29 closes as wrong, and
+   * the gutter was the answer.
    */
-  /**
-   * The strip along the top of the frame the machine is never drawn into.
-   *
-   * The first render of `examples/elevator.yaml` printed the deck title across the label of the
-   * first transition, and the two are both text, so neither won. decision:26 already diagnosed
-   * this in general — a caption fixed to the frame while a world moves underneath it collides
-   * with whatever happens to be behind it, and no *position* avoids that — and the atlas's answer
-   * was to fade the title by how much of the world is on screen. That answer does not transfer:
-   * this composition's chrome is at its most necessary exactly when the whole machine is on
-   * screen, because that is the establishing shot.
-   *
-   * So the camera is handed a viewport that stops short of the chrome, which is the same trick
-   * `useSubtitleBand` plays at the bottom of the frame and is the reason it costs nothing to
-   * describe. It is a real cost in height: a tall machine's shots come out about a third wider,
-   * and a wide one's are untouched, because a wide machine's shots were never height-bound.
-   * What it buys is an invariant rather than a piece of luck — no machine, however it lays out,
-   * can put a state under the title or under the readout.
-   *
-   * Sized to what it has to clear: the frame margin, plus the route line and the state name the
-   * readout sets under it.
-   */
-  chrome: 216,
 
   shotPad: 0.16,
-  widest: 5050,
+
   /**
-   * ...and the widest a shot may get by *adding context to it*, which is a different number.
+   * Where type stops being readable, in screen pixels, and therefore how wide a shot may be.
    *
-   * `widest` is the hard cap, derived from a state's name: past it a plate stops being a plate. But
-   * an occurrence's subject is not a plate, it is an **event label**, set a third smaller, and a
-   * shot wide enough to read a state name is not necessarily wide enough to read the sentence on
-   * the edge being taken. So the alternatives an arrival brings with it stop being taken here:
-   * `1920 * event / 20`, which is where the label the shot is *about* stops being readable.
+   * These are the two numbers that were measured, and they used to be stored already multiplied by
+   * a 1920-pixel frame. That was fine while the machine had the whole frame; it stopped being fine
+   * the moment the execution ledger took a rail off the left, because a shot that was exactly wide
+   * enough to read a state name at 1920 pixels is a shot with an unreadable state name at 1520.
+   * The cap is a fact about *type on a screen*, so it is stored as type on a screen and the world
+   * units are worked out against whatever window the composition actually has (`widestShot`,
+   * `contextShot`).
    *
-   * The distinction is not pedantic and the specimen made it. Arriving at the leased runner's hub,
-   * all five of its exits fit inside `widest` — so the shot that was supposed to be about one
-   * transition silently became the overview an act early, at seventeen pixels a word. The essential
-   * subject is never trimmed by this; only what is being added to it is.
+   * `namePx` caps any shot: below it a plate stops being a plate.
+   *
+   * `eventPx` caps only what may be *added* to one, and it is a different number because an
+   * occurrence's subject is not a plate but an **event label**, set a third smaller. The
+   * distinction is not pedantic and the adversarial specimen made it: arriving at the leased
+   * runner's six-exit hub, all five alternatives fitted inside the name cap, so the shot that was
+   * about one transition silently became the overview an act early at seventeen pixels a word. The
+   * essential subject — source, route, label, destination — is never trimmed by this; only the
+   * context being added to it is.
    */
-  context: 3260,
+  namePx: 19,
+  eventPx: 20,
   /**
    * How long the opening overview is held before the camera may move.
    *
@@ -711,7 +717,223 @@ export const MACHINE = {
    * lands this many frames before the occurrence it is about, out of the tail of the one before.
    */
   lead: 8,
+  /**
+   * ...and the frames a camera owes an arrival before it may set off for the next one.
+   *
+   * `lead` guards one end of a move and this guards the other, and the second one was missing.
+   * sprint:19's plan started a move at `occurrence - travel - lead` and checked nothing behind it,
+   * so on a short silent occurrence the move for the *next* transition began before the traveller
+   * had finished the *current* one — measured on the baseline: six of nine silent occurrences
+   * across the two films, four of which ended up with a stable window of literally zero frames.
+   *
+   * Derived rather than picked. It is the length of the arrival flare — `CIRCUIT_TIMING`'s rise
+   * plus its hold — because the flare is the frame *saying* an arrival happened, and a camera that
+   * leaves while the announcement is still going has interrupted it. Everything after the flare is
+   * occupancy, which is persistent and does not need the camera to stay for it.
+   */
+  arrivalQuiet: 20,
+
+  /* ---- what the whole-scenario planner is allowed to consider ---- */
+
+  /**
+   * How many consecutive occurrences one shot may be generated to cover.
+   *
+   * The lookahead depth, and the reason it is finite is cost rather than principle: candidates are
+   * one per run of occurrences, so the set grows as `n * horizon`, and a shot asked to contain six
+   * occurrences of a nine-state machine is the overview under another name and gets folded onto it
+   * anyway. Four is past the longest silent run in either example, which is the case the lookahead
+   * exists for — a run that cannot afford a move between its occurrences has to be framed by the
+   * shot that opens it.
+   */
+  horizon: 4,
+  /**
+   * The quickest a camera move may be, in frames.
+   *
+   * `CAMERA.minTravel` is 22 and was measured against a world, where a move is a traversal between
+   * two concepts and wants to feel like distance. A machine's moves are usually short hops around a
+   * small map, and the floor that matters here is a different one: **a camera move may not be
+   * quicker than the traveller's own crossing.** Below that the two motions in the composition stop
+   * being distinguishable in speed and the move reads as a cut.
+   *
+   * So it is `cross`, derived rather than chosen, and it buys something specific. The window a move
+   * has to fit into after a silent occurrence is about twenty frames — the arrival hold, less the
+   * flare it owes and the lead it must leave — and at 22 no move could ever happen there at all. At
+   * 16 the leased runner's last act stops being stranded at the overview because one silent
+   * occurrence sat two frames in front of it.
+   */
+  minTravel: 16,
+  /**
+   * What a camera move costs, in screen pixels of event label.
+   *
+   * The whole of the hysteresis policy, as one number in the same currency as the benefit. Every
+   * occurrence pays the shortfall between the event label it gets and `readablePx`; a move pays
+   * this once. So a move happens exactly when it buys more readable frames than it costs, summed
+   * over every occurrence it serves — and four small nudges in a row, each of which would have been
+   * individually justifiable to a greedy planner, cannot happen, because together they cost four
+   * times this and buy almost nothing.
+   *
+   * Set against the baseline: the leased runner made eleven moves in thirteen occurrences, ten of
+   * them pans at an identical scale that bought nothing measurable at all.
+   */
+  movePrice: 9,
+  /**
+   * How long an arrival wants to be still, in frames.
+   *
+   * `../presentation/beat.ts`'s `ARRIVAL_MS` at thirty frames a second, and the two are checked
+   * against each other by a test rather than kept in step by hand.
+   *
+   * It is a **target rather than a guarantee**, and the second integrated render is what settled
+   * that. Letting a move be as quick as a traversal (`minTravel`) unstranded the leased runner's
+   * last act — one occurrence below the legibility floor instead of ten — and cost two of its six
+   * silent arrivals two thirds of their stillness, because a silent occurrence runs about sixty
+   * frames and a move needs about thirty-six of them. The two wants are in direct competition on
+   * exactly that occurrence and no rule can have both.
+   *
+   * An explicit price for intruding on an arrival was written, measured, and removed: it cannot
+   * discriminate, because when a move happens at all it is because the shot the run is holding no
+   * longer *contains* the next occurrence, and every alternative — including retreating to the
+   * canonical overview — is equally a move and pays the same intrusion. `movePrice` already
+   * refuses a move that is merely an improvement. What is left is a move that is compulsory, and
+   * charging a compulsory move changes nothing. See sprint:20.
+   */
+  arrivalHold: 42,
+  /**
+   * Where an event label is comfortable, as opposed to merely legible.
+   *
+   * `eventPx` is the floor — below it a label stops being readable. This is the point above which
+   * getting closer stops being worth anything, so a shot is never priced for being *further* from a
+   * subject than it needs to be. Without the ceiling the planner would dive as close as the caps
+   * allow on every occurrence, which is the greedy camera again with more arithmetic.
+   */
+  readablePx: 27,
+  /**
+   * How much worse *unreadable* is than merely uncomfortable, per pixel.
+   *
+   * The kink in the camera's cost function, and the number the first integrated render produced.
+   * Between `eventPx` and `readablePx` a label is read and a wider shot only costs comfort; below
+   * `eventPx` the label is not read and the shot has stopped answering the question it is for. One
+   * pixel of the second kind is worth this many of the first.
+   *
+   * Four, because at three the leased runner still held its overview through the whole run at
+   * fifteen pixels a word, and at six the elevator started diving for occurrences whose labels were
+   * already legible where they stood. It is the only constant in the planner that was set by
+   * bisecting against two films rather than derived, and it is written down as such.
+   */
+  illegiblePrice: 4,
+  /**
+   * How long the film sits motionless on the canonical overview at the end.
+   *
+   * Budgeted rather than left over, which is the change. It is the time it takes to read the route
+   * off a settled map: the wake, the counts, and the full ledger beside it. Three seconds, and the
+   * evidence it replaces is a measured nine — of which four and a third were the camera still
+   * travelling.
+   *
+   * Any silence the author writes beyond this is spent holding the *last occurrence's* shot rather
+   * than extending this, because a held close shot is a picture of something and a held overview
+   * stops being one after about this long.
+   */
+  closingHold: 90,
+  /**
+   * A shot this close to the overview *is* the overview.
+   *
+   * The answer to the elevator ending its run on a shot at ninety-four percent of the overview's
+   * width with the centre slightly off — a frame that is neither a look at a transition nor a look
+   * at the machine, and that costs two camera moves to visit. Anything wider than this fraction of
+   * the canonical overview is folded onto it, so the near-overview shot is not a thing the planner
+   * can choose badly; it is not a thing the planner can choose.
+   */
+  overviewSnap: 0.82,
+  /**
+   * How different two shots have to be before they are two shots.
+   *
+   * Scale as a fraction of the wider, offset as a fraction of the frame. Applied when the candidate
+   * set is built rather than when a move is priced, so perceptually identical framings are one
+   * candidate and a pointless move is unrepresentable rather than merely unattractive.
+   */
+  deadbandScale: 0.12,
+  deadbandOffset: 0.07,
+  /**
+   * The longest the closing pull-back may take.
+   *
+   * A ceiling on `paceOf` rather than a constant, which is the change. `CAMERA.revealTravel` is a
+   * flat 130 frames and it was measured for an atlas, where the reveal genuinely traverses a world.
+   * Here the baseline spent 130 frames — four and a third seconds — pulling back from a shot that
+   * the planner had already widened almost to the overview, so most of the move covered no
+   * distance. Paced instead, a long pull-back stays unhurried and a short one stops pretending.
+   */
+  revealTravel: 96,
+
+  /* ---- the execution ledger ---- */
+
+  /**
+   * The rail along the left of the frame the machine is never drawn into.
+   *
+   * `chrome`'s argument at the other edge, for a different reason. The chrome band exists so that
+   * a *caption* can never land on a state; this exists so that the **chronology** always has
+   * somewhere to be. Both are reservations taken out of the camera's window before anything is
+   * laid out, which is what makes them invariants rather than luck — no machine, however it lays
+   * out, can put a state under either.
+   *
+   * The width is what the rail has to set, not a proportion of the frame: an ordinal, an event
+   * label wrapped to about two lines of `railEvent`, and a destination under it. Everything
+   * narrower makes the labels wrap to four lines and the rail becomes a column of confetti.
+   *
+   * It is not free, and the cost is completely asymmetric in a way worth writing down. A machine
+   * whose overview is **height-bound** pays nothing at all — its shots were never using the full
+   * width of the frame, and the arithmetic is exact rather than approximate: a height-bound
+   * overview's scale is `viewportHeight / machineHeight`, in which the viewport's width does not
+   * appear. A machine whose overview is **width-bound** pays the rail in full. `examples/elevator`
+   * and `examples/leases` are one of each, which is how the number was chosen and checked.
+   */
+  rail: 380,
+  /**
+   * The deck title, set at the top of the rail, and the room it is given.
+   *
+   * It stays up for the whole film rather than fading when the run starts, which is the one thing
+   * the gutter changes about it. The fade existed because the title was *over* the machine and two
+   * captions in one corner is one too many; in a gutter it is over nothing, and a film whose title
+   * disappears thirty seconds in is a film a viewer cannot name from a paused frame.
+   *
+   * `railTitleBlock` is what the ledger may not grow into. Reserved rather than measured, for the
+   * reason every reservation in this composition is: a rail whose rows moved when the title
+   * happened to wrap to three lines would be a layout that depends on a string.
+   */
+  railTitle: 42,
+  railTitleBlock: 280,
+  /** An occurrence's ordinal in the rail: small, monospaced, and never the loudest thing. */
+  railOrdinal: 26,
+  /** What fired the transition. The row's subject. */
+  railEvent: 27,
+  /** Where it arrived. */
+  railState: 25,
+  /** Between rows, and inside one. */
+  railGap: 18,
+  railLead: 1.24,
+  /**
+   * How many occurrences the rail keeps.
+   *
+   * Fixed rather than fitted, because the alternative — as many as happen to fit — makes the row
+   * count a function of how long the labels in *this* machine are, and a viewer who learns that
+   * the rail holds six entries can count backwards from the top of it. What overflows is stated
+   * as a number and never as an ellipsis (`./ledger.ts`).
+   */
+  railRows: 6,
 } as const;
+
+/**
+ * The widest shot that still reads, in world units, given the window it will be seen in.
+ *
+ * Two callers and two floors: any shot at all is capped by where a *state's name* stops being
+ * readable, and the context an arrival is allowed to bring with it is capped, more tightly, by
+ * where the *event label* the shot is about stops being readable.
+ */
+export function widestShot(viewportWidth: number): number {
+  return (viewportWidth * MACHINE.label) / MACHINE.namePx;
+}
+
+export function contextShot(viewportWidth: number): number {
+  return (viewportWidth * MACHINE.event) / MACHINE.eventPx;
+}
 
 /**
  * How the compilation's own facts are set.
