@@ -465,6 +465,40 @@ test("every move lands before the occurrence it is about, never on it", () => {
   }
 });
 
+test("a hold says whether the move was refused or was impossible", () => {
+  // task:103 found `no move worth 9px` reported for occurrences whose window was fourteen and
+  // eleven frames against a sixteen-frame minimum. Those moves were never priced at all, and a
+  // diagnostic that reports a judgement the planner did not make sends the next round to tune
+  // `movePrice` — which is the one constant that could not have caused it.
+  const layout = layoutMachine(HARD);
+  const takes = HARD.scenario.map((occurrence) => occurrence.take);
+
+  // Crowded enough that no window clears `MACHINE.minTravel`: every hold is a hold by force.
+  const crowded = machinePlan(layout, beatsFor(takes.length, 30), takes, {
+    from: 0,
+    until: 200 + takes.length * 30,
+  });
+  assert.equal(
+    crowded.shots.filter((shot) => shot.kind !== "hold").length,
+    0,
+    "no move can be afforded at this spacing, so the plan should contain none",
+  );
+  const forced = crowded.shots.filter((shot) => shot.index > 0);
+  assert.ok(forced.length > 0, "a crowded run should hold somewhere after the opener");
+  for (const shot of forced) {
+    assert.match(shot.reason, /no room to move \(\d+ of \d+ frames\)/);
+  }
+
+  // ...and given room, a hold is a decision again, so it must not claim it had none.
+  const roomy = machinePlan(layout, beatsFor(takes.length, 240), takes, {
+    from: 0,
+    until: 200 + takes.length * 240,
+  });
+  for (const shot of roomy.shots) {
+    assert.doesNotMatch(shot.reason, /no room to move/);
+  }
+});
+
 test("a run that stays in one neighbourhood stops moving the camera", () => {
   // decision:24's hold policy, asked to work in a third space and given nothing new. Four
   // occurrences of one self-loop are four beats and one shot: the second is already well inside

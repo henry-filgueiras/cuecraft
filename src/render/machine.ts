@@ -1065,10 +1065,19 @@ export function machinePlan(
         shot: next === overviewIndex ? "overview" : "retained",
         view: candidate.view,
         eventPx,
+        // Two different holds, and conflating them sent task:103 looking for a price that was
+        // never paid. A move is refused either because it was not *worth* its perceptual price or
+        // because there was no *room* for it between the previous arrival and this occurrence —
+        // and the second is not a judgement the planner made, it is a window it was handed. The
+        // leased runner has both: it declines a move it could afford at #6, and at #10 and #11 it
+        // has 14 and 11 frames against a 16-frame minimum and never prices anything at all.
         reason:
           next === overviewIndex && position === 0
             ? "opens on the canonical overview"
-            : `holds: ${eventPx.toFixed(0)}px event label, no move worth ${MACHINE.movePrice}px`,
+            : window.affordable
+              ? `holds: ${eventPx.toFixed(0)}px event label, no move worth ${MACHINE.movePrice}px`
+              : `holds: ${eventPx.toFixed(0)}px event label, no room to move ` +
+                `(${Math.max(0, window.capacity)} of ${MACHINE.minTravel} frames)`,
       });
       continue;
     }

@@ -78,3 +78,42 @@ be explained whole and the format should say so — in which case the ceiling be
 documentation next to the grammar, not in a policy. Close as **fixable** if a treatment is found
 that keeps untaken possibility readable in a wide overview without either shrinking the type or
 sending the camera somewhere the run never went.
+
+## What sprint:21 measured, and why it still does not close
+
+sprint:20 left this as "a property of the machine rather than of the layout", measured against a
+search space of 144 candidates. sprint:21 was opened because that space could not express the
+obvious alternative — dagre ranks globally, so nothing in it can say *keep these six states
+together* — and a conclusion measured against a space that cannot hold the alternative is not yet a
+conclusion.
+
+It is one now. Three things were established (decision:53).
+
+**Arrangement is exhausted, and it lands under the floor.** The best-aspect candidate of the 144 is
+2688 x 1830 = 1.47:1 against a 1.426:1 frame — a near-perfect fit — and gives 26.8px state name and
+**18.2px** event label. An area-preserving ideal repack of the same content gives 26.4 / 17.9, so
+the search already beats the theoretical optimum. There is no arrangement of this content that
+clears 20px.
+
+**Seeding cannot be drawn.** The whole point of the round. Laid out alone, the six states the run
+actually touches come out 1602 x 1146 = 1.40:1 and give **29.9px** — nearly double. But no lever the
+dependency has will produce that inside the whole machine: compound clustering, edge weight to 150,
+`minlen` exile and their combinations, over 4 x 144 configurations on both films, and **not one
+meets both floors at once**. The single configuration that gets a territory shot over 20px costs
+seven pixels of atlas. Building it anyway means a bespoke placer, which is refused.
+
+**And the shortfall is not only a width problem, which is new.** The leased runner's occurrences #9,
+#10 and #11 are three consecutive *silent* ones with move windows of **14 and 11 frames against a
+16-frame minimum** — they cannot move at all, so the shot chosen at #9 must hold all three. The
+union of their essential bounds is **3078u = 17.0px**. Even a perfect shot on that trio is under the
+floor, and no camera policy can reach it. This dragon has a second cause, and it is a *timing* one:
+a run that goes quiet across a wide part of the map strands itself.
+
+So the case for **inherent** is much stronger than sprint:20 could make it — the ceiling is now
+measured from three directions rather than asserted from one. It is still not closed, for one
+honest reason: closing it as inherent requires the ceiling to be *stated*, next to the grammar,
+where an author can check it before writing a machine. That is the resolution criterion, and writing
+it is a round of its own. What has changed is that there is now something definite to write down.
+
+The candidate direction above — a rail of cut-off sentences, borrowed from dragon:18 — remains
+unattempted and remains unattractive for the reason recorded there.
