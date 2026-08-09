@@ -625,10 +625,22 @@ export const MACHINE = {
   edgeStroke: 3.6,
   takenStroke: 5,
   arrowHead: 24,
+  /** The accent that runs along a transition immediately behind the traveller. */
+  pulse: 180,
   /** The traveller: a spark that crosses the edge it is taking. */
   travellerSize: 26,
-  /** How much of the beat the crossing occupies, before the destination is simply occupied. */
-  crossing: 0.42,
+  /**
+   * How long a crossing takes, in frames.
+   *
+   * A **motion** rather than a duration, which is the distinction dragon:1's rule turns on. How
+   * long an occurrence lasts is derived from a measurement — the sentence spoken over it, or
+   * `beat.ts`'s allowance for reading its label. How long a dot takes to travel between two points
+   * so that an eye can follow it is a fact about eyes, and it belongs beside `MOTION.rise`.
+   *
+   * Capped at run time by the occurrence's own length, so a beat shorter than a crossing never
+   * leaves the traveller still in transit when the next one starts.
+   */
+  cross: 16,
 
   /* ---- what the camera is told about the space ---- */
 

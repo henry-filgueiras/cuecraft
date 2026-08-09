@@ -1,0 +1,176 @@
+# A leased job runner — the adversarial state machine.
+#
+#   cuecraft render examples/leases.yaml -o out/leases.mp4
+#
+# `examples/elevator.yaml` is the showcase: a small cyclic machine that photographs well. This
+# one is not built to photograph well. It is built to attack every part of the layout and the
+# camera at once, and it is written down here so that what it breaks is discovered by looking at
+# a render rather than by somebody eventually authoring it.
+#
+# What it is attacking, and where:
+#
+#   parallel edges          `timed-out` and `rate-limited` both run Running -> Retry wait, and
+#                           the only thing that tells them apart is what fires them
+#   a self-transition       `heartbeat`, on the busiest state in the machine
+#   a high-degree hub       six transitions leave Running. Arriving there must not silently
+#                           become the closing overview
+#   a very long label       `commit-in-flight` is sixty-five characters, and the shortest label
+#                           in the machine is thirteen
+#   two reclamation cycles  Retry wait -> Queued and Orphaned -> Queued both run backwards
+#   a bidirectional pair    Running -> Cancelling and Cancelling -> Running
+#   repeated states         the run passes through Queued, Claimed and Running three times each
+#   repeated transitions    `claim` and `start` are taken three times, `backoff` twice
+#   an untaken branch       four transitions are never exercised, including both of the two ways
+#                           this job could have ended well or badly
+#
+# The scenario ends in Cancelled, and the film says nothing about that being an ending. It is
+# where this explanation stops; `succeeded` and `failed` are sitting there on the map the whole
+# time, untaken, saying what else could have happened.
+#
+# Nothing here is special-cased anywhere in the implementation, and this file contains no
+# coordinate, no colour, no duration and no camera instruction.
+
+title: "A job with a lease on it"
+
+defaults:
+  pre_say: 900ms
+  post_say: 5200ms
+
+slides:
+  - slide:
+      title: "A job with a lease on it"
+
+      machine:
+        states:
+          queued: Queued
+          claimed: Claimed
+          running: Running
+          retry: Retry wait
+          orphaned: Orphaned
+          cancelling: Cancelling
+          cancelled: Cancelled
+          succeeded: Succeeded
+          failed: Failed
+
+        transitions:
+          claim:
+            from: queued
+            to: claimed
+            on: a worker takes the lease
+
+          start:
+            from: claimed
+            to: running
+            on: handler begins
+
+          heartbeat:
+            from: running
+            to: running
+            on: lease renewed
+
+          timed-out:
+            from: running
+            to: retry
+            on: handler exceeds its deadline
+
+          rate-limited:
+            from: running
+            to: retry
+            on: downstream returns 429
+
+          backoff-expiry:
+            from: retry
+            to: queued
+            on: backoff expires
+
+          lease-lost:
+            from: claimed
+            to: orphaned
+            on: lease lost before the first heartbeat
+
+          commit-in-flight:
+            from: running
+            to: orphaned
+            on: visibility timeout expires while the result commit is still in flight
+
+          reclaimed:
+            from: orphaned
+            to: queued
+            on: the reaper reclaims it
+
+          cancel:
+            from: running
+            to: cancelling
+            on: an operator cancels
+
+          resumed:
+            from: cancelling
+            to: running
+            on: cancellation withdrawn
+
+          drained:
+            from: cancelling
+            to: cancelled
+            on: handler acknowledges
+
+          done:
+            from: running
+            to: succeeded
+            on: result committed
+
+          gave-up:
+            from: running
+            to: failed
+            on: attempt budget exhausted
+
+        scenario:
+          - take: claim
+            say:
+              "A job is not assigned to a worker. It is left in a queue, and a worker takes a
+              lease on it — which is a promise to keep saying it is still alive."
+
+          - take: start
+
+          - take: heartbeat
+            say:
+              "That is the promise being kept. Nothing has moved: the job is still running, and
+              the only thing that happened is that it said so."
+
+          - take: timed-out
+            say:
+              "Then it misses a deadline. Notice where that puts it — not failed, and not
+              orphaned, but waiting to be tried again."
+
+          - take: backoff-expiry
+
+          - take: claim
+
+          - take: start
+            say:
+              "So the second attempt begins the same way the first one did, on a different worker,
+              from the same queue."
+
+          - take: rate-limited
+            say:
+              "And it comes back to the same waiting state by a completely different road.
+              Something downstream is rate limiting it, which is a different problem from being
+              slow, and the machine is careful to keep the two apart even though they end up in
+              the same place."
+
+          - take: backoff-expiry
+
+          - take: claim
+
+          - take: start
+
+          - take: cancel
+            say:
+              "The third attempt does not get to find out. Somebody cancels it — and cancelling is
+              not something that happens to a job, it is a state the job has to pass through,
+              because the handler is still holding a lease and still writing to something."
+
+          - take: drained
+            say:
+              "It acknowledges, and stops. Which is where this explanation ends, and not where the
+              machine does: succeeded and failed are still sitting there, and so is the road back
+              out of cancelling."

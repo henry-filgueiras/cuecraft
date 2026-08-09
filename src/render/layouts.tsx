@@ -56,6 +56,17 @@ import {
   type Message,
   type ProtocolLayout,
 } from "./protocol.ts";
+import {
+  layoutMachine,
+  machineOf,
+  machinePlan,
+  runProgress,
+  startingState,
+  type MachineEdge,
+  type MachineLayout,
+  type MachineNode,
+} from "./machine.ts";
+import { pointAlong } from "./polyline.ts";
 import { tenantAt } from "./tenancy.ts";
 import { useSubtitleBand } from "./subtitles.tsx";
 import {
@@ -69,6 +80,7 @@ import {
   FRAME,
   HEADING_WIDTH,
   INDEX,
+  MACHINE,
   MONO_STACK,
   MOTION,
   SPACE,
@@ -2989,6 +3001,754 @@ function Rail({
   );
 }
 
+/* ------------------------------------------------------------------ circuit */
+
+/**
+ * The activation envelope a machine runs, and the shortest of the three.
+ *
+ * The atlas stretches decision:17's shape because a plate ignites at the word and the camera is
+ * still a second away from it. A machine never has that problem: `MACHINE.lead` puts the camera
+ * *there* before the traveller sets off, so an arrival happens in a frame that has already stopped
+ * moving. What is left for the transient to do is mark the instant of arrival, and a transient over
+ * a still frame is read immediately.
+ *
+ * It is also the only one of the three whose transient is not carrying the whole message. Occupancy
+ * is persistent, so the flare says *now*, not *this one* — and a flare that outstayed the arrival
+ * would start competing with the thing it was announcing.
+ */
+const CIRCUIT_TIMING: AnchorTiming = {
+  establish: 18,
+  heatRise: 5,
+  heatHold: 12,
+  heatFall: 28,
+  sweep: 22,
+} as const;
+
+/**
+ * How much of its presence a traversal keeps once the run has moved on.
+ *
+ * The transcript's problem, in a space that makes it worse. A protocol accumulates *downwards* and
+ * the camera scrolls away from what it has finished with; a machine accumulates in place, on a map
+ * whose whole point is that it does not move, so by the eighth occurrence the wake is drawn over
+ * the same edges the ninth has to be found among.
+ *
+ * The floor is therefore high and the decay is quick. High, because the wake is the answer to *how
+ * did it get here* and a wake that faded to nothing would take the answer with it. Quick, because
+ * only the difference between recent and old is doing any work — three occurrences back and four
+ * occurrences back are both simply "earlier", and a ramp that distinguished them would be spending
+ * contrast on a distinction no viewer is making.
+ */
+const WAKE = {
+  floor: 0.46,
+  decay: 0.45,
+} as const;
+
+/**
+ * A state machine, as a map with a traveller on it.
+ *
+ * Three things distinguish it from the two compositions that already have a camera, and all three
+ * come from the same place: a machine is a structure *and* a sequence, and the sequence does not
+ * build the structure.
+ *
+ * **Nothing is attenuated for not having happened.** An atlas draws unreached entities dim, because
+ * narration is going to reach them and dimness is a promise. A transcript does not draw unhappened
+ * traffic at all, because a message that has not been sent is a spoiler. Here the whole topology is
+ * present, legible and unqualified from the first frame — the transitions the run never takes are
+ * the answer to "what else could happen from here", which is one of the three questions a paused
+ * frame has to answer, and an answer nobody can read is not one.
+ *
+ * **Occupancy is persistent, exclusive and released.** This is the thing decision:17's model cannot
+ * express and the reason this composition exists. `heat` is a transient by construction and
+ * `degree` is monotone and never comes back down, so between them an anchor can say *this was
+ * reached* and can never say *this is where the machine is now, and that other one no longer is*.
+ * So occupancy is its own quantity, it flows from the source to the destination as the traveller
+ * crosses, and it is the only warm thing on the frame at any moment.
+ *
+ * **The surround steps back only while the flare lasts.** decision:23's most effective device is
+ * dimming everything that is not the moment by half a stop, and it cannot be used here as written:
+ * the moment never ends, so half a stop off the rest of the machine would be permanent, and the
+ * permanent thing would be a map nobody can read. So the attenuation rides the *transient* rather
+ * than the occupancy, and it is gentler — a quarter stop, for about a second, at each arrival.
+ */
+function Circuit({ scene, absoluteFrame }: { scene: Scene; absoluteFrame: number }) {
+  const frame = useCurrentFrame();
+  const machine = machineOf(scene.body);
+  const layout = useMemo(
+    () => (machine === undefined ? undefined : layoutMachine(machine)),
+    [machine],
+  );
+  const progress = useMemo(
+    () => (machine === undefined ? [] : runProgress(machine)),
+    [machine],
+  );
+  const takes = useMemo(
+    () => (machine === undefined ? [] : machine.scenario.map((entry) => entry.take)),
+    [machine],
+  );
+
+  // The atlas's argument, applied to the third composition that bleeds: the camera is handed the
+  // region the narration left rather than the whole frame, so a subtitle never lands on a state
+  // plate. Zero without subtitles, which is why nothing else about the shot changes.
+  const band = useSubtitleBand();
+  const viewport = { width: 1920, height: 1080 - band };
+  const aspect = viewport.width / viewport.height;
+
+  const plan = useMemo(
+    () =>
+      layout === undefined
+        ? undefined
+        : machinePlan(
+            layout,
+            scene.beats,
+            takes,
+            { from: scene.from, until: revealFrom(scene) },
+            aspect,
+          ),
+    [layout, scene, takes, aspect],
+  );
+
+  if (machine === undefined || layout === undefined || plan === undefined) return null;
+
+  const view = cameraAt(plan.track, absoluteFrame);
+  const scale = viewport.width / view.width;
+
+  // Which occurrence the film is on, and therefore everything else. One number, read off the
+  // beats, exactly as the transcript does it — and the only piece of state this composition has.
+  const current = scene.beats.reduce(
+    (latest, beat) => (beat.from <= absoluteFrame ? beat.index : latest),
+    -1,
+  );
+  const beat = scene.beats.find((entry) => entry.index === current);
+  const snapshot = progress[current];
+  const start = startingState(machine);
+
+  // The crossing. A motion, not a duration: how long a traveller takes to get somewhere is a fact
+  // about how fast a viewer can follow a moving dot, and it is capped by the occurrence's own
+  // length so a beat shorter than the crossing is never left with the traveller still in transit.
+  const edge =
+    beat === undefined ? undefined : layout.edgeById.get(takes[beat.index] ?? "");
+  const crossFrames =
+    beat === undefined ? 1 : Math.max(1, Math.min(MACHINE.cross, beat.durationInFrames));
+  const cross =
+    beat === undefined
+      ? 1
+      : interpolate(absoluteFrame, [beat.from, beat.from + crossFrames], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+          easing: ease,
+        });
+
+  /**
+   * How occupied a state is, 0 to 1, and it is a *flow* rather than a switch.
+   *
+   * While the traveller is on an edge, occupancy leaves the source at the rate it arrives at the
+   * destination — so the frame never claims the machine is in two states, and never claims it is in
+   * none. A self-transition is the degenerate case and falls out for free: source and destination
+   * are one state, the two halves cancel, and occupancy simply does not move, which is exactly what
+   * a self-transition means.
+   */
+  const occupancyOf = (id: string): number => {
+    if (edge === undefined) return id === start ? 1 : 0;
+    if (edge.from === edge.to) return id === edge.to ? 1 : 0;
+    if (id === edge.from) return 1 - cross;
+    if (id === edge.to) return cross;
+    return 0;
+  };
+
+  const visited = snapshot?.visited ?? new Set(start === undefined ? [] : [start]);
+  const taken = snapshot?.taken ?? new Map<string, number>();
+  const route = snapshot?.route ?? (start === undefined ? [] : [start]);
+  const occupied = snapshot?.occupied ?? start;
+
+  // The arrival flare fires when the traveller lands, not when it sets off — and the surround
+  // attenuation rides it, because a machine whose topology dimmed permanently would be a map with
+  // the answer to one question written over the answer to the other two.
+  const arrival =
+    beat === undefined
+      ? { degree: 0, heat: 0, sweep: 0 }
+      : anchorState(absoluteFrame, beat.from + crossFrames, CIRCUIT_TIMING);
+  const attention = arrival.heat;
+
+  /** How long ago each transition was last taken, in occurrences. Absent means never. */
+  const lastTaken = new Map<string, number>();
+  for (let index = 0; index <= current; index += 1) {
+    const id = takes[index];
+    if (id !== undefined) lastTaken.set(id, index);
+  }
+  const wakeOf = (id: string): number => {
+    const at = lastTaken.get(id);
+    if (at === undefined) return 0;
+    const age = current - at;
+    return age <= 0 ? 1 : WAKE.floor + (1 - WAKE.floor) * WAKE.decay ** age;
+  };
+
+  /** Everything that could happen from where the machine is. Question three, on every frame. */
+  const available = new Set(
+    (occupied === undefined ? [] : (layout.leaving.get(occupied) ?? [])).map(
+      (entry) => entry.id,
+    ),
+  );
+
+  const place = (factor: number): CSSProperties => {
+    const put = viewportTransform(view, viewport, factor);
+    return {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      transformOrigin: "0 0",
+      transform: `translate(${put.x}px, ${put.y}px) scale(${put.scale})`,
+    };
+  };
+
+  const opening = interpolate(frame, [0, MOTION.opener * 2], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: ease,
+  });
+
+  // The title names the machine and is wanted while the machine is all there is. Once the run
+  // starts, the readout is in that corner of the frame doing a job, and two captions is one too
+  // many. Derived from the first beat, exactly as a transcript's is.
+  const opened = scene.beats[0]?.from ?? Number.POSITIVE_INFINITY;
+  const titling = interpolate(absoluteFrame, [opened - 12, opened + 6], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: COLORS.ink, overflow: "hidden" }}>
+      <div style={place(MACHINE.gridParallax)}>
+        <Field
+          opacity={0.42 * opening}
+          step={MACHINE.gridStep * 3}
+          scale={scale * MACHINE.gridParallax}
+        />
+      </div>
+      <div style={place(1)}>
+        <Field opacity={0.7 * opening} step={MACHINE.gridStep} scale={scale} />
+        <Routes
+          layout={layout}
+          active={edge?.id}
+          cross={cross}
+          wakeOf={wakeOf}
+          available={available}
+          attention={attention}
+          heat={arrival.heat}
+        />
+        {layout.nodes.map((node) => (
+          <StatePlate
+            key={node.id}
+            node={node}
+            occupancy={occupancyOf(node.id)}
+            been={visited.has(node.id)}
+            arriving={node.id === edge?.to ? arrival : undefined}
+            attention={attention}
+            opening={opening}
+          />
+        ))}
+        {layout.edges.map((entry) => (
+          <EventLabel
+            key={entry.id}
+            edge={entry}
+            wake={wakeOf(entry.id)}
+            count={taken.get(entry.id) ?? 0}
+            available={available.has(entry.id)}
+            live={entry.id === edge?.id}
+            attention={attention}
+            opening={opening}
+          />
+        ))}
+        {edge === undefined ? null : <Traveller edge={edge} cross={cross} />}
+      </div>
+
+      {/* Screen space: the horizon the map is seen against, and the reason the edges of the frame
+          do not read as the edges of the machine. */}
+      <AbsoluteFill
+        style={{
+          background:
+            `radial-gradient(ellipse 82% 78% at 50% 48%, ${withAlpha("#05070B", 0)} 0%, ` +
+            `${withAlpha("#05070B", 0.2)} 62%, ${withAlpha("#04060A", 0.64)} 100%)`,
+          pointerEvents: "none",
+        }}
+      />
+
+      <Readout
+        layout={layout}
+        occupied={occupied}
+        route={route}
+        opening={opening}
+        presence={1 - titling}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: FRAME.marginX,
+          top: FRAME.marginY,
+          ...reveal(frame, 0),
+          opacity: (reveal(frame, 0).opacity as number) * titling,
+        }}
+      >
+        <Rule frame={frame} width={72} />
+        <h1
+          style={{
+            ...heading,
+            marginTop: SPACE.md,
+            fontSize: TYPE.row,
+            lineHeight: 1.08,
+            maxWidth: 1220,
+            textShadow: `0 2px 34px ${withAlpha("#05070B", 0.9)}`,
+          }}
+        >
+          {scene.title}
+        </h1>
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * Every transition, as a stroke.
+ *
+ * One SVG in world coordinates, as `Relations` is, because these are strokes and a stroke wants to
+ * be in the coordinate system it was measured in. Four states, and the ordering of them is the
+ * whole of the notation:
+ *
+ *     possible     ordinary topology. Present from the first frame, and never a hint of a line
+ *     available    it leaves where the machine is. A little brighter, and that is all
+ *     wake         it has been taken. Brighter still, and fading with how long ago
+ *     live         it is being taken right now, with a pulse running along it
+ *
+ * The gap between `possible` and `available` is deliberately the smallest one on the frame. It has
+ * to be legible — it is half the answer to "what could happen next" — and it must not compete with
+ * the wake, because a viewer who read "could happen" as "did happen" would be reading the film
+ * backwards.
+ */
+function Routes({
+  layout,
+  active,
+  cross,
+  wakeOf,
+  available,
+  attention,
+  heat,
+}: {
+  layout: MachineLayout;
+  active: string | undefined;
+  cross: number;
+  wakeOf: (id: string) => number;
+  available: ReadonlySet<string>;
+  attention: number;
+  heat: number;
+}) {
+  const { bounds } = layout;
+  return (
+    <svg
+      width={bounds.width}
+      height={bounds.height}
+      viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
+      style={{ position: "absolute", left: bounds.x, top: bounds.y, overflow: "visible" }}
+    >
+      {layout.edges.map((edge) => {
+        const wake = wakeOf(edge.id);
+        const live = edge.id === active;
+        // A quarter stop off everything that is not the arrival, for as long as the arrival lasts.
+        // Never more: the topology is the other two thirds of what this frame has to say.
+        const dim = 1 - 0.25 * attention * (live ? 0 : 1);
+        const hue = wake > 0 ? mix(MACHINE.edge, MACHINE.taken, wake) : MACHINE.edge;
+        const lit = live ? mix(hue, MACHINE.ignite, 0.55 + 0.35 * heat) : hue;
+        const alpha =
+          (0.5 +
+            (available.has(edge.id) ? 0.16 : 0) +
+            0.34 * wake +
+            0.2 * (live ? 1 : 0)) *
+          dim;
+        const weight =
+          MACHINE.edgeStroke +
+          (MACHINE.takenStroke - MACHINE.edgeStroke) * wake +
+          1.4 * (live ? 1 : 0);
+
+        return (
+          <g key={edge.id}>
+            <path
+              d={edge.path}
+              fill="none"
+              stroke={withAlpha(lit, alpha)}
+              strokeWidth={weight}
+              strokeLinecap="round"
+            />
+            {/* The energy running along the edge being taken, immediately behind the traveller.
+                Gone the moment the crossing finishes — a pulse that lingered would make an
+                occurrence that has already happened look like one still happening. */}
+            {live && cross > 0 && cross < 1 ? (
+              <path
+                d={edge.path}
+                fill="none"
+                stroke={withAlpha(MACHINE.ignite, 0.92)}
+                strokeWidth={weight * 1.35}
+                strokeLinecap="round"
+                strokeDasharray={`${MACHINE.pulse} ${edge.length}`}
+                strokeDashoffset={MACHINE.pulse - cross * edge.length}
+                style={{
+                  filter: `drop-shadow(0 0 20px ${withAlpha(MACHINE.current, 0.9)})`,
+                }}
+              />
+            ) : null}
+            <ArrowHead
+              points={edge.points}
+              color={lit}
+              opacity={(0.62 + 0.38 * wake) * dim}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/**
+ * One state, as a plate on the map.
+ *
+ * Three readings, and the ordering between them is the composition's central claim. **Possible** is
+ * the baseline and it is a real contrast, not a hint — a state the run never enters is still part
+ * of the machine being explained. **Visited** is a shade above it, and no more than that: a state
+ * the run has left is ordinary topology again, not a spent thing, because "the door was open a
+ * moment ago" is not a fact about the door. **Occupied** is the accent, a fill, a ring and a lift,
+ * and it is the only warm thing anywhere on the frame.
+ *
+ * There is no fourth reading, and in particular there is no treatment for a state with nothing
+ * leaving it. The atlas draws its out-degree-zero node as the world's product because in a world
+ * that is what it is; here it would say "the machine ends here", which is a claim about a system
+ * that this format has no way to know and that is very often false.
+ */
+function StatePlate({
+  node,
+  occupancy,
+  been,
+  arriving,
+  attention,
+  opening,
+}: {
+  node: MachineNode;
+  /** 0 to 1, and a flow: mid-traversal both endpoints hold a share of it. */
+  occupancy: number;
+  been: boolean;
+  arriving: AnchorState | undefined;
+  attention: number;
+  opening: number;
+}) {
+  const heat = occupancy * (arriving?.heat ?? 0);
+  const dim = 1 - 0.25 * attention * (1 - occupancy);
+  const base = been ? MACHINE.visited : MACHINE.possible;
+
+  const stroke = mix(
+    withAlpha(base, 1),
+    mix(MACHINE.current, MACHINE.ignite, heat),
+    occupancy,
+  );
+  const fill = mix(
+    mix("#0B1017", base, been ? 0.055 : 0.03),
+    mix("#140F09", MACHINE.current, 0.2),
+    occupancy,
+  );
+  const label = mix(mix(base, COLORS.paper, been ? 0.5 : 0.28), "#FFFFFF", occupancy);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: node.rect.x,
+        top: node.rect.y,
+        width: node.rect.width,
+        height: node.rect.height,
+        opacity: opening * dim,
+        transform: `scale(${1 + 0.035 * occupancy + 0.025 * heat})`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: MACHINE.plateRadius,
+        border: `${MACHINE.plateStroke + 2.2 * occupancy}px solid ${stroke}`,
+        backgroundColor: fill,
+        // Tight and bright rather than wide and faint, for the reason decision:23 recorded: a
+        // wide bloom at low alpha is four values across three hundred pixels, and H.264 draws
+        // four values as visible steps.
+        boxShadow:
+          `0 0 ${20 + 66 * occupancy + 34 * heat}px ` +
+          `${withAlpha(MACHINE.current, 0.5 * occupancy + 0.3 * heat)}, ` +
+          `inset 0 0 ${24 + 44 * occupancy}px ${withAlpha(MACHINE.current, 0.16 * occupancy)}`,
+      }}
+    >
+      {/* The occupancy ring. Persistent, unlike everything else on this frame that is bright: it
+          is not marking an event, it is stating where the machine is, and it stays until the
+          machine is somewhere else. */}
+      {occupancy > 0.01 ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: -18,
+            borderRadius: MACHINE.plateRadius,
+            border: `${2.5 * occupancy}px solid ${withAlpha(MACHINE.current, 0.7 * occupancy)}`,
+          }}
+        />
+      ) : null}
+      {/* Arrival. One ring, once, expanding away as the traveller lands — including when the
+          traveller lands back where it started, which is the only thing on the frame that says a
+          self-transition happened at all. */}
+      {arriving !== undefined && arriving.sweep > 0 && arriving.sweep < 1 ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: -30,
+            borderRadius: MACHINE.plateRadius,
+            border: `5px solid ${withAlpha(MACHINE.ignite, 0.85 * (1 - arriving.sweep) ** 1.6)}`,
+            transform: `scale(${1 + 0.22 * arriving.sweep})`,
+          }}
+        />
+      ) : null}
+      <div
+        style={{
+          position: "relative",
+          padding: `0 ${MACHINE.padX}px`,
+          textAlign: "center",
+          fontSize: MACHINE.label,
+          fontWeight: 600,
+          letterSpacing: "-0.015em",
+          lineHeight: MACHINE.lineHeight,
+          color: label,
+          textShadow:
+            occupancy > 0.01
+              ? `0 0 ${34 * occupancy}px ${withAlpha(MACHINE.current, occupancy)}`
+              : "none",
+        }}
+      >
+        {node.lines.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What fires a transition, and how many times it has.
+ *
+ * The count is the one piece of notation this composition adds, and it exists because of a specific
+ * failure the metaphor has. A traversal is legible *while it is happening* — a spark crosses an
+ * edge and nobody has to be told it is the second time. Paused, it is not: an edge with a wake on
+ * it says "this was taken", and there is nothing in a brighter stroke that can say "twice". So from
+ * the second occurrence onwards the label carries how many, and a frame stopped anywhere in the
+ * film can be counted rather than remembered.
+ *
+ * Derived, never authored, and absent on the overwhelming majority of edges — a transition taken
+ * once carries no mark at all, so the notation appears exactly where there is something to say.
+ */
+function EventLabel({
+  edge,
+  wake,
+  count,
+  available,
+  live,
+  attention,
+  opening,
+}: {
+  edge: MachineEdge;
+  wake: number;
+  count: number;
+  available: boolean;
+  live: boolean;
+  attention: number;
+  opening: number;
+}) {
+  const dim = 1 - 0.3 * attention * (live ? 0 : 1);
+  const tone = live
+    ? MACHINE.ignite
+    : wake > 0
+      ? mix(MACHINE.possible, MACHINE.taken, wake)
+      : MACHINE.possible;
+  const strength = (0.72 + 0.1 * (available ? 1 : 0) + 0.18 * wake) * dim;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: edge.label.x,
+        top: edge.label.y,
+        width: edge.label.width,
+        height: edge.label.height,
+        opacity: opening,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          textAlign: "center",
+          fontSize: MACHINE.event,
+          lineHeight: MACHINE.eventLineHeight,
+          fontWeight: live ? 600 : 500,
+          color: withAlpha(tone, strength),
+          // A short backdrop rather than a plate: an event label sits on a routed edge, and the
+          // edge has to be visible arriving at it and leaving it.
+          textShadow:
+            `0 0 16px ${withAlpha(COLORS.ink, 0.95)}, 0 0 6px ${withAlpha(COLORS.ink, 0.95)}` +
+            (live ? `, 0 0 28px ${withAlpha(MACHINE.current, 0.8)}` : ""),
+        }}
+      >
+        {edge.lines.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+        {count >= 2 ? (
+          <div
+            style={{
+              position: "absolute",
+              left: "100%",
+              top: 0,
+              marginLeft: MACHINE.labelPadX,
+              fontSize: MACHINE.event * 0.86,
+              fontWeight: 700,
+              letterSpacing: "0.02em",
+              color: withAlpha(MACHINE.current, 0.92 * dim),
+              textShadow: `0 0 14px ${withAlpha(COLORS.ink, 0.95)}`,
+            }}
+          >
+            ×{count}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The traveller: where the machine is, while it is between two places.
+ *
+ * A dot rather than a token with a name on it, and small rather than large. Its whole job is to be
+ * the one thing moving on a frame where nothing else moves, and a moving object is found by the eye
+ * before any static one however big the static one is. It also has to be legible on the frame's
+ * *own* terms once it lands, and what it lands into is the occupancy ring — so it is the same
+ * colour, and the arrival reads as the dot becoming the ring rather than as one thing being
+ * replaced by another.
+ */
+function Traveller({ edge, cross }: { edge: MachineEdge; cross: number }) {
+  if (cross <= 0 || cross >= 1) return null;
+  const at = pointAlong(edge.points, cross);
+  const size = MACHINE.travellerSize;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: at.x - size / 2,
+        top: at.y - size / 2,
+        width: size,
+        height: size,
+        borderRadius: size,
+        backgroundColor: MACHINE.ignite,
+        boxShadow:
+          `0 0 ${size * 1.4}px ${withAlpha(MACHINE.current, 0.95)}, ` +
+          `0 0 ${size * 3}px ${withAlpha(MACHINE.current, 0.45)}`,
+      }}
+    />
+  );
+}
+
+/**
+ * Where the machine is, and how it got there, in screen space.
+ *
+ * The transcript's rail, asked a different question. A rail names the tenant of every column the
+ * shot is cutting off, because a protocol's problem is that the cast scrolls away; a machine's cast
+ * never moves, and its problem is that a viewer arriving at an arbitrary frame has no way to
+ * recover the *order* things happened in from a picture where everything is in one place.
+ *
+ * So this states the answer to two of the three questions outright: the current state by name, and
+ * the route that reached it. Both are read straight off the beats — the route is the scenario's own
+ * `after` list, which is where the picture got it too, so the caption and the map cannot disagree.
+ *
+ * Elided from the left rather than the right, and truncation is marked. The recent past is what a
+ * viewer is reconstructing; the beginning of the run is on the map as a wake, and the frame does
+ * not need to say it twice.
+ */
+function Readout({
+  layout,
+  occupied,
+  route,
+  opening,
+  presence,
+}: {
+  layout: MachineLayout;
+  occupied: string | undefined;
+  route: readonly string[];
+  opening: number;
+  presence: number;
+}) {
+  if (occupied === undefined || presence <= 0.01) return null;
+  const name = (id: string): string => layout.byId.get(id)?.label ?? id;
+  const shown = route.slice(-READOUT_STATES);
+  const elided = route.length > shown.length;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: FRAME.marginX,
+        top: FRAME.marginY,
+        textAlign: "right",
+        opacity: opening * presence,
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          fontSize: TYPE.ordinal * 0.62,
+          letterSpacing: "0.22em",
+          textTransform: "uppercase",
+          color: COLORS.dim,
+          textShadow: `0 2px 20px ${withAlpha("#05070B", 0.95)}`,
+        }}
+      >
+        Now
+      </div>
+      <div
+        style={{
+          marginTop: SPACE.xs,
+          fontSize: TYPE.row,
+          fontWeight: 600,
+          letterSpacing: "-0.015em",
+          color: MACHINE.ignite,
+          textShadow: `0 0 34px ${withAlpha(MACHINE.current, 0.75)}, 0 2px 24px ${withAlpha("#05070B", 0.95)}`,
+        }}
+      >
+        {name(occupied)}
+      </div>
+      <div
+        style={{
+          marginTop: SPACE.md,
+          maxWidth: 620,
+          fontSize: TYPE.ordinal * 0.72,
+          lineHeight: 1.5,
+          letterSpacing: "0.03em",
+          color: COLORS.dim,
+          textShadow: `0 2px 20px ${withAlpha("#05070B", 0.95)}`,
+        }}
+      >
+        {(elided ? ["…", ...shown] : shown)
+          .map((id, index) => (id === "…" && index === 0 ? "…" : name(id)))
+          .join("  ›  ")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * How many states of the route the readout shows before it starts eliding.
+ *
+ * Four, which is one more than a viewer reconstructs unaided and few enough that the line never
+ * wraps at the size it is set. A longer tail would be a second, worse drawing of the wake, which is
+ * already on the map and already carries the whole history.
+ */
+const READOUT_STATES = 4;
+
 function Gate({ hue, degree }: { hue: string; degree: number }) {
   return (
     <div
@@ -3020,7 +3780,11 @@ export function Slide({
     <Frame
       scene={scene}
       slideCount={slideCount}
-      bleed={scene.layout === "atlas" || scene.layout === "transcript"}
+      bleed={
+        scene.layout === "atlas" ||
+        scene.layout === "transcript" ||
+        scene.layout === "circuit"
+      }
     >
       <Composition scene={scene} absoluteFrame={absoluteFrame} />
     </Frame>
@@ -3061,6 +3825,8 @@ function Composition({
     />
   ) : scene.layout === "transcript" ? (
     <Transcript scene={scene} absoluteFrame={absoluteFrame} />
+  ) : scene.layout === "circuit" ? (
+    <Circuit scene={scene} absoluteFrame={absoluteFrame} />
   ) : scene.layout === "figure" ? (
     <>
       <Heading scene={scene} frame={frame} />

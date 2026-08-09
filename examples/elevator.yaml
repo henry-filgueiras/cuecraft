@@ -1,0 +1,128 @@
+# Why the elevator doors changed their mind — a state machine, narrated.
+#
+#   cuecraft render examples/elevator.yaml -o out/elevator.mp4
+#
+# The whole of the source is below, and it is two things kept deliberately apart.
+#
+#   states + transitions    what the doors *can* do. True before the film starts, and true
+#                           whether or not this particular run ever exercises any of it.
+#   scenario                one ordered run through that, with narration on the occurrences
+#                           worth talking over and nothing at all on the rest.
+#
+# That split is the point of the format rather than a tidiness. `still-blocked` below is declared
+# and never taken: the doors *could* give up, and the reason the run coming back to Closed means
+# anything is that it did not have to. A trace-only notation — a list of things that happened —
+# could not have said that, and the film would have been an animated event log.
+#
+# What cuecraft derives from it:
+#
+#   where every state sits                  from the topology, once, by dagre — never from the run
+#   which way a back edge goes              from whichever edges the ranker had to reverse
+#   how a state's name breaks               from its own length, balanced
+#   how an event label wraps                from its own length
+#   how much room a self-transition needs   from its loop and its caption
+#   when each occurrence happens            from the measured narration, or from the dwell
+#   how long a silent occurrence lasts      from its event label and its place in the run
+#   where the camera stands                 from the source, the edge, the destination, and
+#                                           whatever else could have happened from there
+#   when the camera declines to move        from whether the shot it already has works
+#   where the run started                   from the first occurrence's `from`
+#   where it stopped                        from the last occurrence's `to` — and nothing at all
+#                                           is claimed about that being an ending
+#
+# There is no identity the compiler could have derived, no coordinate, no colour, no duration and
+# no camera instruction anywhere in this file, and there is no key that could become one.
+#
+# See decision:46 (a machine, and one run of it), decision:47 (persistent occupancy) and
+# decision:48 (what the third camera turned out to share).
+
+title: "Why the doors changed their mind"
+
+defaults:
+  pre_say: 900ms
+  post_say: 5200ms
+
+slides:
+  - slide:
+      title: "Why the elevator doors changed their mind"
+
+      machine:
+        states:
+          closed: Closed
+          opening: Opening
+          open: Open
+          closing: Closing
+          nudging: Nudging
+          stuck: Out of service
+
+        transitions:
+          call-accepted:
+            from: closed
+            to: opening
+            on: call accepted
+
+          opened:
+            from: opening
+            to: open
+            on: open limit reached
+
+          dwell-elapsed:
+            from: open
+            to: closing
+            on: dwell timer expires
+
+          obstruction-reversal:
+            from: closing
+            to: opening
+            on: safety beam interrupted
+
+          obstruction-limit:
+            from: closing
+            to: nudging
+            on: obstruction limit reached
+
+          nudged-closed:
+            from: nudging
+            to: closed
+            on: closed limit reached
+
+          still-blocked:
+            from: nudging
+            to: stuck
+            on: door remains obstructed
+
+        scenario:
+          - take: call-accepted
+            say:
+              "A call releases the door from the state it spends most of its life in. Everything
+              after this is the door trying to get back here."
+
+          - take: opened
+
+          - take: dwell-elapsed
+            say:
+              "Nothing has gone wrong yet. The dwell timer runs out, and the doors begin the
+              ordinary business of closing."
+
+          - take: obstruction-reversal
+            say:
+              "Then somebody puts an arm through. Breaking the safety beam does not stop the
+              doors — it sends them all the way back to opening, because a door that stopped
+              halfway would be a door resting against whatever interrupted it."
+
+          - take: opened
+
+          - take: dwell-elapsed
+
+          - take: obstruction-limit
+            say:
+              "The second obstruction is not treated like the first. The controller has now been
+              interrupted enough times to stop believing the beam, so instead of reversing again
+              it moves to a different policy entirely: closing slowly, with the force turned down,
+              and watching."
+
+          - take: nudged-closed
+            say:
+              "This time nothing interrupts it, and the doors reach the closed limit. The machine
+              is back where it began — which is not the same thing as having finished, because
+              the very next call starts all of this again."
