@@ -439,6 +439,10 @@ npm run render -- examples/pivot/pivot.yaml -o out/pivot.mp4
 
 ```
 Rendered out/observatory.mp4
+Symbols out/observatory.symbols.json
+  25 timed markers: 1 slide, 16 utterance, 8 anchor
+  cuecraft inspect out/observatory.symbols.json
+  cuecraft snapshots out/observatory.mp4 --kind slide -d snapshots
   1 slide
   01:17.6
   1920x1080 @ 30fps, h264/aac
@@ -465,6 +469,90 @@ node src/cli.ts speak "..." --voice bm_george --speed 1.2
 
 After `npm run build` and a global install, all of that is just `cuecraft`:
 `cuecraft render my-talk.yaml -o out/my-talk.mp4`.
+
+## Inspecting a render
+
+**Cuecraft emits timed semantic symbols alongside every rendered video; use them to locate slides
+and semantic events instead of sampling the video blindly.** An MP4 has forgotten everything — a
+tool looking at one can recover cuts from pixels and words from audio, and it can never recover an
+_address_. The compiler knew every address and every frame, so it writes them down beside the film
+([`decision:66`](archaeology/decisions/)).
+
+```bash
+npm run render -- examples/tally.yaml -o out/tally.mp4   # writes out/tally.symbols.json too
+node src/cli.ts inspect out/tally.symbols.json --kind slide
+```
+
+```
+Counting things — tally.mp4, 994 frames at 30fps (00:33.1)
+slide:seven-of-something     frame    149  00:05.0  [0, 192)
+slide:sixteen-and-then-some  frame    495  00:16.5  [192, 538)
+slide:ninety                 frame    711  00:23.7  [538, 754)
+slide:one                    frame    951  00:31.7  [754, 994)
+```
+
+The document is small on purpose — a deliberate projection of the compiled timeline, not a dump of
+it:
+
+```json
+{
+  "format": "cuecraft-symbols",
+  "version": 1,
+  "coordinates": {
+    "unit": "frame",
+    "interval": "[fromFrame, toFrame)",
+    "seconds": "derived"
+  },
+  "media": {
+    "file": "tally.mp4",
+    "fps": 30,
+    "durationFrames": 994,
+    "durationSeconds": 33.133333
+  },
+  "symbols": [
+    {
+      "key": "slide:ninety",
+      "kind": "slide",
+      "label": "Ninety",
+      "ordinal": 3,
+      "fromFrame": 538,
+      "toFrame": 754,
+      "contentFromFrame": 553,
+      "contentToFrame": 712,
+      "snapshotFrame": 711
+    }
+  ]
+}
+```
+
+- **Frames are the coordinate.** Seconds are derived, rounded for reading, and never authoritative —
+  there is exactly one place in cuecraft that turns seconds into frames, and it is not a consumer.
+- **Intervals are half-open**, `[fromFrame, toFrame)`, so slides tile the film exactly.
+- **Keys are authored identity**, not ordinals or timestamps: `slide:ninety`,
+  `anchor:architecture/database`, `scope:outside/payment`. They survive a re-render that moves every
+  frame.
+- **`snapshotFrame` is the last frame of the slide's last sentence** — arrived, everything
+  established, not yet leaving. Every slide has one, so a short final slide cannot be missed.
+
+Symbols are also the fastest way to _look_ at a render. Extraction is a lookup and one `ffmpeg`
+call, so it needs ffmpeg on the `PATH`; rendering does not.
+
+```bash
+node src/cli.ts snapshots out/tally.mp4 --kind slide -d out/frames
+node src/cli.ts snapshot out/tally.mp4 --symbol slide:ninety -o ninety.png
+```
+
+```
+out/frames/slide-seven-of-something.png     slide:seven-of-something     frame 149  00:05.0
+out/frames/slide-sixteen-and-then-some.png  slide:sixteen-and-then-some  frame 495  00:16.5
+out/frames/slide-ninety.png                 slide:ninety                 frame 711  00:23.7
+out/frames/slide-one.png                    slide:one                    frame 951  00:31.7
+```
+
+Beyond slides, the table carries `utterance`, `anchor`, `span`, `beat`, `recall` and `scope` — every
+kind where an identity the author wrote survives compilation. It is a sidecar rather than MP4
+metadata because a sidecar can be diffed, grepped and read; it is a projection rather than the
+timeline because the timeline is an implementation detail and stays free to change.
 
 ## Writing a presentation
 

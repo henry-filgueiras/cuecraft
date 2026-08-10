@@ -24,6 +24,7 @@
     "test:tts": "node --test \"src/tts/**/*.live-test.ts\"",
     "test:r": "node --test \"src/compute/**/*.live-test.ts\"",
     "test:render": "node --test \"src/**/*.render-test.ts\"",
+    "test:ffmpeg": "node --test \"src/compute/frame.live-test.ts\"",
     "bootstrap:fonts": "./scripts/bootstrap-fonts.sh",
     "bootstrap:tts": "./scripts/bootstrap-local-tts.sh",
     "bootstrap:r": "./scripts/bootstrap-r.sh",

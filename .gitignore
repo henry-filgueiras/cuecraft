@@ -20,6 +20,11 @@ tmp/
 # narration is already covered by .cuecraft/, out/, and tmp/ above.
 /*.wav
 
+# Symbol tables written beside a film rendered to the repository root. A projection in
+# exactly decision:1's sense — derived from the compilation, always safe to delete, never
+# hand-edited (decision:66). Anchored, for /*.wav's reason.
+/*.symbols.json
+
 # Frozen narration assets are deliberately NOT ignored: once promoted, they
 # are repository-managed source, not build output.
 

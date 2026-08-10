@@ -12,15 +12,29 @@ import {
   type MaterializedExhibit,
 } from "./compile/materialize.ts";
 import {
+  parseSymbolTable,
+  SYMBOL_KINDS,
+  symbolsPathFor,
+  SymbolsError,
+  type SymbolKind,
+  type SymbolTable,
+} from "./compile/symbols.ts";
+import {
   buildTimeline,
   narrativeStack,
   stackProblem,
   type Timeline,
 } from "./compile/timeline.ts";
+import { extractFrame, FrameError } from "./compute/frame.ts";
 import { formatTimecode } from "./presentation/duration.ts";
 import type { ExhibitResource } from "./presentation/exhibit.ts";
 import { parsePresentation, PresentationError } from "./presentation/parse.ts";
-import { renderPresentationFile, StageError, workspaceFor } from "./pipeline.ts";
+import {
+  renderPresentationFile,
+  StageError,
+  workspaceFor,
+  type RenderSummary,
+} from "./pipeline.ts";
 import { formatAudition } from "./render/audition.ts";
 import { auditionSheet } from "./render/auditionsheet.ts";
 import { explainMachines, formatExplanation } from "./render/explain.ts";
@@ -44,6 +58,9 @@ export type Invocation =
   | { kind: "version" }
   | { kind: "render"; input: string; output: string; quiet: boolean }
   | { kind: "explain"; input: string; audition: boolean; sheet?: string }
+  | { kind: "inspect"; symbols: string; only?: SymbolKind }
+  | { kind: "snapshot"; video: string; symbol: string; symbols?: string; output?: string }
+  | { kind: "snapshots"; video: string; symbols?: string; only?: SymbolKind; dir: string }
   | { kind: "speak"; text: string; output: string; voice?: string; speed?: number }
   | { kind: "voices" };
 
@@ -54,6 +71,9 @@ export const USAGE = `cuecraft — compile narrated slide presentations into vid
 Usage:
   cuecraft render <presentation.yaml> [-o <output.mp4>]
   cuecraft explain <presentation.yaml> [--audition]
+  cuecraft inspect <presentation.symbols.json> [--kind <kind>]
+  cuecraft snapshot <video.mp4> --symbol <key> [-o <frame.png>]
+  cuecraft snapshots <video.mp4> [--kind <kind>] [-d <dir>]
   cuecraft speak <text> [-o <output.wav>] [--voice <name>] [--speed <rate>]
   cuecraft voices
   cuecraft --help
@@ -66,8 +86,20 @@ Options:
       --quiet          Suppress progress; print only the completion summary
       --audition       explain: also score every layout candidate that was considered
       --sheet <path>   explain: write the layout audition as a labelled SVG contact sheet
+      --kind <kind>    Show or extract one kind: ${SYMBOL_KINDS.join(", ")}
+      --symbol <key>   snapshot: the semantic key to extract, e.g. slide:architecture
+      --symbols <path> Symbol table to read (default: the one beside the video)
+  -d, --dir <path>     snapshots: where the images go (default: snapshots)
 
 Status: experimental.
+
+Rendering also writes a symbol table beside the MP4 — timed semantic markers for the
+compiled presentation. Use it to find slides and semantic events instead of sampling the
+video blindly:
+
+  cuecraft render deck.yaml -o out/deck.mp4     # writes out/deck.symbols.json too
+  cuecraft inspect out/deck.symbols.json
+  cuecraft snapshots out/deck.mp4 --kind slide -d out/frames
 
 Narration is synthesized locally and needs no credentials. Run
 ./scripts/bootstrap-local-tts.sh once to install the model. The first render also
@@ -83,6 +115,10 @@ export function parseInvocation(argv: readonly string[]): Invocation {
       quiet: { type: "boolean", short: "q" },
       audition: { type: "boolean" },
       sheet: { type: "string" },
+      kind: { type: "string" },
+      symbol: { type: "string" },
+      symbols: { type: "string" },
+      dir: { type: "string", short: "d" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "V" },
     },
@@ -128,6 +164,60 @@ export function parseInvocation(argv: readonly string[]): Invocation {
       };
     }
 
+    case "inspect": {
+      const symbols = rest[0];
+      if (symbols === undefined) {
+        throw new UsageError("inspect requires a symbols file");
+      }
+      if (rest.length > 1) {
+        throw new UsageError(`inspect takes one symbols file, got ${rest.length}`);
+      }
+      return {
+        kind: "inspect",
+        symbols,
+        ...(values.kind === undefined ? {} : { only: parseKind(values.kind) }),
+      };
+    }
+
+    case "snapshot": {
+      const video = rest[0];
+      if (video === undefined) {
+        throw new UsageError("snapshot requires a video file");
+      }
+      if (rest.length > 1) {
+        throw new UsageError(`snapshot takes one video file, got ${rest.length}`);
+      }
+      if (values.symbol === undefined) {
+        throw new UsageError(
+          "snapshot requires --symbol <key>, e.g. --symbol slide:intro",
+        );
+      }
+      return {
+        kind: "snapshot",
+        video,
+        symbol: values.symbol,
+        ...(values.symbols === undefined ? {} : { symbols: values.symbols }),
+        ...(values.output === undefined ? {} : { output: values.output }),
+      };
+    }
+
+    case "snapshots": {
+      const video = rest[0];
+      if (video === undefined) {
+        throw new UsageError("snapshots requires a video file");
+      }
+      if (rest.length > 1) {
+        throw new UsageError(`snapshots takes one video file, got ${rest.length}`);
+      }
+      return {
+        kind: "snapshots",
+        video,
+        dir: values.dir ?? "snapshots",
+        ...(values.symbols === undefined ? {} : { symbols: values.symbols }),
+        ...(values.kind === undefined ? {} : { only: parseKind(values.kind) }),
+      };
+    }
+
     case "speak": {
       const text = rest[0];
       if (text === undefined) {
@@ -170,6 +260,7 @@ const STAGE_LABELS: Record<string, string> = {
   bundle: "bundling composition",
   compose: "resolving composition",
   render: "rendering video",
+  publish: "writing symbols",
 };
 
 async function runRender(
@@ -214,6 +305,7 @@ async function runRender(
 
     process.stdout.write(
       `Rendered ${invocation.output}\n` +
+        describeSymbols(summary, invocation.output) +
         `  ${timeline.scenes.length} slide${timeline.scenes.length === 1 ? "" : "s"}\n` +
         `  ${formatTimecode((report.totalFrames / report.fps) * 1000)}\n` +
         `  ${report.width}x${report.height} @ ${report.fps}fps, ` +
@@ -318,6 +410,182 @@ async function runExplain(
     }
     throw error;
   }
+}
+
+/**
+ * Where the symbol table went, what is in it, and the two commands that read it.
+ *
+ * Printed on every render rather than only when something unusual happened, which is the opposite
+ * of the rule every other line here follows — and deliberately so. The others report a *decision*
+ * the compiler took, and a line that says "nothing unusual" on every run is a line people stop
+ * reading. This reports an *artifact that exists on disk*, and the failure it exists to prevent is
+ * somebody not knowing it is there. An agent that has to be told about the sidecar by a human has
+ * exactly the problem decision:66 was written to remove.
+ */
+function describeSymbols(summary: RenderSummary, output: string): string {
+  const counted = new Map<SymbolKind, number>();
+  for (const symbol of summary.symbols.symbols) {
+    counted.set(symbol.kind, (counted.get(symbol.kind) ?? 0) + 1);
+  }
+  const tally = SYMBOL_KINDS.filter((kind) => counted.has(kind))
+    .map((kind) => `${counted.get(kind) as number} ${kind}`)
+    .join(", ");
+  // Spelled the way the author spelled the output rather than resolved, so that the two commands
+  // below are commands they can paste. A resolved path is correct and unusable.
+  const sidecar = symbolsPathFor(output);
+  return (
+    `Symbols ${sidecar}\n` +
+    `  ${summary.symbols.symbols.length} timed marker` +
+    `${summary.symbols.symbols.length === 1 ? "" : "s"}: ${tally}\n` +
+    `  cuecraft inspect ${sidecar}\n` +
+    `  cuecraft snapshots ${output} --kind slide -d snapshots\n`
+  );
+}
+
+/**
+ * Every semantic landmark in a rendered film, read from the sidecar and nothing else.
+ *
+ * The first consumer of decision:66, and the shape of it is the argument: this command cannot see
+ * the presentation, cannot synthesize, and cannot open the video. It knows where every slide lives
+ * because the compiler wrote it down. That is the whole claim, and a version of this that fell back
+ * to reading the YAML when the sidecar was thin would have quietly disproved it.
+ */
+async function runInspect(
+  invocation: Extract<Invocation, { kind: "inspect" }>,
+): Promise<number> {
+  let table: SymbolTable;
+  try {
+    table = parseSymbolTable(
+      await readFile(invocation.symbols, "utf8"),
+      invocation.symbols,
+    );
+  } catch (error) {
+    process.stderr.write(
+      `cuecraft: ${error instanceof SymbolsError ? error.message : describeRead(error, invocation.symbols)}\n`,
+    );
+    return 1;
+  }
+
+  const shown = table.symbols.filter(
+    (symbol) => invocation.only === undefined || symbol.kind === invocation.only,
+  );
+  if (shown.length === 0) {
+    process.stderr.write(
+      `cuecraft: ${invocation.symbols} holds no ${invocation.only ?? "symbol"} symbols\n`,
+    );
+    return 1;
+  }
+
+  // Padded to the widest key so the frames line up, because the thing a reader is actually doing
+  // with this output is scanning down the numbers.
+  const width = Math.max(...shown.map((symbol) => symbol.key.length));
+  const lines = shown.map(
+    (symbol) =>
+      `${symbol.key.padEnd(width)}  ` +
+      `frame ${String(symbol.snapshotFrame).padStart(6)}  ` +
+      `${formatTimecode(symbol.snapshotSeconds * 1000)}  ` +
+      `[${symbol.fromFrame}, ${symbol.toFrame})`,
+  );
+
+  process.stdout.write(
+    `${table.presentation.title} — ${table.media.file}, ` +
+      `${table.media.durationFrames} frames at ${table.media.fps}fps ` +
+      `(${formatTimecode(table.media.durationSeconds * 1000)})\n` +
+      `${lines.join("\n")}\n`,
+  );
+  return 0;
+}
+
+/**
+ * One frame, or one per symbol, taken out of the film by name.
+ *
+ * Deterministic lookup plus one ffmpeg invocation (`./compute/frame.ts`). Nothing here looks at a
+ * pixel to decide anything, which is the line decision:66 drew: the compiler already knows where to
+ * look, so a tool that had to *find* the interesting frame would be solving a problem cuecraft
+ * created by throwing the answer away.
+ */
+async function runSnapshot(
+  invocation: Extract<Invocation, { kind: "snapshot" | "snapshots" }>,
+): Promise<number> {
+  const path = invocation.symbols ?? symbolsPathFor(invocation.video);
+  let table: SymbolTable;
+  try {
+    table = parseSymbolTable(await readFile(path, "utf8"), path);
+  } catch (error) {
+    process.stderr.write(
+      `cuecraft: ${error instanceof SymbolsError ? error.message : describeRead(error, path)}\n`,
+    );
+    return 1;
+  }
+
+  const wanted =
+    invocation.kind === "snapshot"
+      ? table.symbols.filter((symbol) => symbol.key === invocation.symbol)
+      : table.symbols.filter(
+          (symbol) => invocation.only === undefined || symbol.kind === invocation.only,
+        );
+
+  if (wanted.length === 0) {
+    process.stderr.write(
+      invocation.kind === "snapshot"
+        ? `cuecraft: ${path} has no symbol ${JSON.stringify(invocation.symbol)}; ` +
+            `run cuecraft inspect ${path} to see what it does have\n`
+        : `cuecraft: ${path} holds no ${invocation.only ?? "symbol"} symbols\n`,
+    );
+    return 1;
+  }
+
+  try {
+    for (const symbol of wanted) {
+      const output =
+        invocation.kind === "snapshot"
+          ? (invocation.output ?? `${fileNameFor(symbol.key)}.png`)
+          : join(invocation.dir, `${fileNameFor(symbol.key)}.png`);
+      await extractFrame({
+        video: invocation.video,
+        frame: symbol.snapshotFrame,
+        fps: table.media.fps,
+        output,
+      });
+      process.stdout.write(
+        `${output}  ${symbol.key}  frame ${symbol.snapshotFrame}  ` +
+          `${formatTimecode(symbol.snapshotSeconds * 1000)}\n`,
+      );
+    }
+  } catch (error) {
+    process.stderr.write(
+      `cuecraft: ${error instanceof FrameError ? error.message : String(error)}\n`,
+    );
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * A key as a filename: `slide:architecture` -> `slide-architecture`.
+ *
+ * The whole key rather than its last segment, so a directory of snapshots taken across kinds cannot
+ * have an anchor and the slide it sits on fight over one name. Keys are already restricted to the
+ * identity alphabet plus `:` and `/`, so replacing those two is the whole of the escaping.
+ */
+export function fileNameFor(key: string): string {
+  return key.replace(/[:/]/g, "-");
+}
+
+function describeRead(error: unknown, path: string): string {
+  return error instanceof Error && "code" in error && error.code === "ENOENT"
+    ? `cannot read ${path}; render the presentation first and it will be written beside the video`
+    : `cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+function parseKind(raw: string): SymbolKind {
+  const found = SYMBOL_KINDS.find((kind) => kind === raw);
+  if (found === undefined) {
+    throw new UsageError(
+      `--kind must be one of ${SYMBOL_KINDS.join(", ")}, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return found;
 }
 
 /**
@@ -584,6 +852,13 @@ async function main(argv: readonly string[]): Promise<number> {
 
     case "explain":
       return runExplain(invocation);
+
+    case "inspect":
+      return runInspect(invocation);
+
+    case "snapshot":
+    case "snapshots":
+      return runSnapshot(invocation);
 
     case "voices":
       for (const voice of KOKORO_VOICES) {

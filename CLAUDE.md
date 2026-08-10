@@ -82,13 +82,37 @@ because no command can, such as attaching the showpiece videos through GitHub's 
 holds steps, not knowledge — no rationale, no architecture, no plans. Anything explaining _why_ is
 a scarp artifact.
 
+## Read a render through its symbols, not by sampling it
+
+Every render writes `<output>.symbols.json` beside the MP4: a timed table of semantic markers for
+the compiled presentation — every slide's exact frame interval and a representative frame, plus
+utterances, anchors, spans, beats, recalls and scopes (`decision:66`).
+
+Use it. Do not sample a rendered film at a fixed interval to find out what is in it; that is how a
+short final slide gets missed, and it is the failure the symbol table exists to prevent.
+
+```
+cuecraft render deck.yaml -o out/deck.mp4      # writes out/deck.symbols.json
+cuecraft inspect out/deck.symbols.json --kind slide
+cuecraft snapshots out/deck.mp4 --kind slide -d out/frames   # one PNG per slide
+cuecraft snapshot out/deck.mp4 --symbol anchor:architecture/database -o db.png
+```
+
+Frames are the coordinate and seconds are derived; intervals are half-open `[fromFrame, toFrame)`.
+The table is a deliberate projection, narrower than `Timeline` — adding a kind or a field is free,
+changing what an existing field means costs a version bump. Frame extraction needs `ffmpeg` on the
+`PATH`; rendering does not.
+
+For visual iteration on a _composition_ rather than on a finished film, `renderStill` is still the
+faster loop.
+
 ## Preserve the source/projection distinction
 
 This is the central idea of the project, and it is easy to erode:
 
 - **Source**: the YAML presentation, slide components, and any _frozen_ narration assets.
-- **Projections**: the narration cache, rendered frames, and the output MP4. Always safe to
-  delete; never hand-edited; never committed.
+- **Projections**: the narration cache, rendered frames, the output MP4, and the symbol table
+  beside it. Always safe to delete; never hand-edited; never committed.
 
 Anything that makes a projection independently editable — an editor UI, a "just tweak the
 output" escape hatch, committing rendered media — defeats the thesis. Frozen narration is the

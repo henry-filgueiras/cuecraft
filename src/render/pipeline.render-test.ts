@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,7 +8,9 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
+import { parseSymbolTable } from "../compile/symbols.ts";
 import { narrativeStack, stackProblem } from "../compile/timeline.ts";
+import { extractFrame } from "../compute/frame.ts";
 import { renderPresentationFile } from "../pipeline.ts";
 import { CANVAS_ID, COMPOSITION_ID, entryPoint } from "./render.ts";
 import { describeMissingArtifacts } from "../tts/kokoro.ts";
@@ -571,6 +574,142 @@ test(
       (await brightest(framedPath, timeline.width, 120, 0, below - 200)) > 200,
       "the quotation card carries no subtitle either",
     );
+
+    await rm(summary.workspace, { recursive: true, force: true });
+  },
+);
+
+/**
+ * A deck whose last slide is far shorter than anybody would sample.
+ *
+ * The motivating failure, reproduced as a fixture: an agent inspecting a cuecraft render sampled it
+ * at a fixed interval, covered the first slides, and missed the last one because it was short. The
+ * three slides are deliberately unequal, the floor is set low so that nothing pads Gamma back up to
+ * a comfortable length, and Gamma says one word.
+ *
+ * Narration is measured, so the exact frames are not knowable here — that is what the rigid fixture
+ * in `../compile/symbols.test.ts` is for. What is asserted here is the property that survives
+ * measurement: **every slide is inspected, because the symbol table names every slide.**
+ */
+const SYMBOLS_FIXTURE = `
+title: "Symbol test"
+
+defaults:
+  pre_say: 400ms
+  post_say: 700ms
+  min_slide_duration: 1s
+
+slides:
+  - slide:
+      title: "Alpha"
+      bullets:
+        - id: one
+          text: The first point
+        - The second point
+    say:
+      - "This first slide runs for a while, and it has two points on it."
+      - speech: "The first of them is reached here."
+        activates: one
+
+  - slide:
+      title: "Beta"
+      bullets:
+        - Something else entirely
+    say: "The second slide says one sentence about something else entirely."
+
+  - slide:
+      title: "Gamma"
+    say: "Briefly."
+`;
+
+test(
+  "every slide of a rendered film is inspected, including a very short last one",
+  { timeout: 900_000 },
+  async () => {
+    const input = join(workspace, "symbols.yaml");
+    const output = join(workspace, "symbols.mp4");
+    await writeFile(input, SYMBOLS_FIXTURE, "utf8");
+
+    const summary = await renderPresentationFile(input, output);
+
+    // The sidecar is beside the film, under the film's own name, and is what was reported.
+    assert.equal(summary.symbolsPath, join(workspace, "symbols.symbols.json"));
+    const table = parseSymbolTable(
+      await readFile(summary.symbolsPath, "utf8"),
+      summary.symbolsPath,
+    );
+    assert.equal(table.media.file, "symbols.mp4");
+
+    // It describes the film that was actually encoded, not the timeline that was intended.
+    const probed = await probe(output);
+    assert.equal(table.media.durationFrames, summary.report.totalFrames);
+    assert.ok(
+      Math.abs(Number(probed.format.duration) - table.media.durationSeconds) < 0.15,
+      `the symbols claim ${table.media.durationSeconds}s, ffprobe says ${probed.format.duration}s`,
+    );
+
+    const slides = table.symbols.filter((symbol) => symbol.kind === "slide");
+    assert.deepEqual(
+      slides.map((symbol) => symbol.key),
+      ["slide:alpha", "slide:beta", "slide:gamma"],
+    );
+
+    // Gamma is genuinely short: shorter than any interval a sampler would pick, and short enough
+    // that the deck is a real instance of the failure rather than a diagram of it.
+    const gamma = slides[2];
+    assert.ok(gamma !== undefined);
+    const gammaSeconds = (gamma.toFrame - gamma.fromFrame) / table.media.fps;
+    assert.ok(
+      gammaSeconds < 3,
+      `the last slide runs for ${gammaSeconds.toFixed(1)}s, which is not short enough to be the test`,
+    );
+
+    // The whole claim, executed: walk the symbols, take one frame per slide, look at nothing else.
+    const taken: string[] = [];
+    for (const slide of slides) {
+      const image = join(workspace, "frames", `${slide.key.replace(/[:/]/g, "-")}.png`);
+      await extractFrame({
+        video: output,
+        frame: slide.snapshotFrame,
+        fps: table.media.fps,
+        output: image,
+      });
+      taken.push(image);
+    }
+
+    assert.equal(
+      taken.length,
+      summary.timeline.scenes.length,
+      "one extracted frame per rendered slide",
+    );
+    assert.ok(
+      (await readdir(join(workspace, "frames"))).includes("slide-gamma.png"),
+      "the short final slide was not inspected",
+    );
+
+    // Each frame is a real picture of a *different* slide. Hashed against each other rather than
+    // against a golden: H.264 is lossy and GOP-dependent, so a stored hash would be a promise about
+    // an encoder. That two frames of the same film differ is a claim about this film only.
+    const digests = await Promise.all(
+      taken.map(async (path) => {
+        const bytes = await readFile(path);
+        assert.ok(bytes.length > 5_000, `${path} is only ${bytes.length} bytes`);
+        return createHash("sha256").update(bytes).digest("hex");
+      }),
+    );
+    assert.equal(
+      new Set(digests).size,
+      digests.length,
+      "two slides were sampled at the same picture",
+    );
+
+    // And the frames are where the symbol table said they would be: inside the slide, after it has
+    // arrived, before it starts to leave, and before the end of the film.
+    for (const slide of slides) {
+      assert.ok(slide.snapshotFrame >= (slide.contentFromFrame as number));
+      assert.ok(slide.snapshotFrame < (slide.contentToFrame as number));
+      assert.ok(slide.snapshotFrame < table.media.durationFrames);
+    }
 
     await rm(summary.workspace, { recursive: true, force: true });
   },

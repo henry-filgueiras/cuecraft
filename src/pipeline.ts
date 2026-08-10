@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 
 import {
@@ -12,6 +12,7 @@ import {
   MaterializeError,
   type MaterializedExhibit,
 } from "./compile/materialize.ts";
+import { symbolsPathFor, symbolTable, type SymbolTable } from "./compile/symbols.ts";
 import { buildTimeline, type Timeline } from "./compile/timeline.ts";
 import type { AuthoredSlide } from "./presentation/parse.ts";
 import { parsePresentation, PresentationError } from "./presentation/parse.ts";
@@ -30,7 +31,7 @@ import { repositoryRoot } from "./tts/model.ts";
  * renders anything, and that duration comes from audio that does not exist yet (dragon:1).
  * So synthesis strictly precedes timing, and timing strictly precedes rendering.
  *
- *     read -> parse -> materialize -> synthesize -> time -> render
+ *     read -> parse -> materialize -> synthesize -> time -> render -> publish
  *
  * `materialize` is the one stage whose position was *chosen* rather than forced. An exhibit's
  * picture has no bearing on how long a sentence takes, so it could run anywhere before the render —
@@ -38,12 +39,19 @@ import { repositoryRoot } from "./tts/model.ts";
  * minute of narration nobody will hear (`./compile/materialize.ts`). It is skipped entirely, and
  * not even announced, on every deck that declares no exhibit, which is all of them but one.
  *
+ * `publish` is the one stage that comes *after* the artifact it describes, and that ordering is
+ * deliberate rather than incidental. The symbol table (decision:66) says where the compilation's
+ * meaning landed in the film, so writing it before the film existed would be publishing a claim
+ * about a file that might never appear. It reads a timeline that has already been frozen and cannot
+ * change anything: a failed render leaves no sidecar, and a sidecar always describes a film that is
+ * on disk.
+ *
  * Naming the stage on every failure is the difference between "cuecraft crashed" and "your
  * fourth slide's narration is too long for one Kokoro window".
  */
 
 export type Stage =
-  "read" | "parse" | "materialize" | "synthesize" | "time" | RenderStage;
+  "read" | "parse" | "materialize" | "synthesize" | "time" | RenderStage | "publish";
 
 export class StageError extends Error {
   readonly stage: Stage;
@@ -67,6 +75,9 @@ export interface RenderSummary {
   readonly input: string;
   readonly timeline: Timeline;
   readonly report: RenderReport;
+  /** Where the symbol table was written, and what went into it (decision:66). */
+  readonly symbolsPath: string;
+  readonly symbols: SymbolTable;
   readonly workspace: string;
   /** Every exhibit a foreign program computed for this render. Empty on almost every deck. */
   readonly exhibits: readonly MaterializedExhibit[];
@@ -168,11 +179,24 @@ export async function renderPresentationFile(
   }
   const renderSeconds = (performance.now() - renderStarted) / 1000;
 
+  // The film exists; now say where its meaning landed. Beside it, under its own name, from the
+  // frozen timeline (decision:66). Nothing here can reach back into anything above.
+  events.onStage?.("publish");
+  const symbolsPath = symbolsPathFor(outputPath);
+  const symbols = symbolTable(compiled, timeline, { file: basename(outputPath) });
+  try {
+    await writeFile(symbolsPath, `${JSON.stringify(symbols, null, 2)}\n`, "utf8");
+  } catch (error) {
+    throw new StageError("publish", describe(error, `cannot write ${symbolsPath}`));
+  }
+
   return {
     title: presentation.title,
     input: inputPath,
     timeline,
     report,
+    symbolsPath,
+    symbols,
     workspace,
     exhibits,
     synthesisSeconds,

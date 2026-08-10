@@ -7,7 +7,14 @@ import { test } from "node:test";
 import { compilePresentation } from "./compile/compile.ts";
 import { buildTimeline } from "./compile/timeline.ts";
 import { parsePresentation } from "./presentation/parse.ts";
-import { describeRecalls, parseInvocation, readVersion, UsageError } from "./cli.ts";
+import {
+  describeRecalls,
+  fileNameFor,
+  parseInvocation,
+  readVersion,
+  USAGE,
+  UsageError,
+} from "./cli.ts";
 
 test("no arguments prints help", () => {
   assert.deepEqual(parseInvocation([]), { kind: "help" });
@@ -170,4 +177,79 @@ slides:
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("inspect takes a symbols file, and optionally one kind", () => {
+  assert.deepEqual(parseInvocation(["inspect", "out/deck.symbols.json"]), {
+    kind: "inspect",
+    symbols: "out/deck.symbols.json",
+  });
+  assert.deepEqual(parseInvocation(["inspect", "s.json", "--kind", "slide"]), {
+    kind: "inspect",
+    symbols: "s.json",
+    only: "slide",
+  });
+  assert.throws(() => parseInvocation(["inspect"]), UsageError);
+  assert.throws(
+    () => parseInvocation(["inspect", "s.json", "--kind", "scene"]),
+    UsageError,
+  );
+});
+
+test("snapshot needs a key, and finds its symbols beside the video by default", () => {
+  assert.deepEqual(
+    parseInvocation(["snapshot", "out/deck.mp4", "--symbol", "slide:intro"]),
+    {
+      kind: "snapshot",
+      video: "out/deck.mp4",
+      symbol: "slide:intro",
+    },
+  );
+  assert.deepEqual(
+    parseInvocation([
+      "snapshot",
+      "out/deck.mp4",
+      "--symbol",
+      "slide:intro",
+      "--symbols",
+      "elsewhere.json",
+      "-o",
+      "intro.png",
+    ]),
+    {
+      kind: "snapshot",
+      video: "out/deck.mp4",
+      symbol: "slide:intro",
+      symbols: "elsewhere.json",
+      output: "intro.png",
+    },
+  );
+  assert.throws(() => parseInvocation(["snapshot", "out/deck.mp4"]), UsageError);
+});
+
+test("snapshots defaults its directory and takes every symbol unless filtered", () => {
+  assert.deepEqual(parseInvocation(["snapshots", "out/deck.mp4"]), {
+    kind: "snapshots",
+    video: "out/deck.mp4",
+    dir: "snapshots",
+  });
+  assert.deepEqual(
+    parseInvocation(["snapshots", "out/deck.mp4", "--kind", "anchor", "-d", "frames"]),
+    { kind: "snapshots", video: "out/deck.mp4", dir: "frames", only: "anchor" },
+  );
+});
+
+test("a symbol key becomes a filename without escaping", () => {
+  assert.equal(fileNameFor("slide:architecture"), "slide-architecture");
+  assert.equal(
+    fileNameFor("anchor:outside/payment/check"),
+    "anchor-outside-payment-check",
+  );
+  assert.equal(fileNameFor("utterance:intro/3"), "utterance-intro-3");
+});
+
+test("the usage text advertises the symbol table", () => {
+  assert.match(USAGE, /cuecraft inspect/);
+  assert.match(USAGE, /cuecraft snapshots/);
+  assert.match(USAGE, /symbol table beside the MP4/);
 });
