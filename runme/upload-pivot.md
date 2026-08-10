@@ -1,7 +1,7 @@
 # Attaching the semantic-exhibit showpiece to README.md
 
 **Pending.** `<!-- VIDEO: pivot -->` in README.md has no attachment yet, and the comment block under
-it says so. It is showpiece 7. Everything below is the one manual step that cannot be scripted;
+it says so. It is showpiece 8. Everything below is the one manual step that cannot be scripted;
 delete this file once the URL is in place.
 
 ## Why it is manual

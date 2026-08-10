@@ -1,7 +1,7 @@
 # Attaching the R-exhibit showpiece to README.md
 
 **Pending.** `<!-- VIDEO: revenue -->` in README.md has no attachment yet, and the comment block
-under it says so. It is showpiece 6. Everything below is the one manual step that cannot be
+under it says so. It is showpiece 7. Everything below is the one manual step that cannot be
 scripted; delete this file once the URL is in place.
 
 ## Why it is manual

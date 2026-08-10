@@ -87,10 +87,10 @@ opening a browser:
 
 ```bash
 gh api repos/henry-filgueiras/cuecraft/readme \
-  -H "Accept: application/vnd.github.html+json" | grep -c "<video"     # expect 3
+  -H "Accept: application/vnd.github.html+json" | grep -c "<video"     # expect 5
 
-grep -c "user-attachments" README.md                                   # expect 3
-grep -c "VIDEO:" README.md                                             # expect 3
+grep -c "user-attachments" README.md                                   # expect 5
+grep -c "VIDEO:" README.md                                             # expect 9
 npm run format:check                                                   # GitHub's editor does
                                                                        # not run Prettier
 git status --short                                                     # expect clean

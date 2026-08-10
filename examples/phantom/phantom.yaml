@@ -1,0 +1,249 @@
+# The deck that opens the argument.
+#
+#   cuecraft render examples/phantom/phantom.yaml -o out/phantom.mp4
+#
+# Six slides, and each one is a different body because each one is a different kind of thing to
+# say. Nothing here names a layout, a size, a position, a colour, a duration, a coordinate or a
+# frame, and there is no key in this format that could.
+#
+#   1  four short labels, parallel, no order worth showing        -> the field of terms
+#   2  a cast and an exchange between them                        -> the protocol
+#   3  a program that computes a film, and narration that stops it -> the temporal exhibit
+#   4  this same file, quoting the slide above                    -> the specimen
+#   5  a program that computes a drawing which names its own parts -> the addressed picture
+#   6  a title and nothing else                                   -> the statement
+#
+# ## The one slide this deck exists for
+#
+# Slide 3 hands a computation to R, and what comes back is not a chart. `ring.R` puts twenty-two
+# cars on a loop, runs them for two minutes, draws every frame, encodes an MP4 and names the four
+# states the run passes through. `play: ring` starts it; a sentence that names one of those states
+# stops it there; `replay:` runs an interval of it again, slower, and comes back to the frame it
+# was frozen on.
+#
+# There is no length in this file. No start, no end, no rate, no timecode and no frame number.
+# The film measured itself and named what it reaches, and cuecraft cut it at the states this deck
+# talks about — before a single frame of the presentation existed (decision:64, decision:65).
+#
+# ## The numbers
+#
+# Every quantity spoken below is measured off the recorded run by `model.R` and printed on stdout
+# during the render. None of them is typed into the film. Two of them — which car stopped first
+# and which stopped last — are deliberately *not* said out loud here: the picture on slide 5
+# writes them itself, from the data, so this file cannot go stale on them.
+#
+# Needs R and ffmpeg: `npm run bootstrap:r` checks for both.
+
+title: "The jam nobody caused"
+
+defaults:
+  pre_say: 700ms
+  post_say: 1200ms
+  subtitles: true
+
+slides:
+  # 1 — THE BELIEF. Four short parallel labels with no order worth showing, so the composition is
+  # a field of terms rather than a list. Each carries an identity because each is reached by one
+  # sentence; the last one is reached twice, which is the whole turn of the slide.
+  - slide:
+      title: "Every traffic jam has a cause"
+      bullets:
+        - id: crash
+          text: A crash
+        - id: works
+          text: Roadworks
+        - id: junction
+          text: A slip road
+        - id: braking
+          text: Somebody braking
+
+    say:
+      - "Everybody knows what causes a traffic jam."
+      - speech: "Something happened up ahead."
+        activates: crash
+      - speech: "A lane is closed."
+        activates: works
+      - speech: "Too many cars joining at once."
+        activates: junction
+      - speech: "Or somebody in front braked harder than they needed to."
+        activates: braking
+      - pause: 350ms
+      - "Every one of those is an event with a location. This is about the other kind."
+
+  # 2 — THE MECHANISM, as an exchange. Five drivers, and what passes between them is a reaction
+  # rather than a message — which is exactly what the protocol archetype draws: who responded to
+  # whom, in what order, and how long each response took to arrive.
+  #
+  # Four of the nine steps are silent. Those are the passage where the chain simply propagates
+  # and nothing needs saying; how long a silent step lasts is derived from its label and its
+  # place in the run (decision:35), and there is no key here that could set it.
+  - slide:
+      title: "What passes between two drivers"
+
+      protocol:
+        actors:
+          first: The car in front
+          second: The car behind it
+          third: The next one back
+          fourth: The one after that
+          fifth: The car at the back
+
+        steps:
+          - from: first
+            to: second
+            message: eases off, 4 km/h
+            say:
+              "The car in front comes off the accelerator. Four kilometres an hour, for no
+              reason worth having."
+
+          - from: second
+            to: third
+            message: brakes, 7 km/h
+            say:
+              "Half a second later the driver behind reacts. They cannot see why, so they take
+              off a little more, to be safe."
+
+          - from: third
+            to: fourth
+            message: brakes, 12 km/h
+
+          - from: fourth
+            to: fifth
+            message: brakes, 19 km/h
+            say:
+              "Four cars back, being safe has become a hard stop, and nobody in this chain did
+              anything wrong."
+
+          - from: fifth
+            to: first
+            message: and the road is a loop
+            say:
+              "On a road with an end, that dies out behind the last car. On a road without one,
+              the car at the back is in front of the car at the front."
+
+          - from: first
+            to: second
+            message: stops
+
+          - from: second
+            to: third
+            message: stops
+
+          - from: third
+            to: fourth
+            message: stops
+
+          - from: fourth
+            to: fifth
+            message: stops
+            say: "And now it is going round."
+
+  # 3 — THE FILM. Two keys, `run:` and `with:`, exactly as every other exhibit in this repository
+  # has — and this one moves, because the program declared a film rather than a picture.
+  #
+  # The three sentences at `stopped` are one rendezvous, not three: the film stops once, all of
+  # them are spoken over the held frame, and then it carries on from where it stopped. `replay:`
+  # in the middle of that shows the interval between two states the film named, slower, and
+  # returns the picture to the frame it was frozen on. Nothing in the timeline knows the word.
+  - slide:
+      title: "Twenty-two cars on a loop"
+      exhibit:
+        run: examples/phantom/ring.R
+        with:
+          model: examples/phantom/model.R
+
+    say:
+      - "This is a real experiment. Twenty-two cars on a two hundred and thirty metre ring, every
+        driver asked for thirty kilometres an hour, and nothing to get in the way."
+      - "While this video was compiling, R drove them for two minutes."
+      - play: ring
+      - speech: "Every car is doing thirty. Every gap is the same."
+        during: even
+      - speech:
+          "Hold it there. One gap has closed by fifteen centimetres, and nobody in that ring
+          could feel it."
+        during: closing
+      - speech:
+          "Twelve seconds later, a car is at a standstill, on an open road, with nothing in
+          front of it."
+        during: stopped
+      - speech: "Watch that again."
+        during: stopped
+      - replay: closing
+      - speech: "Now look at where the stop is. It started over on the far side."
+        during: wave
+      - speech:
+          "Every car in that queue is driving forwards. The queue is going backwards, at about
+          twelve kilometres an hour, and it will keep going for as long as anybody drives."
+        during: wave
+
+  # 4 — WHAT THE DECK SAID ABOUT THAT. The specimen quotes the slide above out of this same file,
+  # so a reader sees the entire source of what they just watched. Three marks, on the three words
+  # that do the work.
+  - slide:
+      title: "What this file says about that"
+      code:
+        file: examples/phantom/phantom.yaml
+        slide: "Twenty-two cars on a loop"
+        opens: "say:"
+        marks:
+          - id: start
+            line: "play: ring"
+          - id: hold
+            line: "Hold it there"
+          - id: again
+            line: "replay: closing"
+
+    say:
+      - speech: "One word starts the film."
+        activates: start
+      - speech: "A sentence that names a state the film reaches stops it there."
+        activates: hold
+      - speech: "And one word runs an interval of it again, between two states it named."
+        activates: again
+      - pause: 300ms
+      - "There is no length in that file. No start, no end, no rate, and no frame number."
+      - "How long it stayed frozen is how long those sentences took to say. Reword one and the
+        film holds for a different length of time."
+
+  # 5 — THE QUESTION THE FILM CANNOT ANSWER. An exhibit whose program returns an SVG, so the
+  # narration reaches the shape R drew rather than a rectangle laid over it.
+  #
+  # Three names, and each of them is reached by exactly one sentence. Which cars they turn out to
+  # be is written on the picture by the program, from the data — so nothing in this file can go
+  # stale when the model changes.
+  - slide:
+      title: "One disturbance, or several?"
+      exhibit:
+        run: examples/phantom/wave.R
+        with:
+          model: examples/phantom/model.R
+        shows: [first, behind, last]
+
+    say:
+      - "Several jams could form in different places and drift into line. So ask each of the
+        twenty-two cars when it first stopped."
+      - pause: 350ms
+      - speech: "One car stopped first."
+        activates: first
+      - speech: "Six tenths of a second later, the car immediately behind it."
+        activates: behind
+      - "Then the one behind that. Twenty-one times, and never once in the other direction."
+      - speech:
+          "Thirteen seconds in it reached the last car, which is the car directly in front
+          of the one that stopped first."
+        activates: last
+      - "One disturbance. Every driver on the road. In order."
+
+  # 6 — THE STATEMENT. A title and nothing else, because there is nothing left to show.
+  - slide:
+      title: "Nobody in that ring did anything wrong"
+
+    say:
+      - "There is no car to blame. The jam is a property of everybody reacting half a second late
+        on a road with enough cars on it."
+      - pause: 400ms
+      - "And none of that is the point of this video. The point is that nothing you just watched
+        was placed. Not the diagram, not the camera, not the moment the film stopped, and not how
+        long it stayed stopped."
+      - "Those were consequences of the sentences, and the sentences were measured."

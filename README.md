@@ -16,10 +16,76 @@ downstream is a consequence of that measurement.
 
 ## Showpieces
 
-Seven videos, in the order that makes the argument. Each was compiled from the YAML file linked
+Nine videos, in the order that makes the argument. Each was compiled from the YAML file linked
 beside it, by `cuecraft render`, with nothing hand-placed and nothing edited afterwards.
 
-### 1. What happens when you tap your card — a protocol, explained
+### 1. The jam nobody caused — evidence that moves, and narration that stops it
+
+<!-- VIDEO: phantom -->
+
+<!-- Not yet attached. See runme/upload-phantom.md — drop out/upload/phantom.mp4 on the blank line
+     above this comment using GitHub's web editor, then delete this comment. -->
+
+**Source: [`examples/phantom/`](examples/phantom/)** — one traffic model, two R programs that read
+it, and a 249-line deck, for 3:36 of video.
+
+Twenty-two cars on a 230-metre ring, every driver asked to hold thirty kilometres an hour.
+Sugiyama et al. ran this on a test track in 2008 and a car came to a complete stop on an empty
+road, with no crash, no junction and nobody having braked. Here it is again, simulated from the
+published parameters while the video was compiling — and the reason it is showpiece 1 is a fact
+about **time** that no still frame can hold: the cars go forwards and the jam goes backwards.
+
+Every other exhibit in this repository hands cuecraft a picture. This one hands it a **film**, and
+then the narration takes hold of it:
+
+```yaml
+- play: ring
+- speech:
+    "Hold it there. One gap has closed by fifteen centimetres, and nobody in that ring
+    could feel it."
+  during: closing
+- speech:
+    "Twelve seconds later, a car is at a standstill, on an open road, with nothing in
+    front of it."
+  during: stopped
+- speech: "Watch that again."
+  during: stopped
+- replay: closing
+```
+
+**There is no length in that file.** No start, no end, no rate, no timecode and no frame number,
+and there is no key in this format that could carry one. `ring.R` measured its own output and
+declared the four states the run passes through; a sentence naming one of them freezes the film
+there, for exactly as long as saying the sentence takes; `replay:` runs an interval back between
+two states the film named, slower, and returns the picture to the frame it was frozen on. Reword
+the sentence and the film holds for a different length of time
+([`decision:64`](archaeology/decisions/), [`decision:65`](archaeology/decisions/)).
+
+Which is the whole difference between this and a screen recording cut against a voiceover. Nobody
+lined anything up, and nobody would have to line it up again after changing a word.
+
+The rest of the deck is what cuecraft does with five other kinds of thing to say, in one film and
+with no cuts to arrange: a field of terms; a sequence diagram of the reaction passing backwards
+through five drivers, four of whose steps are silent and last as long as
+[`decision:35`](archaeology/decisions/) says they should; the deck **quoting its own source** for
+the slide you just watched; a chart R drew that names its own marks, so the narration reaches the
+shape rather than a rectangle laid over it ([`decision:59`](archaeology/decisions/)); and a closing
+statement.
+
+Nothing in `examples/phantom/` is fitted to make the film work. `model.R` refuses to run if the
+even ring is not an exact fixed point of the equations, `wave.R` refuses to draw if the cars did
+not stop in strict order one at a time, and every quantity spoken out loud — the fifteen
+centimetres, the twelve seconds, the twelve kilometres an hour — is measured off the recorded run
+and printed on stdout during the render.
+
+[`examples/kmeans/`](examples/kmeans/) is the same mechanism on a subject chosen to test it rather
+than to sell it: R animates Lloyd's algorithm over 206 points, the narration stops it on the pass
+where a centre crosses the sparse middle, and replays that pass slower. It is the artifact
+[`sprint:31`](archaeology/sprints/) built the machinery against.
+
+Needs R and ffmpeg: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
+
+### 2. What happens when you tap your card — a protocol, explained
 
 <!-- VIDEO: tap -->
 
@@ -80,7 +146,7 @@ handover drawn as a visible event rather than a name quietly changing
 ([`decision:38`](archaeology/decisions/)). `examples/tap.yaml`, where everybody is present
 throughout, is unchanged down to the pixel.
 
-### 2. Anatomy of an online order — three scales, one unbroken explanation
+### 3. Anatomy of an online order — three scales, one unbroken explanation
 
 <!-- VIDEO: order -->
 
@@ -114,7 +180,7 @@ currently is, not written anywhere.
 [`examples/order-flat.yaml`](examples/order-flat.yaml) says the same thing as three ordinary slides,
 in 137 lines. It exists so that the comparison can be made rather than asserted.
 
-### 3. SHA-256 — one round, then sixty-four of them
+### 4. SHA-256 — one round, then sixty-four of them
 
 <!-- VIDEO: sha256 -->
 
@@ -148,7 +214,7 @@ the arrangement comes from the count, the pace from the audio, and the camera fr
 Every formula on screen is verified against `node:crypto` by a test that reads the rotation amounts
 out of the deck's own TeX — so a film that misstated the algorithm would fail the suite.
 
-### 4. Observatory — a presentation that reads its own compiler
+### 5. Observatory — a presentation that reads its own compiler
 
 <!-- VIDEO: observatory -->
 
@@ -167,7 +233,7 @@ is the whole of the vocabulary — a kind, from a closed set of two. There is no
 expression, and no way for a presentation to read a derived value, which is what makes it
 impossible to write narration that changes the measurements it is describing.
 
-### 5. Cathedral v2 — a world you walk through, and go inside
+### 6. Cathedral v2 — a world you walk through, and go inside
 
 <!-- VIDEO: cathedral-v2 -->
 
@@ -188,7 +254,7 @@ narration talks about something else again, it closes.
 Nothing in the source asks for a zoom, a transition, a duration, or a camera move. The one thing
 the author says is that this concept has an inside.
 
-### 6. A chart nobody drew — a computation handed to R
+### 7. A chart nobody drew — a computation handed to R
 
 <!-- VIDEO: revenue -->
 
@@ -237,7 +303,7 @@ no duration ([`decision:57`](archaeology/decisions/),
 
 Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
 
-### 7. Evidence, addressed — a table R computed, and a chart that names its own bars
+### 8. Evidence, addressed — a table R computed, and a chart that names its own bars
 
 <!-- VIDEO: pivot -->
 
@@ -290,7 +356,7 @@ one: the deck names a row, and the exhibit owns whatever satisfying that costs
 
 Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit).
 
-### 8. Self-demo — the practical core
+### 9. Self-demo — the practical core
 
 <!-- VIDEO: cuecraft-self-demo -->
 

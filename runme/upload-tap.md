@@ -1,9 +1,8 @@
 # Attaching the card-tap showpiece to README.md
 
 **Pending.** `<!-- VIDEO: tap -->` in README.md has no attachment yet, and the comment block under
-it says so. It is showpiece 1 — the first thing a visitor sees — so until this is done the README
-opens with a blank. Everything below is the one manual step that cannot be scripted; delete this
-file once the URL is in place.
+it says so. It is showpiece 2. Everything below is the one manual step that cannot be scripted;
+delete this file once the URL is in place.
 
 ## Why it is manual
 

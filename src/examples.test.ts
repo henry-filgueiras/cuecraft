@@ -573,3 +573,106 @@ test("no artifact is committed beside the pivot deck either", () => {
     "transactions.csv",
   ]);
 });
+
+/* --------------------------------------------------- examples/phantom/ */
+
+/**
+ * Whether the showpiece deck's spoken claims are true of the model it ships beside.
+ *
+ * This one is checked for a reason the others are not: it is the first film a stranger watches,
+ * and the sentences in it quote a *simulation* rather than a file. `examples/sha256/` can be
+ * wrong about mathematics; this deck can be wrong about a run that no longer happens the way it
+ * did when the words were written. Nudging a parameter in `model.R` by a hair would leave a film
+ * that renders beautifully and narrates a jam that arrives at a different time — which is the
+ * failure decision:18 refuses for quoted source, applied to arithmetic that cannot be quoted.
+ *
+ * The R is not executed here; `npm run check` must pass on a machine with no R at all. What is
+ * checked is everything about the deck that can be checked without it: that the states the
+ * narration names are the states the program declares, that the picture's names and the slide's
+ * `shows:` agree, and that nothing generated has been committed beside them.
+ */
+
+const PHANTOM_DIR = join(repositoryRoot(), "examples", "phantom");
+
+function phantomSource(file: string): string {
+  return readFileSync(join(PHANTOM_DIR, file), "utf8");
+}
+
+test("the deck only stops the film at states the program declares", () => {
+  const deck = phantomSource("phantom.yaml");
+  const program = phantomSource("ring.R");
+
+  // What the film will name, read out of the program rather than listed here: `states_of()`
+  // returns a vector whose names become `#cuecraft moment` lines, one per state.
+  const declared = new Set(
+    [...program.matchAll(/^\s{2}c\((.*)\)$/gm)]
+      .flatMap((match) => (match[1] ?? "").split(","))
+      .map((pair) => pair.trim().split("=")[0]?.trim() ?? "")
+      .filter((name) => name.length > 0),
+  );
+  const model = phantomSource("model.R");
+  for (const name of [...model.matchAll(/^\s+c\((\w+ = .*)\)$/gm)]
+    .flatMap((match) => (match[1] ?? "").split(","))
+    .map((pair) => pair.trim().split("=")[0]?.trim() ?? "")) {
+    if (name.length > 0) declared.add(name);
+  }
+
+  const named = [...deck.matchAll(/^\s+(?:during|replay): (\S+)$/gm)].map(
+    (match) => match[1] ?? "",
+  );
+  assert.ok(named.length > 0, "the deck no longer stops the film at all");
+  for (const state of named) {
+    assert.ok(
+      declared.has(state),
+      `the deck names ${state}, which model.R does not reach`,
+    );
+  }
+});
+
+test("the deck reaches every element the drawing names, and no others", () => {
+  const path = join(PHANTOM_DIR, "phantom.yaml");
+  const deck = parsePresentation(readFileSync(path, "utf8"), path);
+
+  // Non-empty rather than merely present: the film's slide is an exhibit too, and it shows
+  // nothing, so `shows !== undefined` finds the wrong slide and passes an empty comparison.
+  const slide = deck.slides.find(
+    (candidate) =>
+      candidate.body.kind === "exhibit" && (candidate.body.shows?.length ?? 0) > 0,
+  );
+  assert.ok(slide !== undefined, "no slide in the phantom deck shows anything");
+  const body = slide.body;
+  assert.ok(body.kind === "exhibit");
+
+  // What the program writes onto the shapes it draws, read out of the program.
+  const drawing = phantomSource("wave.R");
+  const roles = (drawing.match(/names\(named\) <- c\((.*)\)/)?.[1] ?? "")
+    .split(",")
+    .map((quoted) => quoted.trim().replace(/^"|"$/g, ""));
+
+  assert.deepEqual(
+    [...(body.shows ?? [])].sort(),
+    [...roles].sort(),
+    "wave.R and the slide disagree about what the picture shows",
+  );
+
+  const spoken = readFileSync(path, "utf8");
+  for (const role of roles) {
+    assert.ok(
+      spoken.includes(`activates: ${role}`),
+      `${role} is drawn and shown, and nothing says it`,
+    );
+  }
+});
+
+test("no artifact is committed beside the phantom deck", () => {
+  const entries = readdirSync(PHANTOM_DIR);
+  const artifacts = entries.filter((entry) =>
+    /\.(png|jpe?g|gif|webp|svg|pdf|mp4|mov|webm)$/i.test(entry),
+  );
+  assert.deepEqual(
+    artifacts,
+    [],
+    "a committed artifact in examples/phantom/ makes the deck's central claim false",
+  );
+  assert.deepEqual(entries.sort(), ["model.R", "phantom.yaml", "ring.R", "wave.R"]);
+});
