@@ -183,7 +183,13 @@ export async function renderPresentationFile(
   // frozen timeline (decision:66). Nothing here can reach back into anything above.
   events.onStage?.("publish");
   const symbolsPath = symbolsPathFor(outputPath);
-  const symbols = symbolTable(compiled, timeline, { file: basename(outputPath) });
+  const symbols = symbolTable(compiled, timeline, {
+    file: basename(outputPath),
+    // The film's own stamp, not a second derivation of it. `renderPresentation` computed this to
+    // write into the container, and passing that exact value through is what makes "these two
+    // artifacts agree" a fact about one number rather than a hope about two (decision:67).
+    renderId: report.renderId,
+  });
   try {
     await writeFile(symbolsPath, `${JSON.stringify(symbols, null, 2)}\n`, "utf8");
   } catch (error) {

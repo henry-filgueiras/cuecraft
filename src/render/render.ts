@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { renderIdFor, stampFor, STAMP_TAG } from "../compile/provenance.ts";
 import type { Timeline } from "../compile/timeline.ts";
 import { repositoryRoot } from "../tts/model.ts";
 import { describeMissingFaces } from "./faces.ts";
@@ -55,6 +56,8 @@ export interface RenderReport {
   readonly height: number;
   readonly fps: number;
   readonly totalFrames: number;
+  /** Stamped into the film's own metadata, and into the symbol table beside it (decision:67). */
+  readonly renderId: string;
 }
 
 /**
@@ -116,6 +119,16 @@ export async function renderPresentation(options: RenderOptions): Promise<Render
 
   options.onStage?.("render");
   await mkdir(dirname(options.output), { recursive: true });
+
+  // The film's half of the birth certificate (decision:67). Computed from the same timeline the
+  // symbol table is computed from, a few lines from now, so the two cannot disagree about which
+  // render they came from — there is one function and one input.
+  //
+  // Remotion prepends its own comment to whatever it is given, so what lands in the container is
+  // `Made with Remotion 4.0.506; cuecraft renderId=sha256:…`. That is why `renderIdIn` searches the
+  // tag rather than matching it whole.
+  const renderId = renderIdFor(timeline);
+
   await renderMedia({
     composition,
     serveUrl,
@@ -124,6 +137,7 @@ export async function renderPresentation(options: RenderOptions): Promise<Render
     outputLocation: options.output,
     inputProps,
     logLevel: "error",
+    metadata: { [STAMP_TAG]: stampFor(renderId) },
     ...(options.onProgress === undefined
       ? {}
       : {
@@ -141,5 +155,6 @@ export async function renderPresentation(options: RenderOptions): Promise<Render
     height: composition.height,
     fps: composition.fps,
     totalFrames: composition.durationInFrames,
+    renderId,
   };
 }

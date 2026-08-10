@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
+import { renderIdFor, renderIdIn, STAMP_TAG } from "../compile/provenance.ts";
 import { parseSymbolTable } from "../compile/symbols.ts";
 import { narrativeStack, stackProblem } from "../compile/timeline.ts";
 import { extractFrame } from "../compute/frame.ts";
@@ -714,6 +715,170 @@ test(
     await rm(summary.workspace, { recursive: true, force: true });
   },
 );
+
+/**
+ * A second deck, deliberately unlike `SYMBOLS_FIXTURE` in every timing.
+ *
+ * Rendered over the *same output path* to stage the failure dragon:40 describes: a sidecar left
+ * behind by an earlier render, still valid JSON, still resolving every key to a number, and
+ * describing a film that no longer exists.
+ */
+const REPLACEMENT_FIXTURE = `
+title: "Replacement"
+
+defaults:
+  pre_say: 900ms
+  post_say: 300ms
+
+slides:
+  - slide:
+      title: "Only one slide here"
+    say: "Nothing about this deck resembles the one it is replacing."
+`;
+
+test(
+  "a film and its symbols carry the same render identity",
+  { timeout: 900_000 },
+  async () => {
+    const input = join(workspace, "stamped.yaml");
+    const output = join(workspace, "stamped.mp4");
+    await writeFile(input, SYMBOLS_FIXTURE, "utf8");
+
+    const summary = await renderPresentationFile(input, output);
+    const table = parseSymbolTable(
+      await readFile(summary.symbolsPath, "utf8"),
+      summary.symbolsPath,
+    );
+
+    // Derived from the timeline rather than read back off either artifact, so this is a claim about
+    // all three agreeing rather than about two of them being copied from each other.
+    const expected = renderIdFor(summary.timeline);
+    assert.equal(summary.report.renderId, expected);
+    assert.equal(table.media.renderId, expected);
+
+    // The half that cannot be asserted against a mock: that Remotion's encoder actually writes the
+    // tag into the container. It rides in `comment` because ffmpeg's mov muxer drops unrecognised
+    // keys without `-movflags use_metadata_tags`, and Remotion spends its one `-movflags` on
+    // faststart — so a bespoke key would be accepted by the API and silently lost.
+    const { stdout } = await run("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      `format_tags=${STAMP_TAG}`,
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      output,
+    ]);
+    assert.match(stdout, /Made with Remotion/, "Remotion prepends its own comment");
+    assert.equal(
+      renderIdIn(stdout),
+      expected,
+      "the stamp must be findable inside a value it does not own the start of",
+    );
+
+    await rm(summary.workspace, { recursive: true, force: true });
+  },
+);
+
+/**
+ * The regression, staged exactly as it happens.
+ *
+ * Not a doctored sidecar: a real render, then a real re-render of different content over the same
+ * path. Before decision:67 the extraction below succeeded, wrote a PNG, printed a semantic key
+ * beside a timecode, and exited zero — which is a more convincing way to be wrong than sampling.
+ */
+test(
+  "extracting with a sidecar from an earlier render is refused",
+  { timeout: 900_000 },
+  async () => {
+    const output = join(workspace, "replaced.mp4");
+    const first = join(workspace, "first.yaml");
+    await writeFile(first, SYMBOLS_FIXTURE, "utf8");
+    const before = await renderPresentationFile(first, output);
+
+    // Keep the sidecar the first render wrote; the second render will overwrite it in place.
+    const stale = join(workspace, "stale.symbols.json");
+    await writeFile(stale, await readFile(before.symbolsPath, "utf8"), "utf8");
+
+    const second = join(workspace, "second.yaml");
+    await writeFile(second, REPLACEMENT_FIXTURE, "utf8");
+    const after = await renderPresentationFile(second, output);
+    assert.notEqual(
+      after.report.renderId,
+      before.report.renderId,
+      "the film really changed",
+    );
+
+    const frames = join(workspace, "refused");
+    const refused = await cli(["snapshots", output, "--symbols", stale, "-d", frames]);
+    assert.equal(refused.code, 1, "a stale sidecar must not extract");
+    assert.match(refused.stderr, /describes a different render/);
+    assert.match(refused.stderr, /no frame was extracted/);
+    assert.match(refused.stderr, /re-rendered since/);
+    await assert.rejects(() => readdir(frames), "nothing should have been written");
+
+    // The sidecar the second render wrote describes the film that is there, and still works.
+    const fresh = await cli(["snapshots", output, "-d", join(workspace, "fresh")]);
+    assert.equal(fresh.code, 0, fresh.stderr);
+    assert.equal(fresh.stderr, "", "a matched pair says nothing");
+    assert.ok((await readdir(join(workspace, "fresh"))).length > 0);
+
+    // And a film with no stamp — every artifact rendered before this existed — still extracts,
+    // with a note rather than a refusal.
+    const untagged = join(workspace, "untagged.mp4");
+    await run("ffmpeg", [
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      output,
+      "-c",
+      "copy",
+      "-map_metadata",
+      "-1",
+      untagged,
+    ]);
+    const unknown = await cli([
+      "snapshots",
+      untagged,
+      "--symbols",
+      after.symbolsPath,
+      "-d",
+      join(workspace, "unknown"),
+    ]);
+    assert.equal(unknown.code, 0, unknown.stderr);
+    assert.match(unknown.stderr, /carries no render stamp/);
+    assert.match(unknown.stderr, /Proceeding/);
+    assert.ok((await readdir(join(workspace, "unknown"))).length > 0);
+
+    await rm(after.workspace, { recursive: true, force: true });
+  },
+);
+
+/**
+ * The CLI as a process, because the verdicts are exit codes and stderr rather than return values.
+ *
+ * Run against the TypeScript source directly, which is how every other entry point in this
+ * repository is run (`node src/cli.ts …`), so no build step stands between the test and the code.
+ */
+async function cli(
+  args: readonly string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await run("node", [
+      join(repositoryRoot(), "src", "cli.ts"),
+      ...args,
+    ]);
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const failure = error as { code?: number; stdout?: string; stderr?: string };
+    return {
+      code: failure.code ?? 1,
+      stdout: failure.stdout ?? "",
+      stderr: failure.stderr ?? "",
+    };
+  }
+}
 
 /** One pixel of a rendered still, as RGB. Decoded with ffmpeg, which is already a dependency. */
 async function pixel(

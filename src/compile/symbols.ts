@@ -125,6 +125,15 @@ export interface SymbolTable {
   readonly media: {
     /** A basename, not a path: the sidecar sits beside the film and both should stay movable. */
     readonly file: string;
+    /**
+     * Which render these coordinates describe (decision:67, `./provenance.ts`).
+     *
+     * The same digest is stamped into the film's own metadata, so a consumer holding both can tell
+     * whether this table describes the film in front of it or an earlier render of it. Optional
+     * because a table written before this existed does not have one, and the absence is a normal
+     * answer — `matchRender` reads it as *unknown* rather than as a failure.
+     */
+    readonly renderId?: string | undefined;
     readonly fps: number;
     readonly width: number;
     readonly height: number;
@@ -152,10 +161,14 @@ export function symbolsPathFor(output: string): string {
  * Read a symbol table back, and refuse anything that is not one.
  *
  * This module owns the format in both directions, which is the point: a consumer that hand-rolled
- * its own reader would be a second, drifting description of the document. It is also the only place
- * that has to know a symbol table might be *stale* — a sidecar beside a film that has since been
- * re-rendered is still valid JSON, and nothing here can tell. What it can do is refuse a document
- * that was never a symbol table, by name, rather than failing later on a missing field.
+ * its own reader would be a second, drifting description of the document. What it does is refuse a
+ * document that was never a symbol table, by name, rather than failing later on a missing field.
+ *
+ * It deliberately says nothing about whether the table is *stale*. A sidecar beside a film that has
+ * since been re-rendered is still valid JSON and still parses, and answering that needs the film —
+ * which this must not touch, because `cuecraft inspect` reads a sidecar with no video anywhere and
+ * has to keep working on a machine with no ffmpeg. `media.renderId` and `./provenance.ts` carry the
+ * answer, and the CLI asks it at the two commands that hold both artifacts (decision:67).
  *
  * Deliberately tolerant of unknown fields. Adding a kind or a field is free (decision:66), so a
  * newer cuecraft's output must remain readable by an older reader as long as the version matches.
@@ -212,6 +225,7 @@ const SYMBOL_TABLE = z.looseObject({
   presentation: z.looseObject({ title: z.string() }),
   media: z.looseObject({
     file: z.string(),
+    renderId: z.string().optional(),
     fps: z.number().int().positive(),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
@@ -269,7 +283,7 @@ function seconds(frame: number, fps: number): number {
 export function symbolTable(
   compiled: CompiledPresentation,
   timeline: Timeline,
-  media: { readonly file: string },
+  media: { readonly file: string; readonly renderId?: string | undefined },
 ): SymbolTable {
   const fps = timeline.fps;
   const claimed = new Set<string>();
@@ -457,6 +471,10 @@ export function symbolTable(
     presentation: { title: timeline.title },
     media: {
       file: media.file,
+      // Taken from the caller rather than computed here, because the film's copy has to be the same
+      // value and the caller is what holds both. Optional so the projection stays usable without a
+      // render — `explain` and the tests build tables for timelines that were never encoded.
+      ...(media.renderId === undefined ? {} : { renderId: media.renderId }),
       fps,
       width: timeline.width,
       height: timeline.height,

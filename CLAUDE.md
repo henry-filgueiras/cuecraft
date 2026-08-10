@@ -98,6 +98,11 @@ cuecraft snapshots out/deck.mp4 --kind slide -d out/frames   # one PNG per slide
 cuecraft snapshot out/deck.mp4 --symbol anchor:architecture/database -o db.png
 ```
 
+The sidecar and the film share a `renderId` — a digest of the compiled timeline, stamped into the
+MP4's metadata — so `snapshot` and `snapshots` refuse to extract from a film the symbols do not
+describe. A stale sidecar is a refusal with a sentence, not a confidently wrong frame. Artifacts
+predating the stamp report "cannot tell" and still work.
+
 Frames are the coordinate and seconds are derived; intervals are half-open `[fromFrame, toFrame)`.
 The table is a deliberate projection, narrower than `Timeline` — adding a kind or a field is free,
 changing what an existing field means costs a version bump. Frame extraction needs `ffmpeg` on the

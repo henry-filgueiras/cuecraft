@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { compilePresentation } from "./compile/compile.ts";
@@ -11,6 +11,13 @@ import {
   MaterializeError,
   type MaterializedExhibit,
 } from "./compile/materialize.ts";
+import {
+  matchRender,
+  renderIdIn,
+  shortRenderId,
+  STAMP_TAG,
+  type RenderMatch,
+} from "./compile/provenance.ts";
 import {
   parseSymbolTable,
   SYMBOL_KINDS,
@@ -26,6 +33,7 @@ import {
   type Timeline,
 } from "./compile/timeline.ts";
 import { extractFrame, FrameError } from "./compute/frame.ts";
+import { readTag } from "./compute/tags.ts";
 import { formatTimecode } from "./presentation/duration.ts";
 import type { ExhibitResource } from "./presentation/exhibit.ts";
 import { parsePresentation, PresentationError } from "./presentation/parse.ts";
@@ -518,6 +526,24 @@ async function runSnapshot(
     return 1;
   }
 
+  // Before resolving anything, and once per invocation rather than once per frame: do these
+  // coordinates describe this film? (decision:67, dragon:40)
+  const provenance = matchRender(
+    table.media.renderId,
+    renderIdIn(await readTag(invocation.video, STAMP_TAG)),
+  );
+  if (provenance.verdict === "mismatched") {
+    process.stderr.write(
+      `cuecraft: ${describeMismatch(invocation.video, path, table, provenance)}`,
+    );
+    return 1;
+  }
+  if (provenance.verdict === "unknown") {
+    process.stderr.write(
+      `cuecraft: ${describeUnverified(invocation.video, path, table, provenance)}`,
+    );
+  }
+
   const wanted =
     invocation.kind === "snapshot"
       ? table.symbols.filter((symbol) => symbol.key === invocation.symbol)
@@ -559,6 +585,63 @@ async function runSnapshot(
     return 1;
   }
   return 0;
+}
+
+/**
+ * A refusal, and which kind of wrong it is.
+ *
+ * The basename comparison survives from before this check existed, and its job changed rather than
+ * ended: it is no longer a gate — the digest settles whether the pair agrees — but it is the only
+ * thing that can tell the two ways of being wrong apart. *You pointed this at the wrong file* and
+ * *this film has been re-rendered since* both produce the same mismatched digest, and they have
+ * completely different fixes. Getting told the wrong one costs somebody a re-render they did not
+ * need, or a hunt for a file that was never misplaced.
+ */
+export function describeMismatch(
+  video: string,
+  path: string,
+  table: SymbolTable,
+  provenance: Extract<RenderMatch, { verdict: "mismatched" }>,
+): string {
+  const named = basename(video) === table.media.file;
+  return (
+    `${path} describes a different render than ${video} ` +
+    `(symbols ${shortRenderId(provenance.symbols)}, film ${shortRenderId(provenance.film)}); ` +
+    `no frame was extracted.\n` +
+    (named
+      ? `  The film has been re-rendered since these symbols were written. ` +
+        `Render again to refresh both, or use the symbols beside the film you meant.\n`
+      : `  These symbols were written beside ${table.media.file}, and you pointed them at ` +
+        `${basename(video)}.\n`)
+  );
+}
+
+/**
+ * Proceeding without evidence, and saying so once.
+ *
+ * On stderr rather than stdout, so a script reading the extracted paths is unaffected. Not fatal,
+ * because every film and sidecar written before decision:67 lands here, and refusing them would
+ * break working artifacts to guard against a case there is no evidence for.
+ */
+export function describeUnverified(
+  video: string,
+  path: string,
+  table: SymbolTable,
+  provenance: Extract<RenderMatch, { verdict: "unknown" }>,
+): string {
+  const where =
+    provenance.because === "film"
+      ? `${video} carries no render stamp`
+      : provenance.because === "symbols"
+        ? `${path} carries no render id`
+        : `neither ${path} nor ${video} carries a render stamp`;
+  return (
+    `${where}, so it cannot be confirmed that these symbols describe this film` +
+    (basename(video) === table.media.file
+      ? ""
+      : `, and they name ${table.media.file} rather than ${basename(video)}`) +
+    `. Proceeding.\n`
+  );
 }
 
 /**

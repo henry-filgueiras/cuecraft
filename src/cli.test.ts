@@ -7,8 +7,11 @@ import { test } from "node:test";
 import { compilePresentation } from "./compile/compile.ts";
 import { buildTimeline } from "./compile/timeline.ts";
 import { parsePresentation } from "./presentation/parse.ts";
+import { SYMBOLS_FORMAT, SYMBOLS_VERSION, type SymbolTable } from "./compile/symbols.ts";
 import {
+  describeMismatch,
   describeRecalls,
+  describeUnverified,
   fileNameFor,
   parseInvocation,
   readVersion,
@@ -252,4 +255,93 @@ test("the usage text advertises the symbol table", () => {
   assert.match(USAGE, /cuecraft inspect/);
   assert.match(USAGE, /cuecraft snapshots/);
   assert.match(USAGE, /symbol table beside the MP4/);
+});
+
+/** A symbol table with only the fields the provenance messages read. */
+function tableNamed(file: string, renderId?: string): SymbolTable {
+  return {
+    format: SYMBOLS_FORMAT,
+    version: SYMBOLS_VERSION,
+    coordinates: { unit: "frame", interval: "[fromFrame, toFrame)", seconds: "derived" },
+    presentation: { title: "A deck" },
+    media: {
+      file,
+      ...(renderId === undefined ? {} : { renderId }),
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      durationFrames: 100,
+      durationSeconds: 3.333333,
+    },
+    symbols: [],
+  };
+}
+
+const A = "a".repeat(64);
+const B = "b".repeat(64);
+
+/**
+ * The basename check survives as the diagnostic, not the gate.
+ *
+ * "You pointed this at the wrong file" and "this film has been re-rendered since" produce the same
+ * mismatched digest and have completely different fixes, and the only thing that can tell them
+ * apart is whether the name the sidecar carries is the name of the film it was handed.
+ */
+test("a mismatch says which kind of wrong it is", () => {
+  const rerendered = describeMismatch(
+    "out/deck.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4", A),
+    { verdict: "mismatched", symbols: A, film: B },
+  );
+  assert.match(rerendered, /describes a different render/);
+  assert.match(rerendered, /no frame was extracted/);
+  assert.match(rerendered, /re-rendered since/);
+  assert.match(rerendered, /aaaaaaaaaaaa.*bbbbbbbbbbbb/, "both identities, shortened");
+  assert.doesNotMatch(rerendered, new RegExp(A), "not the full sixty-four characters");
+
+  const misaimed = describeMismatch(
+    "out/other.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4", A),
+    { verdict: "mismatched", symbols: A, film: B },
+  );
+  assert.match(misaimed, /written beside deck\.mp4.*pointed them at other\.mp4/s);
+  assert.doesNotMatch(misaimed, /re-rendered since/);
+});
+
+test("an unverifiable pair names which artifact predates the check, and proceeds", () => {
+  const noStamp = describeUnverified(
+    "out/deck.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4", A),
+    { verdict: "unknown", because: "film" },
+  );
+  assert.match(noStamp, /out\/deck\.mp4 carries no render stamp/);
+  assert.match(noStamp, /Proceeding/);
+
+  const noId = describeUnverified(
+    "out/deck.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4"),
+    { verdict: "unknown", because: "symbols" },
+  );
+  assert.match(noId, /carries no render id/);
+
+  const neither = describeUnverified(
+    "out/deck.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4"),
+    { verdict: "unknown", because: "both" },
+  );
+  assert.match(neither, /neither .* nor .* carries a render stamp/);
+
+  // The name disagreement is still worth saying when the digests cannot settle it.
+  const misaimed = describeUnverified(
+    "out/other.mp4",
+    "out/deck.symbols.json",
+    tableNamed("deck.mp4"),
+    { verdict: "unknown", because: "both" },
+  );
+  assert.match(misaimed, /name deck\.mp4 rather than other\.mp4/);
 });

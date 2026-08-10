@@ -533,6 +533,21 @@ it:
   frame.
 - **`snapshotFrame` is the last frame of the slide's last sentence** — arrived, everything
   established, not yet leaving. Every slide has one, so a short final slide cannot be missed.
+- **`renderId` says which render these coordinates describe.** The same digest is stamped into the
+  MP4's own metadata, so `snapshot` and `snapshots` refuse to extract from a film the symbols do not
+  describe rather than returning a confident wrong frame ([`decision:67`](archaeology/decisions/)).
+
+```
+$ cuecraft snapshots out/deck.mp4 --symbols old.symbols.json --kind slide -d frames
+cuecraft: old.symbols.json describes a different render than out/deck.mp4
+  (symbols 6b74ded867ad, film 3a6437999b34); no frame was extracted.
+  The film has been re-rendered since these symbols were written. Render again to
+  refresh both, or use the symbols beside the film you meant.
+```
+
+A pair that agrees extracts silently. A pair where either side predates the stamp — anything
+rendered before this existed — says so on stderr once and proceeds, because "cannot tell" is not
+evidence of a mismatch.
 
 Symbols are also the fastest way to _look_ at a render. Extraction is a lookup and one `ffmpeg`
 call, so it needs ffmpeg on the `PATH`; rendering does not.
