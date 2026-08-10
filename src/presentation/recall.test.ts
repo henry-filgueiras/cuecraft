@@ -120,7 +120,9 @@ test("a recall must name an identity", () => {
 });
 
 test("an unknown cue is told that recall exists", () => {
-  assert.match(problems(pair(`      - replay: settlement`)).join("\n"), /recall: <id>/);
+  // `replay:` was the placeholder here until sprint:31 made it a real verb, which is a small
+  // lesson about fixtures that lean on a word being meaningless.
+  assert.match(problems(pair(`      - rewind: settlement`)).join("\n"), /recall: <id>/);
 });
 
 /* ------------------------------------------------------------- the refusals */

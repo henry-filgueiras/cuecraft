@@ -228,10 +228,27 @@ export function held(
   };
 
   let at = sceneFrom;
+  let previous: Playback | undefined;
   for (const slice of slices) {
-    hold(at, slice.from, slice.sourceFrom);
+    // **The frame after whatever was last on screen**, rather than the frame the next slice starts
+    // from. Those are the same number for an ordinary rendezvous — a slice ending at media frame
+    // 121 is followed by one starting at 122 — and they are not the same number once a slice
+    // reaches *backwards*. A replay ends at the frame the primary film stopped on, so continuing
+    // from where the picture actually got to returns the viewer to the frozen state, while
+    // borrowing the next slice's origin would jump them back to the start of the replay.
+    hold(
+      at,
+      slice.from,
+      previous === undefined
+        ? slice.sourceFrom
+        : Math.min(
+            slice.sourceLast,
+            mediaFrameAt(previous, previous.from + previous.durationInFrames - 1) + 1,
+          ),
+    );
     out.push(slice);
     at = slice.from + slice.durationInFrames;
+    previous = slice;
   }
   const last = slices.at(-1);
   if (last !== undefined) {

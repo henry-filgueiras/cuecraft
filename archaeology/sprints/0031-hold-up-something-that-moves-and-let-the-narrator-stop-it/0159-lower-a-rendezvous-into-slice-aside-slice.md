@@ -2,9 +2,10 @@
 id: tsk_01KZMFGXPZXMB42RZ2W9DGVJ8Y
 sequence: 159
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Lower a rendezvous into slice, aside, slice

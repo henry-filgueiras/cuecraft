@@ -171,6 +171,22 @@ export function bindNarration(
       return;
     }
 
+    // A replay belongs to the aside it sits in and nowhere else. It says "that happened quickly,
+    // watch it again", and there is nothing to watch again unless a film is currently being held.
+    if (cue.kind === "replay") {
+      if (region !== "holding") {
+        issues.push({
+          path: [index],
+          message:
+            `replays ${JSON.stringify(cue.target)}, and nothing is being held here; a replay ` +
+            "belongs inside an aside, after a `during:` cue has stopped a film",
+        });
+        return;
+      }
+      bound.push(cue);
+      return;
+    }
+
     if (cue.kind !== "speech") {
       region = "closed";
       bound.push(cue);

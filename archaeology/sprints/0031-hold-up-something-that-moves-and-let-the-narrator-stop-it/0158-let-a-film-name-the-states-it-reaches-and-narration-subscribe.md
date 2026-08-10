@@ -2,9 +2,10 @@
 id: tsk_01KZMFGXPHSRFD29N2WMH41X8M
 sequence: 158
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Let a film name the states it reaches, and narration subscribe

@@ -24,6 +24,13 @@ the room the band took (`bodyBox(title, type, band)`). `Math.max(CODE.minSize, .
 that answer away when it comes out below 26 — and nothing afterwards notices that the block no
 longer fits. The floor is right; what is missing is what happens **when the floor is not enough**.
 
+**It is both axes, and the same line does both.** A later cut of the same deck overflowed
+*sideways* instead: a 152-character quoted line was drawn straight off the right edge of the frame,
+mid-word, because `byWidth` came out below 26 and was clamped up in exactly the same expression.
+The projection search (`../render/projection.ts`) declines to wrap when wrapping would make a
+height-bound block worse, which is right, and leaves the line overflowing, which is not. So this is
+one clamp with two symptoms, and neither of them is visible to anything that checks the size.
+
 Measured on the deck that found it, at `CODE.minSize = 26` and `CODE.lineHeight = 1.52`:
 
 | band | body box height | lines that fit | lines asked for |

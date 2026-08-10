@@ -406,3 +406,89 @@ test("a sentence between the film and its aside closes the region", () => {
       /no film is running here/.test(error.report()),
   );
 });
+
+/* --------------------------------------------------------------- replay */
+
+test("a replay is an ordinary slice reaching backwards at a slower rate", async () => {
+  const { presentation } = await annotated([
+    "- play: run",
+    '- speech: "Watch that again."',
+    "  during: pass-2",
+    "- replay: pass-1",
+    '- speech: "There."',
+    "  during: pass-2",
+  ]);
+
+  assert.deepEqual(
+    (presentation.slides[1]?.say ?? []).map((cue) =>
+      cue.kind === "play"
+        ? `slice ${cue.fromSeconds}-${cue.toSeconds}@${cue.rate}`
+        : cue.kind,
+    ),
+    ["slice 0-3@1", "speech", "slice 2-3@0.4", "speech", "slice 3-8@1"],
+    "no replay survives the lowering; the timeline never sees one",
+  );
+});
+
+test("a replay does not move the primary cursor", async () => {
+  const { presentation } = await annotated([
+    "- play: run",
+    '- speech: "Again."',
+    "  during: pass-2",
+    "- replay: initialised",
+  ]);
+
+  const primary = slices(presentation).filter((cue) => cue.rate === 1);
+  assert.deepEqual(
+    primary.map((cue) => [cue.fromSeconds, cue.toSeconds]),
+    [
+      [0, 3],
+      [3, 8],
+    ],
+    "the film is still cut once, and still consumes all of itself",
+  );
+});
+
+test("a replay of a state the film has not reached yet is refused", async () => {
+  await assert.rejects(
+    annotated([
+      "- play: run",
+      '- speech: "Look."',
+      "  during: pass-1",
+      "- replay: converged",
+    ]),
+    (error: unknown) =>
+      error instanceof MaterializeError && /already watched/.test(error.message),
+  );
+});
+
+test("a replay of a state the film never names is refused", async () => {
+  await assert.rejects(
+    annotated([
+      "- play: run",
+      '- speech: "Look."',
+      "  during: pass-2",
+      "- replay: pass-9",
+    ]),
+    (error: unknown) =>
+      error instanceof MaterializeError && /replays "pass-9"/.test(error.message),
+  );
+});
+
+test("a replay outside an aside is refused at parse", () => {
+  assert.throws(
+    () => deck(["- play: run", "- replay: pass-1"]),
+    (error: unknown) =>
+      error instanceof PresentationError &&
+      /nothing is being held here/.test(error.report()),
+  );
+});
+
+test("a replay cue takes no other key, and there is no rate to write", () => {
+  assert.throws(
+    () => deck(["- play: run", "- replay: pass-1", "  rate: 0.2"]),
+    (error: unknown) =>
+      error instanceof PresentationError &&
+      /would be setting a projection/.test(error.report()),
+  );
+});

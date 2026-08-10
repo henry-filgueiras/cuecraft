@@ -1145,3 +1145,76 @@ test("everything downstream of the split is an ordinary absolute frame", () => {
   );
   assert.equal(timeline.totalFrames, scene.durationInFrames);
 });
+
+/** One slide: 2s of speech, 4s of film, an aside, a replay of [2s..4s], another aside, 4s of film. */
+function replaying(): CompiledPresentation {
+  return presentation([
+    slide({
+      ordinal: 1,
+      speech: [2, 3, 3],
+      offsets: [0, 6, 14],
+      playbacks: [
+        playback({ at: 2, from: 0, to: 4, mediaSeconds: 8 }),
+        playback({ at: 9, from: 2, to: 4, rate: 0.4, mediaSeconds: 8 }),
+        playback({ at: 17, from: 4, to: 8, mediaSeconds: 8 }),
+      ],
+      narrationSeconds: 21,
+      preSayMs: 0,
+      postSayMs: 0,
+    }),
+  ]);
+}
+
+test("a replay occupies more presentation time than the film it shows", () => {
+  const [scene] = buildTimeline(replaying()).scenes;
+  assert.ok(scene !== undefined);
+  const [, , , replay] = scene.playbacks;
+  assert.ok(replay !== undefined);
+
+  // 2s of film, from media frame 60 to 120, at two fifths of real time.
+  assert.equal(replay.sourceFrom, 60);
+  assert.equal(replay.durationInFrames, 150);
+  assert.equal(mediaFrameAt(replay, replay.from), 60);
+  assert.equal(mediaFrameAt(replay, replay.from + replay.durationInFrames - 1), 119);
+});
+
+test("after a replay the film returns to the frame it was frozen on", () => {
+  const [scene] = buildTimeline(replaying()).scenes;
+  assert.ok(scene !== undefined);
+
+  assert.deepEqual(
+    scene.playbacks.map((entry) => [
+      entry.kind,
+      entry.rate,
+      mediaFrameAt(entry, entry.from),
+    ]),
+    [
+      ["hold", 0, 0],
+      ["slice", 1, 0],
+      ["hold", 0, 120],
+      ["slice", 0.4, 60],
+      ["hold", 0, 120],
+      ["slice", 1, 120],
+    ],
+    "the hold after the replay is the primary's frozen frame, not the replay's origin",
+  );
+});
+
+test("a replay leaves the primary film's own frames untouched", () => {
+  const [scene] = buildTimeline(replaying()).scenes;
+  assert.ok(scene !== undefined);
+
+  const primary = scene.playbacks.filter(
+    (entry) => entry.kind === "slice" && entry.rate === 1,
+  );
+  const shown = primary.flatMap((slice) =>
+    Array.from({ length: slice.durationInFrames }, (_, index) =>
+      mediaFrameAt(slice, slice.from + index),
+    ),
+  );
+
+  assert.deepEqual(
+    shown,
+    Array.from({ length: 240 }, (_, index) => index),
+  );
+});

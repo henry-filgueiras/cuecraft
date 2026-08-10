@@ -1457,6 +1457,24 @@ function checkCue(value: unknown): string | undefined {
     return undefined;
   }
 
+  // The fourth verb, and the shortest-lived: `../compile/footage.ts` turns it into an ordinary
+  // slice and nothing downstream sees one. It takes no other key for the reason `play:` takes none,
+  // plus one of its own — there is no rate, because a rate would be the first projection
+  // instruction this format has ever accepted from an author.
+  if (keys.includes("replay")) {
+    if (keys.length !== 1) {
+      return (
+        "a replay cue takes no other keys; how fast a replay runs is derived, and a deck that " +
+        "could set it would be setting a projection"
+      );
+    }
+    const target = record["replay"];
+    if (typeof target !== "string" || !ANCHOR_ID.test(target)) {
+      return `replay must name a state the film reaches, and a name is ${ANCHOR_ID_HINT}`;
+    }
+    return undefined;
+  }
+
   if (keys.includes("speech")) {
     const extra = keys.filter((key) => !SPEECH_CUE_KEYS.includes(key));
     if (extra.length > 0) {
@@ -2111,6 +2129,9 @@ function toCues(
       // sees the whole deck — and therefore the only thing that can tell one earlier anchor from
       // two, or from none.
       return { kind: "recall", scope, target: record["recall"] };
+    }
+    if (typeof record["replay"] === "string") {
+      return { kind: "replay", scope, target: record["replay"] };
     }
     if (typeof record["play"] === "string") {
       // Where in the medium this slice starts and stops is filled in by `../compile/footage.ts`,

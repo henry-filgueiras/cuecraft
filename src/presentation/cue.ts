@@ -220,6 +220,27 @@ export type NarrationCue =
        * `RecalledCanvas`'s expression with a coefficient on it — see decision:63.
        */
       readonly rate?: number;
+    }
+  | {
+      /**
+       * Show an interval of the film again, from a state it already passed through.
+       *
+       * Authored as `replay: <moment>`, inside an aside. It says: *that happened quickly, watch it
+       * again* — and it is the fourth verb, the last this round adds, and the one that survives the
+       * shortest. **Nothing downstream ever sees a `replay`.** `../compile/footage.ts` turns it
+       * into an ordinary slice whose media interval runs from the named state to the state the
+       * narration is currently holding at, consumed at a slower rate. That is decision:63's last
+       * consequence made real: a replay is a time mapping with a different slope, and the timeline
+       * does not learn the word.
+       *
+       * **There is no rate here and there will not be one.** A key that let a deck set a playback
+       * speed would be a projection instruction, which decision:10 exists to refuse, and it would
+       * be the first one in this format. How slow a replay is is derived — see `REPLAY_RATE`.
+       */
+      readonly kind: "replay";
+      readonly scope: Scope;
+      /** The state to replay from, named as the program declared it. */
+      readonly target: string;
     };
 
 /**

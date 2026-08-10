@@ -466,6 +466,17 @@ export async function compilePresentation(
         continue;
       }
 
+      // Unreachable from `cuecraft render`: `../presentation/nest.ts` refuses a `replay:` outside
+      // an aside, and `./footage.ts` turns every one inside an aside into an ordinary slice before
+      // this stage runs. A survivor here is a compiler bug, and synthesizing it as speech would
+      // put a sentence saying "replay" into the film.
+      if (cue.kind === "replay") {
+        throw new Error(
+          `slide ${slide.ordinal}: a replay of ${JSON.stringify(cue.target)} reached synthesis; ` +
+            "every replay should have been lowered into a slice at materialization",
+        );
+      }
+
       // Who says it, and therefore which voice this one call gets. The whole of what a narrator
       // changes: one argument to one synthesis call, chosen per cue. Nothing below this line
       // knows a narrator exists — the clip is placed by its measured length exactly as every

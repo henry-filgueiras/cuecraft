@@ -10,8 +10,18 @@
 # anywhere in this file — the film measured itself and named the states it reaches, and cuecraft cut
 # it at the one this deck talks about, before a single frame existed (decision:64, decision:65).
 #
-# The two sentences at `pass-3` are one rendezvous, not two. The film stops once, both are spoken
-# over the held frame, and then it carries on from exactly where it stopped.
+# The three sentences at `pass-3` are one rendezvous, not three. The film stops once, all of them
+# are spoken over the held frame, and then it carries on from exactly where it stopped.
+#
+# `replay: pass-2` in the middle of that is the same mechanism again with two numbers changed: it
+# shows the interval between two states the film named, slower, and then the picture returns to the
+# frame it was frozen on. Nothing in the timeline knows the word "replay".
+#
+# The film then stops a second time, at `converged`. What the timeline ends up with is
+#
+#     slice   aside   replay   aside   slice   aside   slice
+#
+# — seven ordinary occupants of one cursor, and not one of them is a special case.
 #
 # Needs ffmpeg on PATH: kmeans.R encodes with it. ./scripts/bootstrap-r.sh says so if it is absent.
 
@@ -61,11 +71,16 @@ slides:
       - "While this was compiling, R ran that loop over two hundred and six points."
       - "It drew every frame of the run rather than a chart, and handed back a film."
       - play: kmeans
-      - speech: "Hold it there. On the third pass, one centre has crossed the sparse middle of the cloud."
+      - speech: "Hold it there. One centre has just crossed the sparse middle."
         during: pass-3
-      - speech: "It gave up the group at the bottom left and took the whole right-hand one instead. Forty-four points changed hands in that single pass."
+      - speech: "That took about a second. Watch it again, slower."
         during: pass-3
-      - "Six passes. The sixth moved nothing, which is how the loop knew to stop."
+      - replay: pass-2
+      - speech: "Forty-four points changed hands, and the right-hand group is new."
+        during: pass-3
+      - speech: "Now let it finish. Three passes later, nothing moves at all."
+        during: converged
+      - "That is how the loop knows to stop: a pass in which no point changes hands."
 
   - slide:
       title: "What the deck said about that"
@@ -78,12 +93,16 @@ slides:
             line: "play: kmeans"
           - id: hold
             line: "Hold it there"
+          - id: again
+            line: "replay: pass-2"
 
     say:
       - speech: "One word starts the film."
         activates: verb
-      - speech: "And a sentence that names a state the film reaches stops it there."
+      - speech: "A sentence that names a state the film reaches stops it there."
         activates: hold
+      - speech: "And one word runs an interval of it again, between two states it named."
+        activates: again
       - "There is no length in this file. No start, no end, no rate, and no frame number."
       - "The film measured itself, named the passes it goes through, and cuecraft cut it at the one this deck talks about."
 

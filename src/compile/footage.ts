@@ -108,7 +108,8 @@ export function lowerFootage(slide: AuthoredSlide): Lowering {
     let holding = false;
     while (index + 1 < slide.say.length) {
       const next = slide.say[index + 1] as NarrationCue;
-      const subscribed = next.kind === "speech" && next.during !== undefined;
+      const subscribed =
+        (next.kind === "speech" && next.during !== undefined) || next.kind === "replay";
       // A pause belongs to the aside it follows, and only once one has started. A pause straight
       // after the `play:` is the author asking for silence *after* the film — the same reading
       // `bindNarration` takes, stated in both places because both walks have to agree about where
@@ -125,7 +126,14 @@ export function lowerFootage(slide: AuthoredSlide): Lowering {
       body.kind === "exhibit" ? body.program : "",
     );
     if (rendezvous.problem !== undefined) return { problem: rendezvous.problem };
-    cues.push(...lower(cue, rendezvous.at ?? [], resource.durationSeconds));
+    cues.push(
+      ...lower(
+        cue,
+        rendezvous.at ?? [],
+        resource.durationSeconds,
+        new Map(resource.moments.map((moment) => [moment.name, moment.seconds])),
+      ),
+    );
   }
   return { cues };
 }
@@ -165,6 +173,8 @@ function queue(
 
   for (const cue of region) {
     // A pause joins whatever aside it follows. The parser guarantees there is one.
+    // A `replay:` and a pause both belong to the aside they sit in, which `../presentation/nest.ts`
+    // has already established is an open one.
     const named =
       cue.kind === "speech" && cue.during !== undefined ? cue.during : order.at(-1);
     if (named === undefined) continue;
@@ -188,6 +198,31 @@ function queue(
     seconds: times.get(name) as number,
     cues: grouped.get(name) as readonly NarrationCue[],
   }));
+
+  // A replay reaches backwards, for `recall:`'s reason with a different noun: showing an interval
+  // the viewer has not seen yet is not a replay, it is a spoiler with a cut in it.
+  for (const stop of at) {
+    for (const cue of stop.cues) {
+      if (cue.kind !== "replay") continue;
+      const when = times.get(cue.target);
+      if (when === undefined) {
+        return {
+          problem:
+            `this slide replays ${quote(cue.target)}, which ${program} did not declare; the film ` +
+            (resource.moments.length === 0
+              ? "names no moments at all"
+              : `reaches ${resource.moments.map((moment) => quote(moment.name)).join(", ")}`),
+        };
+      }
+      if (when >= stop.seconds) {
+        return {
+          problem:
+            `this slide replays ${quote(cue.target)} while holding at a state the film reaches ` +
+            "first; a replay shows an interval the viewer has already watched",
+        };
+      }
+    }
+  }
   for (let index = 1; index < at.length; index += 1) {
     const previous = at[index - 1] as Rendezvous;
     const current = at[index] as Rendezvous;
@@ -232,6 +267,7 @@ function lower(
   cue: Extract<NarrationCue, { kind: "play" }>,
   at: readonly Rendezvous[],
   durationSeconds: number,
+  times: ReadonlyMap<string, number>,
 ): readonly NarrationCue[] {
   const out: NarrationCue[] = [];
   let from = 0;
@@ -250,10 +286,38 @@ function lower(
       });
       from = stop.seconds;
     }
-    out.push(...stop.cues);
+    // A replay is the same leaf with two numbers changed: it reaches backwards into film the
+    // viewer has already watched and consumes it slowly. **The primary cursor does not move** —
+    // `from` above is untouched — so the slice after the aside still resumes at exactly the frame
+    // the film stopped on, and the replay is a detour rather than a seek.
+    for (const inside of stop.cues) {
+      out.push(
+        inside.kind === "replay"
+          ? {
+              kind: "play",
+              scope: inside.scope,
+              source: cue.source,
+              fromSeconds: times.get(inside.target) as number,
+              toSeconds: stop.seconds,
+              rate: REPLAY_RATE,
+            }
+          : inside,
+      );
+    }
   }
   return out;
 }
+
+/**
+ * How slow a replay runs, and why it is a constant rather than a key.
+ *
+ * Two fifths of real time: slow enough that a pass which took a second takes two and a half, and
+ * fast enough that a viewer is watching rather than waiting. An author cannot set it, for
+ * decision:10's reason — a playback rate is a projection instruction and this format has never
+ * accepted one — so it joins `ENTER_MS` and `EXIT_MS` as a number that is neither authored nor
+ * derived from content. That is dragon:12's complaint, now three constants wide.
+ */
+export const REPLAY_RATE = 0.4;
 
 function describe(resource: ExhibitResource | undefined): string {
   switch (resource?.kind) {
