@@ -2,7 +2,7 @@
 id: ide_01KZMA1RAAFAJR0J96BTKB8FAX
 sequence: 26
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-09
 ---
 

@@ -2,8 +2,9 @@
 id: spr_01KZMJ9XPH1NF6T6JRPXBD0HBF
 sequence: 32
 kind: sprint
-status: active
+status: closed
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Say where the film put things, beside the film
@@ -86,3 +87,59 @@ rounded for legibility, and never authoritative.
 - **No symbol for everything the timeline holds.** Camera plans, layouts, lane allocations, subtitle
   cues, playback holds and scene fades are internal unless a downstream consumer can state a query
   they answer.
+
+## Outcome
+
+Every success criterion is met, and the round ended where it aimed. decision:66 carries the
+contract, dragon:39 carries the one thing that could not be exported, and the sidecar is written by
+`render` on every deck.
+
+**What shipped.** `compile/symbols.ts` projects a finished compilation into a versioned,
+self-identifying document beside the MP4 — `format`, `version`, a stated coordinate convention, the
+media's own frame count, and one symbol per authored semantic address. Seven kinds: `slide`,
+`scope`, `recall`, `utterance`, `anchor`, `span`, `beat`. Three consumers on the CLI — `inspect`,
+`snapshot`, `snapshots` — which read the sidecar and open neither the YAML nor the synthesizer.
+`compute/frame.ts` turns a declared frame into a PNG with one ffmpeg call and no decoding decisions.
+
+**The non-goals held.** `framesFor` is untouched, no second clock exists, nothing authored can name
+a symbol, no MP4 metadata was written, and idea:3 is still parked — the projection is written out by
+hand precisely so that it can be.
+
+**Two findings, and both were found by looking rather than by reasoning.**
+
+The first is dragon:39. Applying decision:66's own test — *does an identity the author wrote survive
+into the frames?* — to every compiled record turned up exactly one failure, and it is the newest
+feature in the compiler. `footage.ts`'s `queue()` groups cues under the moment they name, uses the
+name to look up a second, and emits a slice carrying a path and a duration. So the timeline knows
+the exact frame at which a film freezes and does not know what it froze at, and `playback` is the
+one kind that had to be refused. The round could have invented an answer; it recorded the question
+instead, because the interesting part is what a rendezvous name should *mean* once carried, and
+that is not a symbol-table question.
+
+The second is a bug this work would have shipped. Frame extraction seeks half a frame off the
+boundary, for dragon:38's reason — and the obvious direction is wrong. `-ss` yields the first frame
+at or **after** the timestamp, so aiming at the middle of frame N's own interval discards N and
+returns N+1, and the last frame of a film returns no image at all because nothing follows it. Every
+snapshot would have been one frame late, silently. It was caught by decoding a film to a numbered
+PNG sequence and comparing, which is now `compute/frame.live-test.ts`.
+
+**The snapshot rule was also decided by looking at frames, and changed once.** The first rule was
+the *onset* of the slide's last sentence, which is where decision:13 puts an anchor and reads like
+the right moment. Extracting real frames refuted it: a `series` slide fills its population **across**
+the sentence (decision:33), so the onset is the instant before any of it exists — the snapshot of a
+slide about counting sixty-four things showed a gauge reading zero. The end of the sentence has
+everything established and still has the sentence and its speaker in the subtitle band; one frame
+later completes the fill and empties the band. Both were extracted and compared, and the trade-off
+is written into decision:66 rather than left as an accident.
+
+**Evidence.** The rigid fixture in `compile/symbols.test.ts` states every duration and asserts the
+frames by hand — intervals, contiguity, tiling, ordering, key uniqueness, byte-identical
+determinism, key stability across a re-compilation that moves every frame, and one assertion that
+walks a fixed-interval sampler across the fixture and watches it miss the short final slide.
+`pipeline.render-test.ts` renders a three-slide deck whose last slide runs under three seconds and
+extracts one frame per slide by key, asserting the count, the short slide's presence, and that no
+two frames are the same picture. `compute/frame.live-test.ts` sweeps every frame of a sixty-frame
+film against ground truth.
+
+Real decks were rendered and their snapshots looked at, which is how the two frame-level findings
+above happened. 976 tests pass; `scarp doctor` is clean.
