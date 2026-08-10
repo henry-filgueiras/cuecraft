@@ -5,10 +5,13 @@
 # Every other exhibit in this repository is still: R draws a chart, a drawing or a table, and the
 # narration walks around it. This one hands back an MP4, and the slide plays it.
 #
-# What is worth noticing in the source is how little of it there is. `play: kmeans` is the whole
-# vocabulary. There is no duration, no start, no end, no rate and no frame number anywhere in this
-# file — the film's length was measured out of its own container while the deck was compiling, and
-# it became an occupant of the same narration track a sentence sits on (decision:64, decision:63).
+# What is worth noticing in the source is how little of it there is. `play: kmeans` starts it, and
+# `during: pass-3` stops it. There is no duration, no start, no end, no rate and no frame number
+# anywhere in this file — the film measured itself and named the states it reaches, and cuecraft cut
+# it at the one this deck talks about, before a single frame existed (decision:64, decision:65).
+#
+# The two sentences at `pass-3` are one rendezvous, not two. The film stops once, both are spoken
+# over the held frame, and then it carries on from exactly where it stopped.
 #
 # Needs ffmpeg on PATH: kmeans.R encodes with it. ./scripts/bootstrap-r.sh says so if it is absent.
 
@@ -58,6 +61,10 @@ slides:
       - "While this was compiling, R ran that loop over two hundred and six points."
       - "It drew every frame of the run rather than a chart, and handed back a film."
       - play: kmeans
+      - speech: "Hold it there. On the third pass, one centre has crossed the sparse middle of the cloud."
+        during: pass-3
+      - speech: "It gave up the group at the bottom left and took the whole right-hand one instead. Forty-four points changed hands in that single pass."
+        during: pass-3
       - "Six passes. The sixth moved nothing, which is how the loop knew to stop."
 
   - slide:
@@ -65,21 +72,20 @@ slides:
       code:
         file: examples/kmeans/kmeans.yaml
         slide: "Two hundred and six points"
+        opens: "say:"
         marks:
-          - id: program
-            line: "run: examples/kmeans/kmeans.R"
           - id: verb
             line: "play: kmeans"
+          - id: hold
+            line: "Hold it there"
 
     say:
-      - speech: "A program to run."
-        activates: program
-      - speech: "And one word, further down, saying that this is where it plays."
+      - speech: "One word starts the film."
         activates: verb
-      - pause: 400ms
+      - speech: "And a sentence that names a state the film reaches stops it there."
+        activates: hold
       - "There is no length in this file. No start, no end, no rate, and no frame number."
-      - "Cuecraft measured the film out of its own container before a syllable was synthesized,"
-      - "and then put it on the narration track beside the sentences, as one more thing with a known duration."
+      - "The film measured itself, named the passes it goes through, and cuecraft cut it at the one this deck talks about."
 
   - slide:
       title: "One clock, still"

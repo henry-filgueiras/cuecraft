@@ -2,9 +2,10 @@
 id: tsk_01KZMDCPSR39J437Z446YZ8FR1
 sequence: 153
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Take a film back from a program, and measure it

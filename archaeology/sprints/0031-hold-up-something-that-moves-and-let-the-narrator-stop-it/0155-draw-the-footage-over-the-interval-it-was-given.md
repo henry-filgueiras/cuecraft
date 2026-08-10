@@ -2,9 +2,10 @@
 id: tsk_01KZMDCPT9S3NKSQ7NA6CBANMD
 sequence: 155
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Draw the footage over the interval it was given

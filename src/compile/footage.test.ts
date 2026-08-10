@@ -60,6 +60,7 @@ function deck(say: readonly string[]): ReturnType<typeof parsePresentation> {
 /** A runner that hands back one declared output of whatever shape the test wants. */
 function runner(
   output: Record<string, unknown>,
+  moments: readonly { name: string; seconds: number }[] = [],
 ): (request: RRequest) => Promise<RResult> {
   return async (request) => {
     await mkdir(request.outputDir, { recursive: true });
@@ -79,6 +80,7 @@ function runner(
         } as never,
       ],
       regions: [],
+      moments,
       notes: "",
       stderr: "",
       elapsedSeconds: 0.4,
@@ -89,10 +91,11 @@ function runner(
 async function materialize(
   presentation: ReturnType<typeof parsePresentation>,
   output: Record<string, unknown> = {},
+  moments: readonly { name: string; seconds: number }[] = [],
 ): ReturnType<typeof materializePresentation> {
   return materializePresentation(presentation, {
     workspace: await scratch(),
-    run: runner(output),
+    run: runner(output, moments),
   });
 }
 
@@ -113,6 +116,7 @@ test("a played film becomes a slice covering the whole of it, at rate one", asyn
     width: 3312,
     height: 1104,
     durationSeconds: 8,
+    moments: [],
     bytes: 500_000,
   });
   assert.deepEqual(slices(presentation), [
@@ -241,4 +245,164 @@ test("a slide whose whole narration is a film is allowed, because a film is a cl
   const { presentation } = await materialize(deck(["- play: run"]));
 
   assert.equal(slices(presentation).length, 1);
+});
+
+/* ----------------------------------------------------------- rendezvous */
+
+const REACHES = [
+  { name: "initialised", seconds: 1 },
+  { name: "pass-1", seconds: 2 },
+  { name: "pass-2", seconds: 3 },
+  { name: "converged", seconds: 7 },
+] as const;
+
+/** A film that names four states, of which a deck usually talks about one. */
+function annotated(say: readonly string[]) {
+  return materialize(deck(say), {}, REACHES);
+}
+
+test("a moment nothing subscribes to does nothing at all", async () => {
+  const { presentation, exhibits } = await annotated(['- "Watch."', "- play: run"]);
+
+  assert.equal(
+    (exhibits[0]?.resource as { moments: readonly unknown[] }).moments.length,
+    4,
+  );
+  assert.deepEqual(
+    slices(presentation).map((cue) => [cue.fromSeconds, cue.toSeconds]),
+    [[0, 8]],
+    "a densely annotated film that nobody holds is still one slice",
+  );
+});
+
+test("a subscribed moment cuts the film exactly once, at its own local time", async () => {
+  const { presentation } = await annotated([
+    "- play: run",
+    '- speech: "Look at that."',
+    "  during: pass-2",
+    '- "And on it goes."',
+  ]);
+
+  assert.deepEqual(
+    (presentation.slides[1]?.say ?? []).map((cue) =>
+      cue.kind === "play" ? `slice ${cue.fromSeconds}-${cue.toSeconds}` : cue.kind,
+    ),
+    ["slice 0-3", "speech", "slice 3-8", "speech"],
+  );
+});
+
+test("the slices still consume exactly the whole film", async () => {
+  const { presentation } = await annotated([
+    "- play: run",
+    '- speech: "One."',
+    "  during: pass-1",
+    '- speech: "Two."',
+    "  during: converged",
+  ]);
+
+  const cut = slices(presentation);
+  assert.deepEqual(
+    cut.map((cue) => [cue.fromSeconds, cue.toSeconds]),
+    [
+      [0, 2],
+      [2, 7],
+      [7, 8],
+    ],
+  );
+  assert.equal(
+    cut.reduce(
+      (total, cue) => total + ((cue.toSeconds ?? 0) - (cue.fromSeconds ?? 0)),
+      0,
+    ),
+    8,
+  );
+});
+
+test("several cues on one moment are one rendezvous, in the order the deck wrote them", async () => {
+  const { presentation } = await annotated([
+    "- play: run",
+    '- speech: "First."',
+    "  during: pass-2",
+    "- pause: 400ms",
+    '- speech: "Second."',
+    "  during: pass-2",
+    '- "After."',
+  ]);
+
+  assert.deepEqual(
+    (presentation.slides[1]?.say ?? []).map((cue) =>
+      cue.kind === "speech" ? cue.text : cue.kind,
+    ),
+    ["play", "First.", "pause", "Second.", "play", "After."],
+    "one split, not two: the film stops once and both sentences are spoken there",
+  );
+});
+
+test("a state the film does not reach is refused, and the message lists the ones it does", async () => {
+  await assert.rejects(
+    annotated(["- play: run", '- speech: "Look."', "  during: pass-9"]),
+    (error: unknown) =>
+      error instanceof MaterializeError &&
+      /holds at "pass-9"/.test(error.message) &&
+      /"initialised", "pass-1"/.test(error.message),
+  );
+});
+
+test("holding two states in the order the film does not reach them is refused", async () => {
+  await assert.rejects(
+    annotated([
+      "- play: run",
+      '- speech: "Late."',
+      "  during: converged",
+      '- speech: "Early."',
+      "  during: pass-1",
+    ]),
+    (error: unknown) =>
+      error instanceof MaterializeError && /the other way round/.test(error.message),
+  );
+});
+
+test("a moment past the end of the film is refused", async () => {
+  await assert.rejects(
+    materialize(deck(["- play: run"]), {}, [{ name: "late", seconds: 9 }]),
+    (error: unknown) =>
+      error instanceof MaterializeError &&
+      /after the end of a 8.00s film/.test(error.message),
+  );
+});
+
+test("a still that declares moments is refused, because it reaches none", async () => {
+  await assert.rejects(
+    materialize(
+      deck(['- "Look."']),
+      { type: "png", file: "run.png", width: 100, height: 100 },
+      [{ name: "somehow", seconds: 1 }],
+    ),
+    (error: unknown) =>
+      error instanceof MaterializeError && /a still reaches none/.test(error.message),
+  );
+});
+
+test("a during cue with no film running is refused at parse", () => {
+  assert.throws(
+    () => deck(['- "Watch."', '- speech: "Look."', "  during: pass-2", "- play: run"]),
+    (error: unknown) =>
+      error instanceof PresentationError &&
+      /no film is running here/.test(error.report()),
+  );
+});
+
+test("a sentence between the film and its aside closes the region", () => {
+  assert.throws(
+    () =>
+      deck([
+        "- play: run",
+        '- "Ordinary narration, after the film."',
+        '- speech: "Too late."',
+        "  during: pass-2",
+      ]),
+    (error: unknown) =>
+      error instanceof PresentationError &&
+      /no film is running here/.test(error.report()),
+  );
 });

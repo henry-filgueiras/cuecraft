@@ -246,10 +246,27 @@ export interface RRegion {
   readonly bottom: number;
 }
 
+/**
+ * A state a film reaches, named by the program that made it, timed in the film's own seconds.
+ *
+ * The temporal sibling of `RRegion`, and the asymmetry between them is worth noticing: a region is
+ * checked against the *picture* it names, because a fraction outside 0..1 is meaningless on its
+ * face. A moment can only be checked against the **film's measured length**, which this module does
+ * not have when it reads the line — so the bound lives at `../compile/materialize.ts`, beside the
+ * measurement.
+ */
+export interface RMoment {
+  readonly name: string;
+  /** Seconds from the start of the film. Never from the start of the presentation. */
+  readonly seconds: number;
+}
+
 export interface RResult {
   readonly outputs: readonly ROutput[];
   /** Every place the program named. Empty on a program that declares none, which is most. */
   readonly regions: readonly RRegion[];
+  /** Every state a film said it reaches. Empty on every program that hands back a still. */
+  readonly moments: readonly RMoment[];
   /** Everything on stdout that was not a declaration, so a `print()` is not swallowed. */
   readonly notes: string;
   readonly stderr: string;
@@ -282,6 +299,22 @@ const REGION =
   /^#cuecraft\s+region\s+([A-Za-z][A-Za-z0-9_-]*)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$/;
 
 export const REGION_SHAPE = "#cuecraft region <name> <left> <top> <right> <bottom>";
+
+/**
+ * The moment line: a name a film reaches, and when it reaches it, in the film's own seconds.
+ *
+ * The third verb, and the first that is about time rather than about space. It is `region`'s
+ * grammar with one number instead of four, and the reason it can be that small is decision:63's
+ * finding: what a temporal medium has to say about itself is a **stable identifier and a local
+ * timestamp**, and anything richer would be an event ontology for a problem that has one shape.
+ *
+ * **Local, always.** The seconds are measured from the start of the film and have nothing to do
+ * with the presentation. A program cannot know where in a deck it will be placed, must not be told,
+ * and the format has never contained an absolute timecode — see decision:65.
+ */
+const MOMENT = /^#cuecraft\s+moment\s+([A-Za-z][A-Za-z0-9_-]*)\s+(\S+)\s*$/;
+
+export const MOMENT_SHAPE = "#cuecraft moment <name> <seconds>";
 
 /** The first eight bytes of every PNG. Checked so that "it exists" is not mistaken for "it is one". */
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -381,12 +414,11 @@ export async function runR(request: RRequest): Promise<RResult> {
     stdout: notes,
   });
 
-  const regions = resolveRegions(declared, request.label, {
-    stderr: captured.err,
-    stdout: notes,
-  });
+  const said = { stderr: captured.err, stdout: notes };
+  const regions = resolveRegions(declared, request.label, said);
+  const moments = resolveMoments(declared, request.label, said);
 
-  return { outputs, regions, notes, stderr: captured.err, elapsedSeconds };
+  return { outputs, regions, moments, notes, stderr: captured.err, elapsedSeconds };
 }
 
 /** Which protocol verb a line carries, so two resolvers can walk one list without a pre-filter. */
@@ -464,6 +496,63 @@ export function resolveRegions(
 }
 
 /**
+ * Every state a run said its film reaches, in the order the program declared them.
+ *
+ * Order is kept rather than sorted, and it is the program's rather than the deck's — the same rule
+ * a picture's regions follow. Sorting would be a small kindness that hid a real mistake: a program
+ * emitting its moments out of order has almost certainly computed them wrong, and the deck that
+ * subscribes to two of them is entitled to be told which way round the film reaches them.
+ */
+export function resolveMoments(
+  declared: readonly string[],
+  label: string,
+  said: { stderr: string; stdout: string } = { stderr: "", stdout: "" },
+): readonly RMoment[] {
+  const moments: RMoment[] = [];
+  const seen = new Set<string>();
+
+  const refuse = (message: string): never => {
+    throw new RError("protocol", `${label}: ${message}`, said);
+  };
+
+  for (const line of declared) {
+    if (verbOf(line) !== "moment") continue;
+
+    const match = MOMENT.exec(line);
+    if (match === null) {
+      return refuse(
+        `cannot read the moment declaration ${JSON.stringify(line.trim())}; ` +
+          `a moment is ${JSON.stringify(MOMENT_SHAPE)}, where <name> is an identifier and ` +
+          "<seconds> is measured from the start of the film",
+      );
+    }
+
+    const [, name = "", raw = ""] = match;
+    const seconds = Number(raw);
+    if (!Number.isFinite(seconds)) {
+      return refuse(
+        `moment ${JSON.stringify(name)} happens at ${JSON.stringify(raw)}, which is not a number`,
+      );
+    }
+    if (seconds < 0) {
+      return refuse(
+        `moment ${JSON.stringify(name)} happens at ${seconds}s; a moment is measured forwards ` +
+          "from the start of the film",
+      );
+    }
+    if (seen.has(name)) {
+      return refuse(
+        `declared two moments named ${JSON.stringify(name)}; each name must be distinct`,
+      );
+    }
+
+    seen.add(name);
+    moments.push({ name, seconds });
+  }
+  return moments;
+}
+
+/**
  * Every declaration a run produced, checked all the way to the bytes on disk.
  *
  * Separated from `runR` and exported because it is the half of this module that has opinions and
@@ -481,7 +570,7 @@ export async function resolveOutputs(
   const seen = new Set<string>();
   for (const line of declared) {
     const verb = verbOf(line);
-    if (verb === "region") continue;
+    if (verb === "region" || verb === "moment") continue;
     // The one place a mistyped verb is caught. `#cuecraft outputs ...` would otherwise be dropped
     // silently by both resolvers and the slide would fail with "declared no output", which names
     // the symptom instead of the typo.
@@ -489,8 +578,8 @@ export async function resolveOutputs(
       throw new RError(
         "protocol",
         `${label}: ${JSON.stringify(line.trim())} is not something cuecraft understands; ` +
-          `a program declares ${JSON.stringify(DECLARATION_SHAPE)} or ` +
-          `${JSON.stringify(REGION_SHAPE)}`,
+          `a program declares ${JSON.stringify(DECLARATION_SHAPE)}, ` +
+          `${JSON.stringify(REGION_SHAPE)} or ${JSON.stringify(MOMENT_SHAPE)}`,
         said,
       );
     }

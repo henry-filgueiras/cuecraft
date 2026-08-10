@@ -116,6 +116,26 @@ tints <- c(paper, muted, adjustcolor(muted, alpha.f = 0.62))
 
 frames <- character(0)
 
+# Every state this film reaches, named, in the film's own seconds — decision:65.
+#
+# Taken from the frames actually written rather than from the constants above, so the two can never
+# disagree: changing ASSIGN or MOVE moves the moments with them. Nothing here knows or could know
+# where in a presentation the film will be placed, and there is no absolute timecode anywhere in
+# this program or in the deck that plays it.
+moments <- numeric(0)
+mark <- function(name) {
+  moments[[name]] <<- seconds_of(length(frames) - 1L)
+}
+
+# A frame index as seconds, rounded **down** rather than to nearest, and it matters.
+#
+# cuecraft cuts a film at the first frame that begins at or after a moment, which is the right rule
+# for an instant and is unforgiving of a decimal that overshoots. Frame 122 at 30fps is 4.0666...s;
+# printed to four places as `4.0667` it is 122.001 frames, and the freeze lands one frame into the
+# *next* pass — where the panel says "pass 4" while the narration says "the third". Rounding down
+# names the frame this program means. See the dragon this opened.
+seconds_of <- function(frame) floor(frame / fps * 1e6) / 1e6
+
 draw <- function(centres, assign, pass, phase, fit_through, travelling = NA) {
   file <- file.path(out_dir, sprintf("frame-%04d.png", length(frames) + 1L))
   png(file, width = width, height = height, pointsize = point_size, type = "cairo", bg = ink)
@@ -207,6 +227,7 @@ ease <- function(t) t * t * (3 - 2 * t)
 
 for (i in seq_len(OPENING)) draw(NULL, NULL, NA, "the cloud", 0)
 for (i in seq_len(SEEDING)) draw(start, NULL, NA, "three guesses", 0)
+mark("initialised")
 
 for (p in seq_along(passes)) {
   step <- passes[[p]]
@@ -217,6 +238,9 @@ for (p in seq_along(passes)) {
     at <- ease(i / MOVE)
     draw(blend(step$from, step$to, at), step$assign, p, "move", p, switched[p])
   }
+  # The settled state of this pass, on the last frame it is fully drawn. A deck that holds here
+  # freezes on a completed pass rather than midway through the next one's recolouring.
+  mark(if (p == length(passes)) "converged" else sprintf("pass-%d", p))
 }
 
 last <- passes[[length(passes)]]
@@ -250,3 +274,6 @@ if (status != 0) {
 invisible(file.remove(frames))
 
 cat("#cuecraft output video kmeans", out_file, "\n")
+for (name in names(moments)) {
+  cat(sprintf("#cuecraft moment %s %.6f\n", name, moments[[name]]))
+}

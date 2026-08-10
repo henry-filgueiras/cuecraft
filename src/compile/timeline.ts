@@ -662,7 +662,7 @@ export function buildTimeline(
     const placedDwells = new Map<Scope, number>();
     for (const entry of track) {
       cursor = Math.max(cursor, framesFor(entry.at, fps));
-      const durationInFrames = framesFor(entry.seconds, fps);
+      let durationInFrames = framesFor(entry.seconds, fps);
       if ("clip" in entry) {
         clips[entry.index] = {
           src: entry.clip.src,
@@ -685,17 +685,32 @@ export function buildTimeline(
           sourceFrom: sourceFrameOf(scenes, entry.recall, slide.ordinal),
         });
       } else if ("playback" in entry) {
-        // Both ends of the media interval through `framesFor`, rather than its length through
-        // `framesFor` once. That is not a second rounding rule; it is the same rule applied where
-        // the correctness argument needs it. Two adjacent slices share an endpoint in seconds by
-        // construction (`./footage.ts`), so converting endpoints makes them share it in *frames*
-        // too — which is what stops a split producing a repeated or a skipped frame of film. A
-        // length would leave the two ends free to round apart.
+        // **Both ends of the media interval through `framesFor`, and the length taken between
+        // them** — rather than the length through `framesFor` once. That is the same rule applied
+        // where the correctness argument needs it rather than a second one, and it is what makes a
+        // split exact.
+        //
+        // Two adjacent slices share an endpoint in *seconds* by construction (`./footage.ts`). Only
+        // converting that endpoint once makes them share it in frames as well, so slice N ends on
+        // the frame before slice N+1 begins, with nothing between them and nothing shown twice.
+        // Converting each slice's *length* independently would not: a film cut at 4.0667s gives
+        // `framesFor(4.0667) = 123` frames for the first slice and a second slice starting at media
+        // frame 122, and that one repeated frame is a visible stutter at exactly the moment the
+        // narration is pointing at.
+        const sourceFrom = framesFor(entry.playback.fromSeconds, fps);
+        const sourceUntil = framesFor(entry.playback.toSeconds, fps);
+        // Frames to frames, which is a scaling rather than a conversion: `framesFor` is still the
+        // only thing in cuecraft that turns seconds into frames. One at rate 1, so an ordinary
+        // slice is exactly the frames of film it covers.
+        durationInFrames = Math.max(
+          1,
+          Math.round((sourceUntil - sourceFrom) / entry.playback.rate),
+        );
         slices.push({
           src: entry.playback.src,
           from: narrationFrom + cursor,
           durationInFrames,
-          sourceFrom: framesFor(entry.playback.fromSeconds, fps),
+          sourceFrom,
           // Rounded rather than floored or ceiled, so a container that states its length a
           // thousandth either side of the truth lands on the same last frame both ways.
           sourceLast: Math.max(0, Math.round(entry.playback.mediaSeconds * fps) - 1),

@@ -71,6 +71,9 @@ export function bindNarration(
   const reached = new Set<string>();
   const entered = new Set<string>();
   const played = new Set<string>();
+  // Whether the cursor is inside a film's *region*: the run of cues immediately after a `play:`
+  // that the film is going to be cut around. See `during` below for the rule and why it is here.
+  let region: "closed" | "open" | "holding" = "closed";
 
   cues.forEach((cue, index) => {
     if (cue.kind === "enter") {
@@ -154,13 +157,56 @@ export function bindNarration(
         return;
       }
       played.add(cue.source);
+      region = "open";
+      bound.push(cue);
+      return;
+    }
+
+    // A pause belongs to whichever aside it follows, and only to one that has started. A pause
+    // written straight after `play:` is the author asking for silence *after* the film, which is
+    // ordinary narration and closes the region.
+    if (cue.kind === "pause") {
+      if (region === "open") region = "closed";
       bound.push(cue);
       return;
     }
 
     if (cue.kind !== "speech") {
+      region = "closed";
       bound.push(cue);
       return;
+    }
+
+    /**
+     * Where a `during:` may be written, and why the rule is positional.
+     *
+     * The lowering reorders nothing (`../compile/footage.ts`): the source is read top to bottom in
+     * the order the film happens, so a sentence spoken at a state of the medium is written where
+     * that state occurs — **inside** the film's run, immediately after the `play:` that starts it.
+     *
+     *     - play: kmeans
+     *     - speech: "..."      during: pass-3       <- inside the film
+     *     - speech: "..."      during: converged    <- still inside it
+     *     - "And that is where it stops."           <- after the film; the region is closed
+     *
+     * The first cue that is neither a subscription nor a pause inside one ends the region, so what
+     * an author reads down the page is the order the viewer hears. The alternative — allowing a
+     * `during:` anywhere in the list and moving it — would make the source's order a lie about the
+     * film's, which is the one thing this format has never done.
+     */
+    if (cue.during !== undefined) {
+      if (region === "closed") {
+        issues.push({
+          path: [index],
+          message:
+            `is spoken during ${JSON.stringify(cue.during)}, and no film is running here; a ` +
+            "`during:` cue belongs immediately after the `play:` whose film reaches that state",
+        });
+        return;
+      }
+      region = "holding";
+    } else if (region !== "closed") {
+      region = "closed";
     }
 
     // The two relationships resolve identically — same scope, same names, same "already

@@ -2,9 +2,10 @@
 id: tsk_01KZMDCPTQ0X5B5NCFCQ0YH40P
 sequence: 157
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Render the atomic deck, and watch all of it

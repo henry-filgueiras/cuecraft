@@ -142,7 +142,22 @@ export type ExhibitResource =
        * here and `framesFor` may invent a different one.
        */
       readonly durationSeconds: number;
+      /**
+       * The states the film says it reaches, in the order the program declared them.
+       *
+       * Local media time, always (decision:65). A film may be densely annotated and a deck may
+       * talk about one of them; the two lists are checked in one direction only, for the reason a
+       * table's row identities are — these are *generated per pass* rather than hand-written per
+       * panel, so a moment nobody subscribes to is a film being thorough, not a disagreement.
+       */
+      readonly moments: readonly ExhibitMoment[];
     });
+
+/** A state a film reaches, and when — in the film's own seconds, never the presentation's. */
+export interface ExhibitMoment {
+  readonly name: string;
+  readonly seconds: number;
+}
 
 /**
  * A table a program computed, with the identities narration can address it by.

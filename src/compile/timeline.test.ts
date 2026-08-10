@@ -1035,3 +1035,113 @@ test("a deck with no film has no playbacks anywhere", () => {
   );
   for (const scene of timeline.scenes) assert.deepEqual(scene.playbacks, []);
 });
+
+/** One slide: 2s of speech, 4s of film, 3s of aside, 4s more film, 2s of speech. */
+function holding(): CompiledPresentation {
+  return presentation([
+    slide({
+      ordinal: 1,
+      speech: [2, 3, 2],
+      offsets: [0, 6, 13],
+      playbacks: [
+        playback({ at: 2, from: 0, to: 4, mediaSeconds: 8 }),
+        playback({ at: 9, from: 4, to: 8, mediaSeconds: 8 }),
+      ],
+      narrationSeconds: 15,
+      preSayMs: 0,
+      postSayMs: 0,
+    }),
+  ]);
+}
+
+test("an aside between two slices becomes a hold, and the film stops where it resumes", () => {
+  const [scene] = buildTimeline(holding()).scenes;
+  assert.ok(scene !== undefined);
+
+  const [lead, first, freeze, second, tail] = scene.playbacks;
+  assert.ok(
+    lead !== undefined &&
+      first !== undefined &&
+      freeze !== undefined &&
+      second !== undefined &&
+      tail !== undefined,
+  );
+  assert.deepEqual(
+    scene.playbacks.map((entry) => entry.kind),
+    ["hold", "slice", "hold", "slice", "hold"],
+  );
+
+  // 2s of speech is 60 frames; 4s of film is 120; the aside is 3s, which is 90.
+  assert.equal(first.from, 60);
+  assert.equal(first.durationInFrames, 120);
+  assert.equal(freeze.from, 180);
+  assert.equal(freeze.durationInFrames, 90);
+  assert.equal(second.from, 270);
+
+  // The frozen frame *is* the frame the film resumes on. That equality is the whole feature.
+  assert.equal(mediaFrameAt(freeze, freeze.from), 120);
+  assert.equal(mediaFrameAt(freeze, freeze.from + 89), 120);
+  assert.equal(mediaFrameAt(second, second.from), 120);
+});
+
+test("a split produces neither a gap nor a repeated frame of film", () => {
+  const [scene] = buildTimeline(holding()).scenes;
+  assert.ok(scene !== undefined);
+  const cut = scene.playbacks.filter((entry) => entry.kind === "slice");
+
+  const shown = cut.flatMap((slice) =>
+    Array.from({ length: slice.durationInFrames }, (_, index) =>
+      mediaFrameAt(slice, slice.from + index),
+    ),
+  );
+
+  assert.deepEqual(
+    shown,
+    Array.from({ length: 240 }, (_, index) => index),
+    "every frame of the film, once, in order, across the split",
+  );
+});
+
+test("the aside lengthens the presentation and consumes none of the film", () => {
+  const held = buildTimeline(holding()).scenes[0];
+  const straight = buildTimeline(
+    presentation([
+      slide({
+        ordinal: 1,
+        speech: [2, 2],
+        offsets: [0, 10],
+        playbacks: [playback({ at: 2, from: 0, to: 8, mediaSeconds: 8 })],
+        narrationSeconds: 12,
+        preSayMs: 0,
+        postSayMs: 0,
+      }),
+    ]),
+  ).scenes[0];
+  assert.ok(held !== undefined && straight !== undefined);
+
+  const filmFrames = (scene: typeof held): number =>
+    scene.playbacks
+      .filter((entry) => entry.kind === "slice")
+      .reduce((total, slice) => total + slice.durationInFrames, 0);
+
+  assert.equal(filmFrames(held), filmFrames(straight), "the same film, either way");
+  assert.equal(
+    held.durationInFrames - straight.durationInFrames,
+    90,
+    "and the scene is longer by exactly the aside",
+  );
+});
+
+test("everything downstream of the split is an ordinary absolute frame", () => {
+  const timeline = buildTimeline(holding());
+  const [scene] = timeline.scenes;
+  assert.ok(scene !== undefined);
+
+  // The clip spoken over the freeze, and the one after the film, are placed by the same cursor
+  // that placed the slices — nothing about them knows a medium was cut.
+  assert.deepEqual(
+    scene.clips.map((clip) => clip.from),
+    [0, 180, 390],
+  );
+  assert.equal(timeline.totalFrames, scene.durationInFrames);
+});

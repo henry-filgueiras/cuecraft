@@ -1,7 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
-import type { ExhibitRegion, ExhibitResource } from "../presentation/exhibit.ts";
+import type {
+  ExhibitMoment,
+  ExhibitRegion,
+  ExhibitResource,
+} from "../presentation/exhibit.ts";
 import { columnId, rowId } from "../presentation/exhibit.ts";
 import type { AuthoredSlide, Presentation } from "../presentation/parse.ts";
 import { resolveRepositoryPath, SourceError } from "../presentation/source.ts";
@@ -198,7 +202,14 @@ export async function materializePresentation(
       );
     }
 
-    const resource = await resourceFor(slide.ordinal, body, output, result.regions, slug);
+    const resource = await resourceFor(
+      slide.ordinal,
+      body,
+      output,
+      result.regions,
+      result.moments,
+      slug,
+    );
 
     const materialized: MaterializedExhibit = {
       ordinal: slide.ordinal,
@@ -268,11 +279,22 @@ async function resourceFor(
   body: Extract<AuthoredSlide["body"], { kind: "exhibit" }>,
   output: ROutput,
   regions: readonly ExhibitRegion[],
+  moments: readonly ExhibitMoment[],
   slug: string,
 ): Promise<ExhibitResource> {
   const refuse = (message: string): never => {
     throw new MaterializeError(ordinal, message);
   };
+
+  // Before the branch rather than inside three arms of it: a moment is a state a *film* reaches,
+  // so declaring one beside a chart is a program that has confused two of its own outputs, and
+  // saying so once beats saying nothing on two of the three paths.
+  if (output.type !== "video" && moments.length > 0) {
+    return refuse(
+      `${body.program} declared ${moments.length} moment(s) beside a ${output.type}; ` +
+        "a moment is a state a film reaches, and a still reaches none",
+    );
+  }
 
   if (output.type === "png") {
     const drawn = new Map(regions.map((region) => [region.name, region]));
@@ -323,6 +345,16 @@ async function resourceFor(
         `this slide names a key column and ${body.program} handed back a film, not a table`,
       );
     }
+    // The one check a moment cannot get anywhere else. `../compute/r.ts` refuses a time that is
+    // not a number and a time before the start; only here is the film's own length known, and a
+    // moment past the end is a state the deck could subscribe to and the film would never reach.
+    const overrun = moments.filter((moment) => moment.seconds > output.durationSeconds);
+    if (overrun.length > 0) {
+      return refuse(
+        `${body.program} declared ${overrun.map((moment) => quote(moment.name)).join(", ")} ` +
+          `after the end of a ${output.durationSeconds.toFixed(2)}s film`,
+      );
+    }
     return {
       kind: "footage",
       src: `${EXHIBIT_DIR}/${slug}/${output.file}`,
@@ -330,6 +362,7 @@ async function resourceFor(
       width: output.width,
       height: output.height,
       durationSeconds: output.durationSeconds,
+      moments: [...moments],
       bytes: output.bytes,
     };
   }

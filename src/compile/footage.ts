@@ -87,7 +87,8 @@ export function lowerFootage(slide: AuthoredSlide): Lowering {
   }
 
   const cues: NarrationCue[] = [];
-  for (const cue of slide.say) {
+  for (let index = 0; index < slide.say.length; index += 1) {
+    const cue = slide.say[index] as NarrationCue;
     if (cue.kind !== "play") {
       cues.push(cue);
       continue;
@@ -99,34 +100,157 @@ export function lowerFootage(slide: AuthoredSlide): Lowering {
           `${quote(resource.name)}`,
       };
     }
-    cues.push(...slices(cue, resource.durationSeconds));
+
+    // The film's region: everything after the `play:` that the parser accepted as subscribing to
+    // it. `bindNarration` already established that this run is contiguous and that nothing outside
+    // it carries a `during:`, so this only has to find where it ends.
+    const region: NarrationCue[] = [];
+    let holding = false;
+    while (index + 1 < slide.say.length) {
+      const next = slide.say[index + 1] as NarrationCue;
+      const subscribed = next.kind === "speech" && next.during !== undefined;
+      // A pause belongs to the aside it follows, and only once one has started. A pause straight
+      // after the `play:` is the author asking for silence *after* the film — the same reading
+      // `bindNarration` takes, stated in both places because both walks have to agree about where
+      // the region ends.
+      if (!subscribed && !(next.kind === "pause" && holding)) break;
+      holding = holding || subscribed;
+      index += 1;
+      region.push(next);
+    }
+
+    const rendezvous = queue(
+      region,
+      resource,
+      body.kind === "exhibit" ? body.program : "",
+    );
+    if (rendezvous.problem !== undefined) return { problem: rendezvous.problem };
+    cues.push(...lower(cue, rendezvous.at ?? [], resource.durationSeconds));
   }
   return { cues };
 }
 
+/** One rendezvous: a place the film stops, and everything the narration says while it is there. */
+interface Rendezvous {
+  readonly seconds: number;
+  readonly cues: readonly NarrationCue[];
+}
+
 /**
- * The medium, cut at every point the narration asked it to stop.
+ * The film's cut points, and what is said at each of them.
  *
- * One slice today, because nothing subscribes to anything yet. The signature is the interesting
- * part: what a future round adds is entries to `at`, and everything else — the endpoints, the
- * rate, the fact that the last slice runs to the end of the film — is already stated once.
+ * **This is where "several cues on one event is one rendezvous" happens**, and it happens by being
+ * a grouping rather than a mapping: cues are gathered under the moment they name, in the order the
+ * deck wrote them, so two sentences about `pass-3` produce one stop with two sentences at it rather
+ * than a freeze and a resume per sentence. That property is the mission's, and it costs a `Map`.
+ *
+ * Two refusals, and both are disagreements between the deck and the film rather than authoring
+ * slips the parser could have caught:
+ *
+ * - **A state the film does not reach.** decision:57's rule, one level out: what the deck says it
+ *   will talk about has to exist, and the film's own list is what settles it.
+ * - **States the deck holds in a different order from the one the film reaches them in.** The
+ *   source reads in film order (`../presentation/nest.ts`), so a deck that subscribes to
+ *   `converged` and then to `pass-3` has written down a sequence the film cannot perform, and
+ *   silently reordering it would make the page a lie about the video.
  */
-function slices(
+function queue(
+  region: readonly NarrationCue[],
+  resource: Extract<ExhibitResource, { kind: "footage" }>,
+  program: string,
+): { at?: readonly Rendezvous[]; problem?: string } {
+  const times = new Map(resource.moments.map((moment) => [moment.name, moment.seconds]));
+  const order: string[] = [];
+  const grouped = new Map<string, NarrationCue[]>();
+
+  for (const cue of region) {
+    // A pause joins whatever aside it follows. The parser guarantees there is one.
+    const named =
+      cue.kind === "speech" && cue.during !== undefined ? cue.during : order.at(-1);
+    if (named === undefined) continue;
+    if (!grouped.has(named)) {
+      if (!times.has(named)) {
+        return {
+          problem:
+            `this slide holds at ${quote(named)}, which ${program} did not declare; the film ` +
+            (resource.moments.length === 0
+              ? "names no moments at all"
+              : `reaches ${resource.moments.map((moment) => quote(moment.name)).join(", ")}`),
+        };
+      }
+      order.push(named);
+      grouped.set(named, []);
+    }
+    (grouped.get(named) as NarrationCue[]).push(cue);
+  }
+
+  const at = order.map((name) => ({
+    seconds: times.get(name) as number,
+    cues: grouped.get(name) as readonly NarrationCue[],
+  }));
+  for (let index = 1; index < at.length; index += 1) {
+    const previous = at[index - 1] as Rendezvous;
+    const current = at[index] as Rendezvous;
+    if (current.seconds < previous.seconds) {
+      return {
+        problem:
+          `this slide holds at ${quote(order[index - 1] as string)} and then at ` +
+          `${quote(order[index] as string)}, and the film reaches them the other way round; a ` +
+          "deck reads in the order its film runs",
+      };
+    }
+  }
+  return { at };
+}
+
+/**
+ * The film cut into slices, with each rendezvous's narration between them.
+ *
+ * **The architectural heart of sprint:31, and it is nine lines.** Given a film of 8.13s, a moment
+ * at 4.07s and a sentence subscribed to it, what comes out is
+ *
+ *     slice[0.00 .. 4.07]   <that sentence>   slice[4.07 .. 8.13]
+ *
+ * — three ordinary occupants of the one serial cursor, each with a duration known before the cursor
+ * reaches it. Nothing downstream learns a new concept: `compilePresentation` places the slices by
+ * borrowed duration exactly as it places one, `buildTimeline` walks them on the same cursor, and
+ * the *freeze* is not here at all. It is the hold `buildTimeline` already derives between two
+ * slices, which is the whole reason this round needed no renderer change (decision:65).
+ *
+ * The aside's own sentences are what extend the film. They are speech cues; they always were. A
+ * medium cannot ask for time and does not: it is cut at a point it was already going to pass
+ * through, and the narration that goes in the gap makes the gap.
+ *
+ * Endpoints are shared by construction — `to` of one slice is the `from` of the next, the same
+ * number — which is what stops a split producing a repeated or a dropped frame of film once
+ * `framesFor` has had both.
+ *
+ * A moment at 0 or at the very end produces an empty slice, which is dropped rather than emitted:
+ * a leaf that occupies no time is a leaf nobody can see, and `held()` covers the frames either way.
+ */
+function lower(
   cue: Extract<NarrationCue, { kind: "play" }>,
+  at: readonly Rendezvous[],
   durationSeconds: number,
 ): readonly NarrationCue[] {
-  const cuts: readonly number[] = [];
-  const bounds = [0, ...cuts, durationSeconds];
   const out: NarrationCue[] = [];
-  for (let index = 0; index + 1 < bounds.length; index += 1) {
-    out.push({
-      kind: "play",
-      scope: cue.scope,
-      source: cue.source,
-      fromSeconds: bounds[index] as number,
-      toSeconds: bounds[index + 1] as number,
-      rate: 1,
-    });
+  let from = 0;
+  for (const stop of [
+    ...at,
+    { seconds: durationSeconds, cues: [] as readonly NarrationCue[] },
+  ]) {
+    if (stop.seconds > from) {
+      out.push({
+        kind: "play",
+        scope: cue.scope,
+        source: cue.source,
+        fromSeconds: from,
+        toSeconds: stop.seconds,
+        rate: 1,
+      });
+      from = stop.seconds;
+    }
+    out.push(...stop.cues);
   }
   return out;
 }

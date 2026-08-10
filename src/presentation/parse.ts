@@ -1465,7 +1465,7 @@ function checkCue(value: unknown): string | undefined {
     if (typeof record["speech"] !== "string" || record["speech"].trim().length === 0) {
       return "speech must not be empty";
     }
-    for (const key of ["activates", "fills", "narrator"] as const) {
+    for (const key of ["activates", "fills", "narrator", "during"] as const) {
       if (record[key] === undefined) continue;
       const id = record[key];
       if (typeof id !== "string" || !ANCHOR_ID.test(id)) {
@@ -1490,7 +1490,14 @@ function checkCue(value: unknown): string | undefined {
   return `unknown cue ${JSON.stringify(keys.join(", "))}; must be ${CUE_HINT}`;
 }
 
-const SPEECH_CUE_KEYS = ["speech", "activates", "fills", "pronounce", "narrator"];
+const SPEECH_CUE_KEYS = [
+  "speech",
+  "activates",
+  "fills",
+  "pronounce",
+  "narrator",
+  "during",
+];
 
 /**
  * A `pronounce` entry only means anything if the word it names is actually in this cue, so
@@ -2119,6 +2126,7 @@ function toCues(
         ? {}
         : { activates: record["activates"] as string }),
       ...(record["fills"] === undefined ? {} : { fills: record["fills"] as string }),
+      ...(record["during"] === undefined ? {} : { during: record["during"] as string }),
       ...(pronounce === undefined
         ? {}
         : { pronounce: new Map(Object.entries(pronounce)) }),

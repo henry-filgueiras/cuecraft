@@ -72,6 +72,23 @@ export type NarrationCue =
       /** `fills`, resolved to a structural address, exactly as `address` resolves `activates`. */
       readonly fillsAddress?: Scope;
       /**
+       * A state of this slide's film that the medium is held at while this cue is spoken.
+       *
+       * The dual of `activates:`, and stating the pair together is the whole of decision:65:
+       *
+       *     activates:   the narration reaches a representation
+       *     during:      the representation reaches a state, and hands over the floor
+       *
+       * The author says that a sentence and a state of the medium are the same idea, which is
+       * decision:14's claim with a different noun on one end. What they do **not** say is a time:
+       * the film named the state and measured when it reaches it, and the compiler cuts the film
+       * there (`../compile/footage.ts`).
+       *
+       * Several cues may name one state. That is one rendezvous with an ordered queue, not a
+       * freeze and a resume per sentence — see the region rule in `./nest.ts`.
+       */
+      readonly during?: string;
+      /**
        * Per-occurrence spelling substitutions applied before synthesis only. See decision:12 —
        * this repairs one word in one cue, and is not a dictionary.
        */

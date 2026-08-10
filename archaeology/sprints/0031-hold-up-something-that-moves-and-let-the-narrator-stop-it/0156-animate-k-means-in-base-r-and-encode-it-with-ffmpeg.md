@@ -2,9 +2,10 @@
 id: tsk_01KZMDCPTGDAGG6C89V5ZVJ11J
 sequence: 156
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Animate k-means in base R, and encode it with ffmpeg

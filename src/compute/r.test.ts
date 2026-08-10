@@ -11,6 +11,7 @@ import {
   pngSize,
   RError,
   resolveOutputs,
+  resolveMoments,
   resolveRegions,
   split,
 } from "./r.ts";
@@ -547,4 +548,65 @@ test("a CSV and an SVG that were declared and never written are refused", async 
     const error = await refusal([`#cuecraft output ${type} out missing.${type}`], dir);
     assert.match(error.message, /was declared but never written/, type);
   }
+});
+
+/* ------------------------------------------------------------- moments */
+
+test("a moment is a name and a time in the film's own seconds", () => {
+  const moments = resolveMoments(
+    [
+      "#cuecraft output video run run.mp4",
+      "#cuecraft moment initialised 1.166666",
+      "#cuecraft moment converged 6.966666",
+    ],
+    "kmeans.R",
+  );
+
+  assert.deepEqual(moments, [
+    { name: "initialised", seconds: 1.166666 },
+    { name: "converged", seconds: 6.966666 },
+  ]);
+});
+
+test("moments keep the program's order rather than being sorted", () => {
+  const moments = resolveMoments(
+    ["#cuecraft moment late 5", "#cuecraft moment early 1"],
+    "run.R",
+  );
+
+  assert.deepEqual(
+    moments.map((moment) => moment.name),
+    ["late", "early"],
+    "sorting would hide a program that computed its own timings backwards",
+  );
+});
+
+test("a moment whose time is not a number is refused", () => {
+  assert.throws(
+    () => resolveMoments(["#cuecraft moment converged soon"], "run.R"),
+    (error: unknown) => error instanceof RError && /is not a number/.test(error.message),
+  );
+});
+
+test("a moment before the start of the film is refused", () => {
+  assert.throws(
+    () => resolveMoments(["#cuecraft moment early -1"], "run.R"),
+    (error: unknown) =>
+      error instanceof RError && /measured forwards/.test(error.message),
+  );
+});
+
+test("two moments with one name are refused", () => {
+  assert.throws(
+    () => resolveMoments(["#cuecraft moment done 1", "#cuecraft moment done 2"], "run.R"),
+    (error: unknown) => error instanceof RError && /must be distinct/.test(error.message),
+  );
+});
+
+test("a malformed moment names the shape it should have had", () => {
+  assert.throws(
+    () => resolveMoments(["#cuecraft moment converged"], "run.R"),
+    (error: unknown) =>
+      error instanceof RError && /#cuecraft moment <name> <seconds>/.test(error.message),
+  );
 });

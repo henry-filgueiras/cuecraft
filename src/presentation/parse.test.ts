@@ -600,7 +600,7 @@ test("unknown keys on a speech cue are rejected", () => {
         'title: A deck\nslides:\n  - slide: {title: One}\n    say:\n      - speech: "Hi."\n        emphasise: loud\n',
       )[0],
     ),
-    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, fills, pronounce, narrator\)$/,
+    /^slide 1, narration cue 1: unknown key "emphasise" on a speech cue \(allowed: speech, activates, fills, pronounce, narrator, during\)$/,
   );
 });
 
