@@ -22,9 +22,7 @@ beside it, by `cuecraft render`, with nothing hand-placed and nothing edited aft
 ### 1. The jam nobody caused — evidence that moves, and narration that stops it
 
 <!-- VIDEO: phantom -->
-
-<!-- Not yet attached. See runme/upload-phantom.md — drop out/upload/phantom.mp4 on the blank line
-     above this comment using GitHub's web editor, then delete this comment. -->
+https://github.com/user-attachments/assets/9157b07f-a7b4-4483-b165-340632ce3cad
 
 **Source: [`examples/phantom/`](examples/phantom/)** — one traffic model, two R programs that read
 it, and a 240-line deck, for 3:16 of video.
@@ -83,8 +81,7 @@ Needs R and ffmpeg: `npm run bootstrap:r`. See [Computing an exhibit](#computing
 
 <!-- VIDEO: tap -->
 
-<!-- Not yet attached. See runme/upload-tap.md — drop out/upload/tap.mp4 on the blank line above
-     this comment using GitHub's web editor, then delete this comment. -->
+https://github.com/user-attachments/assets/8c120dc6-0af6-4960-b24e-83b376efcefb
 
 **Source: [`examples/tap.yaml`](examples/tap.yaml)** — 5 actors and 13 messages, for 1:13 of video.
 
@@ -251,9 +248,7 @@ the author says is that this concept has an inside.
 ### 7. A chart nobody drew — a computation handed to R
 
 <!-- VIDEO: revenue -->
-
-<!-- Not yet attached. See runme/upload-revenue.md — drop out/upload/revenue.mp4 on the blank line
-     above this comment using GitHub's web editor, then delete this comment. -->
+https://github.com/user-attachments/assets/c59c85d5-5c38-46b0-9fc5-7b6336a45e37
 
 **Source: [`examples/revenue/`](examples/revenue/)** — a 468-row CSV, a 60-line R program and a
 100-line deck, for 1:25 of video.
@@ -301,8 +296,7 @@ Needs R: `npm run bootstrap:r`. See [Computing an exhibit](#computing-an-exhibit
 
 <!-- VIDEO: pivot -->
 
-<!-- Not yet attached. See runme/upload-pivot.md — drop out/upload/pivot.mp4 on the blank line
-     above this comment using GitHub's web editor, then delete this comment. -->
+https://github.com/user-attachments/assets/0580d6aa-b8ee-4ccc-998e-b19841079da2
 
 **Source: [`examples/pivot/`](examples/pivot/)** — a 673-row CSV, two R programs and a 125-line
 deck, for 2:12 of video.
