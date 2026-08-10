@@ -2,8 +2,9 @@
 id: ide_01KZMB589K9HZGMM56W9KYH96W
 sequence: 27
 kind: idea
-status: parked
+status: adopted
 created: 2026-08-09
+adopted-by: "[[dec_01KZMGJESEHN3HJSBR3M43FQDB|Let a film name what it reaches, and a sentence hold it there]]"
 ---
 
 # A medium that yields the floor to the narration
@@ -87,6 +88,31 @@ different source and a slope. It is a good second artifact and a bad first one.
 - **No nesting in the first cut.** One root narration, at most one medium, slices and asides
   alternating. A medium inside an aside inside a medium is not obviously wrong and is not obviously
   needed.
+
+**What was built, and where the sketch was wrong.** sprint:31 built it, and the two decisions that
+came out — decision:64 for atomic playback, decision:65 for the rendezvous — say it nearly as this
+artifact does. Three corrections are worth keeping:
+
+- **The gate was pointed at the wrong seam.** This was parked behind "a scene-type decision", on the
+  reading that a thing with a time axis crosses decision:2's line as a *scene*. It does not. A film
+  is a fourth thing decision:56's protocol can carry and a fourth arm of `ExhibitResource`, and
+  nothing in `layout.ts`, `body.ts` or the composition set learned a new kind of slide. idea:2's
+  question is exactly as open as it was.
+- **The structure does not lower in `bindNarration`.** This artifact predicted it would, beside
+  `enter:`. It cannot: a slice's endpoints are a measurement of a file that does not exist at parse
+  time, so the whole lowering happens at materialization. What the parser can check, and does, is
+  the half that is a fact about the source — that the slide has a program, that nothing plays one
+  film twice, and that a `during:` sits inside the run of cues its film is going to be cut around.
+- **"Freezing is three sequences" was one sequence too many.** It is *zero*. `buildTimeline` already
+  derived a hold between slices, and a hold is the playback mapping with its rate set to zero, so
+  nothing in the renderer changed and nothing in it knows the word. Instant replay likewise: it is
+  the same leaf with a different origin and a different slope, and it was built in the same round
+  rather than deferred, because by then it was four lines.
+
+**What the round did not test**, and this artifact named it as one of the two things that would kill
+the design: whether a *camera plan* survives having a segment inserted between two cues. A temporal
+exhibit selects the `exhibit` archetype, which has no camera, so the question is untouched. The
+first deck that puts a rendezvous inside a world is what answers it.
 
 ## Evidence
 

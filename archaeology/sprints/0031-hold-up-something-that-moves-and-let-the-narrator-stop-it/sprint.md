@@ -2,8 +2,9 @@
 id: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 sequence: 31
 kind: sprint
-status: active
+status: closed
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Hold up something that moves, and let the narrator stop it
@@ -81,3 +82,62 @@ medium is genuinely just a fourth thing a program can hand back, that claim gets
   to *hold up* motion something else made.
 - **No temporal-event ontology.** A stable identifier and a local timestamp, or the round has
   over-generalized.
+
+## Outcome
+
+**All three stages landed, and the last one — instant replay — was a stretch goal that turned out to
+be four lines.** decision:64 carries atomic playback, decision:65 carries the rendezvous, and
+idea:27 is adopted with the three places its sketch was wrong written into it.
+
+`examples/kmeans/kmeans.yaml` renders to a 128-second film in which R animates Lloyd's algorithm
+over 206 points, the film stops on its own third pass so the narrator can say what is visible,
+replays the second-to-third-pass interval at two fifths speed, returns to the frozen frame, stops
+again at convergence, and finishes. The whole of what the deck writes is `play: kmeans`,
+`during: pass-3`, `during: converged` and `replay: pass-2`. There is no duration, no start, no end,
+no rate and no frame number anywhere in the source.
+
+### The success criteria, against what happened
+
+Every one was met. The two worth stating specifically:
+
+- **The duration is a measurement taken at materialization.** `src/compute/mp4.ts` walks the ISO box
+  tree for it — no decoder, no ffprobe, no dependency — for the reason `pngSize` reads a PNG header,
+  with a sharper edge: a film that lied about its length would put a hole in the timeline.
+- **`framesFor` is untouched and `buildTimeline` still walks one cursor.** The only change to the
+  timeline was making a slice's length come from its two endpoints rather than from its length, and
+  making a hold show the frame after wherever the picture actually got to. Both made the ordinary
+  case more correct.
+
+Inspection was done at the compiled timeline's own boundaries, never by uniform sampling, and the
+freeze was proven against **lossless stills** rather than against an H.264 re-encode — which turned
+out to matter: hashing the output MP4 shows differences at identical source frames, and would have
+falsely refuted the claim. The frozen frame is byte-identical across the freeze, the replay's
+return and the resume, at both rendezvous; the replay's last frame is byte-identical to the
+primary's last frame before the freeze; and the frames either side of each differ.
+
+### What the round found that it was not looking for
+
+- **dragon:37** — a specimen too big for `CODE.minSize` is drawn over the subtitle band and off the
+  right edge of the frame, because the floor has no elision behind it. Found twice, on both axes,
+  by the deck's own self-quoting slide.
+- **dragon:38** — a moment on a frame boundary is a rounding hazard: the protocol carries decimal
+  seconds and the cut takes the first frame at or after one, so `4.0667` for frame 122 freezes on
+  frame 123 and the panel says "pass 4" while the narrator says "the third".
+- **A stale caption over silent film.** A subtitle's rule is "until the next audible thing", and a
+  film is not audible — so the sentence introducing an eight-second animation stayed on screen for
+  the whole of it. `subtitle.ts` now treats a slice as a boundary, which is the one place an
+  unrelated subsystem had to learn that temporal media exists.
+
+### Non-goals, all held
+
+No scheduler, no second clock, no overlap, no concurrency, no encoder, no player, no playback
+controls, no authored timecode, no animation authoring, and no event ontology beyond a name and a
+local timestamp. The medium is annotated; it does not negotiate.
+
+### The one thing that was not tested
+
+idea:27 named two ways the design could die. The first — a medium whose events want authored
+timecodes — was falsified: no number crosses the boundary in either direction. The second — a
+camera plan that cannot survive a segment inserted between two cues — was **not exercised at all**,
+because a temporal exhibit selects the `exhibit` archetype and that archetype has no camera. It is
+recorded in decision:65 as still open rather than passed.

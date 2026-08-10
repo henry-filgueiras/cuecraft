@@ -2,9 +2,10 @@
 id: tsk_01KZMFGXQ8YGMFQ3JS5QBRY49C
 sequence: 160
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZMDB3GVJR1G787Z6YSZ1VT5
 created: 2026-08-09
+closed: 2026-08-09
 ---
 
 # Freeze k-means on a pass, explain it, and resume
