@@ -133,7 +133,7 @@ mark <- function(name) {
 # for an instant and is unforgiving of a decimal that overshoots. Frame 122 at 30fps is 4.0666...s;
 # printed to four places as `4.0667` it is 122.001 frames, and the freeze lands one frame into the
 # *next* pass — where the panel says "pass 4" while the narration says "the third". Rounding down
-# names the frame this program means. See the dragon this opened.
+# names the frame this program means. See dragon:38 for whether a moment should be a frame index.
 seconds_of <- function(frame) floor(frame / fps * 1e6) / 1e6
 
 draw <- function(centres, assign, pass, phase, fit_through, travelling = NA) {
