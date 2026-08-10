@@ -41,6 +41,17 @@ Measured on the deck that found it, at `CODE.minSize = 26` and `CODE.lineHeight 
 So the same specimen is exactly at the limit with subtitles off and three lines over with them on,
 which is why nothing before this round hit it: `pivot.yaml`'s equivalent slide quotes four lines.
 
+**Second sighting, sprint:35.** `examples/phantom/` — showpiece 1 as of decision:68 — hit it
+harder. Its specimen quotes a twenty-four-line `say:` block where about thirteen fit, and the
+overflow was drawn through the subtitle band and over the subtitle's own text for the bottom third
+of the slide. It went out in a render that had been read slide by slide and anchor by anchor
+through its symbol table, which is the part worth keeping: **the symbol table cannot see this.**
+It reports where meaning landed in time, and this is a failure in space. Nothing short of looking
+at the frame finds it, and the frame that finds it is not one of the frames a symbol names.
+
+sprint:35 fixed the deck rather than the clamp — the block was cut to thirteen lines — so the
+count of decks that have paid for this is now two and the clamp is unchanged.
+
 ## Question
 
 **What should a composition do when the size that would fit is below the size that is legible?**

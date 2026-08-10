@@ -645,7 +645,9 @@ test("the deck reaches every element the drawing names, and no others", () => {
 
   // What the program writes onto the shapes it draws, read out of the program.
   const drawing = phantomSource("wave.R");
-  const roles = (drawing.match(/names\(named\) <- c\((.*)\)/)?.[1] ?? "")
+  // Up to the first close-paren, not the last: the program subsets the role list to the marks it
+  // actually drew, and a greedy match swallows the subscript along with the names.
+  const roles = (drawing.match(/names\(named\) <- c\(([^)]*)\)/)?.[1] ?? "")
     .split(",")
     .map((quoted) => quoted.trim().replace(/^"|"$/g, ""));
 

@@ -23,8 +23,14 @@
 # sentinel nobody else uses can be found afterwards and rewritten into a real colour plus a name
 # — decision:59, and `examples/pivot/quarterly-chart.R` is where the technique is set out.
 #
-# Only three bars are named, because only three are spoken about. A name nothing reaches is a
-# name that will be wrong later.
+# Five marks are named and five are spoken about, and they are spread down the run rather than
+# clustered at its ends. That is not decoration. Emphasis recedes the *other named* elements and
+# leaves everything unnamed alone, so naming three — two at the top and one at the bottom — makes
+# the slide flicker at three unrelated places while nineteen marks never move. A viewer reads that
+# as a broken picture, on the slide immediately after the one that showed everything is derived.
+#
+# The names are computed from the number of cars rather than typed in, so they mean what they say
+# at any ring size: where the wave has got to, in quarters of the way round.
 
 model <- Sys.getenv("CUECRAFT_INPUT_MODEL")
 out_dir <- Sys.getenv("CUECRAFT_OUTPUT_DIR")
@@ -117,24 +123,33 @@ plot.window(xlim = c(-0.35, ceiling_s), ylim = c(CARS + 0.5, 0.5), xaxs = "i", y
 abline(v = ticks, col = adjustcolor(muted, alpha.f = 0.16), lwd = 1.5)
 
 # A mark per car at the instant it stopped, top to bottom in the order that happened, with a
-# faint leader back to the first one so the staircase reads as a run rather than as a scatter.
+# faint leader back to the axis.
 #
 # A dot rather than a bar, and not only because a bar from zero would say "this car was stopped
 # for that long", which is a different and false claim: the first car's bar would be zero wide,
 # cairo would emit no path for it, and the name would silently fail to attach. A mark for an
 # instant is both the honest shape and the one that survives being named.
 segments(0, seq_len(CARS), after, seq_len(CARS),
-  col = adjustcolor(muted, alpha.f = 0.28), lwd = 2
+  col = adjustcolor(muted, alpha.f = 0.22), lwd = 2
 )
 
-named <- c(1L, 2L, CARS)
-names(named) <- c("first", "behind", "last")
+# The chain, and it is the whole reason this picture is worth drawing. Twenty-two unconnected
+# dots are a scatter that happens to descend; joined, they are one thing going somewhere, and a
+# viewer sees the run before a word is said about it. Drawn under the marks so the marks sit on
+# it rather than beside it.
+lines(after, seq_len(CARS), col = adjustcolor(muted, alpha.f = 0.55), lwd = 3)
+
+# Where the wave has got to, in quarters of the way round, computed from the cast rather than
+# typed in. `unique` because a small enough ring collapses two of these onto one car, and two
+# names on one shape is a picture that cannot say which it means.
+named <- unique(c(1L, 2L, round(CARS / 4), round(CARS / 2), CARS))
+names(named) <- c("first", "behind", "quarter", "half", "last")[seq_along(named)]
 for (row in seq_len(CARS)) {
   role <- names(named)[match(row, named)]
   spoken <- !is.na(role)
   points(after[row], row,
-    pch = 16, cex = if (spoken) 1.9 else 1.35,
-    col = if (spoken) tag(role) else adjustcolor(muted, alpha.f = 0.72)
+    pch = 16, cex = if (spoken) 2.0 else 1.30,
+    col = if (spoken) tag(role) else adjustcolor(muted, alpha.f = 0.68)
   )
 }
 

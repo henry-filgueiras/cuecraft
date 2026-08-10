@@ -27,7 +27,7 @@ beside it, by `cuecraft render`, with nothing hand-placed and nothing edited aft
      above this comment using GitHub's web editor, then delete this comment. -->
 
 **Source: [`examples/phantom/`](examples/phantom/)** — one traffic model, two R programs that read
-it, and a 249-line deck, for 3:36 of video.
+it, and a 240-line deck, for 3:16 of video.
 
 Twenty-two cars on a 230-metre ring, every driver asked to hold thirty kilometres an hour.
 Sugiyama et al. ran this on a test track in 2008 and a car came to a complete stop on an empty
@@ -40,15 +40,9 @@ then the narration takes hold of it:
 
 ```yaml
 - play: ring
-- speech:
-    "Hold it there. One gap has closed by fifteen centimetres, and nobody in that ring
-    could feel it."
+- speech: "Hold it there. One gap has closed by fifteen centimetres."
   during: closing
-- speech:
-    "Twelve seconds later, a car is at a standstill, on an open road, with nothing in
-    front of it."
-  during: stopped
-- speech: "Watch that again."
+- speech: "Twelve seconds later a car is at a standstill. Watch that again."
   during: stopped
 - replay: closing
 ```

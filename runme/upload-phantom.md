@@ -31,7 +31,7 @@ skipped unless anything in `examples/phantom/` has changed since:
 
 | file to attach           | duration | rendered | attached | crf |
 | ------------------------ | -------- | -------- | -------- | --- |
-| `out/upload/phantom.mp4` | 3:35.9   | 18.71 MB | 7.70 MB  | 23  |
+| `out/upload/phantom.mp4` | 3:16.1   | 17.43 MB | 7.17 MB  | 23  |
 
 3. Open `README.md` on github.com and press the pencil. Make sure you are on the **Edit** tab
    rather than **Preview**. Find:
@@ -77,13 +77,17 @@ node src/cli.ts snapshots out/phantom.mp4 --kind slide -d out/frames-phantom
   closed gap to the standstill more slowly, and must then return to **the frame it was frozen
   on** — not to the end of the replayed stretch, and not to the start of it. Compare the frame
   just before the replay with the frame just after.
-- **Slide 5, the three named marks.** Three sentences each name one mark on the drawing. On each,
-  that mark should be at full strength and the other two dimmed; between and after them, all three
-  should be identically bright again. A mark left dim after the narration moved on is the
-  ground-state round trip broken.
+- **Slide 5, the walk down the chain.** Five sentences each name one mark, spread down the run.
+  The bright mark should _travel_: top, second, about a quarter down, about half, then the bottom.
+  If it jumps between the two ends instead, the program and the deck have gone out of step. On
+  each, the other four should be dimmed and every unnamed mark unchanged; after the last sentence
+  all five should be identically bright again.
 - **No mark should ever be red.** `wave.R` names its shapes by drawing them in a sentinel red and
   rewriting its own output, and refuses rather than shipping one that survived. This should be
   impossible — check anyway, because it is the failure that would look deliberate.
 - **The y-axis labels on slide 5 are data.** They read `car 10, car 9, … car 1, car 22, … car 11`,
   and the last one is the car directly in front of the first. If that is no longer true, the last
   sentence on that slide is false and the model has moved.
+- **Slide 4's specimen must not touch the subtitle band.** It quotes thirteen lines, which is
+  about what fits; anything longer is drawn straight through the subtitles and over their text
+  (`dragon:37`), and neither the compiler nor the symbol table will say so.
